@@ -14,4 +14,3 @@ mantle_mainnet = "https://rpc.mantle.xyz"
 [etherscan]
 mantle_testnet = { key = "${MANTLE_API_KEY}", url = "https://explorer.testnet.mantle.xyz/api" }
 mantle_mainnet = { key = "${MANTLE_API_KEY}", url = "https://explorer.mantle.xyz/api" }
-

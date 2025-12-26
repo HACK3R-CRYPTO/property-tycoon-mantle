@@ -33,4 +33,3 @@ contract YieldDistributor {
         emit YieldClaimed(propertyId, msg.sender, amount);
     }
 }
-

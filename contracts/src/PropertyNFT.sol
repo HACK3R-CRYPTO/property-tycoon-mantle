@@ -62,4 +62,3 @@ contract PropertyNFT is ERC721, Ownable {
         return properties[tokenId];
     }
 }
-

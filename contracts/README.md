@@ -12,7 +12,7 @@ foundryup
 
 Install dependencies:
 ```bash
-forge install
+forge install OpenZeppelin/openzeppelin-contracts
 ```
 
 ## Build
@@ -46,4 +46,3 @@ forge script script/Deploy.s.sol:DeployScript --rpc-url mantle_testnet --broadca
 - GameToken.sol: TYCOON token (ERC-20)
 - Marketplace.sol: Property trading marketplace
 - QuestSystem.sol: Investment quest system
-

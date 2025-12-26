@@ -45,4 +45,3 @@ contract PropertyNFTTest is Test {
         assertEq(prop.rwaTokenId, 1);
     }
 }
-
