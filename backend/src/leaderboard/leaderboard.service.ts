@@ -2,7 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { DATABASE_CONNECTION } from '../database/database.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../database/schema';
-import { desc, sql, eq } from 'drizzle-orm';
+import { desc, sql, eq, and } from 'drizzle-orm';
 
 @Injectable()
 export class LeaderboardService {
@@ -14,15 +14,12 @@ export class LeaderboardService {
     const rankings = await this.db
       .select({
         userId: schema.leaderboard.userId,
-        rank: schema.leaderboard.rank,
         totalPortfolioValue: schema.leaderboard.totalPortfolioValue,
         totalYieldEarned: schema.leaderboard.totalYieldEarned,
         propertiesOwned: schema.leaderboard.propertiesOwned,
         questsCompleted: schema.leaderboard.questsCompleted,
-        user: {
-          walletAddress: schema.users.walletAddress,
-          username: schema.users.username,
-        },
+        walletAddress: schema.users.walletAddress,
+        username: schema.users.username,
       })
       .from(schema.leaderboard)
       .leftJoin(schema.users, eq(schema.leaderboard.userId, schema.users.id))
@@ -46,24 +43,42 @@ export class LeaderboardService {
       return;
     }
 
+    // Get user's properties
     const properties = await this.db
       .select()
       .from(schema.properties)
       .where(eq(schema.properties.ownerId, userId));
 
-    const questsCompleted = await this.db
+    // Calculate total portfolio value
+    const totalPortfolioValue = properties.reduce((sum, prop) => {
+      return sum + BigInt(prop.value || '0');
+    }, BigInt(0));
+
+    // Get completed quests
+    const completedQuests = await this.db
       .select()
       .from(schema.questProgress)
-      .where(eq(schema.questProgress.userId, userId))
-      .where(eq(schema.questProgress.completed, true));
+      .where(
+        and(
+          eq(schema.questProgress.userId, userId),
+          eq(schema.questProgress.completed, true),
+        ),
+      );
 
-    const totalYieldEarned = await this.db
-      .select({
-        total: sql<bigint>`sum(${schema.yieldRecords.amount})`,
-      })
+    // Get total yield earned
+    const yieldRecords = await this.db
+      .select()
       .from(schema.yieldRecords)
-      .where(eq(schema.yieldRecords.ownerId, userId))
-      .where(eq(schema.yieldRecords.claimed, true));
+      .where(
+        and(
+          eq(schema.yieldRecords.ownerId, userId),
+          eq(schema.yieldRecords.claimed, true),
+        ),
+      );
+
+    const totalYieldEarned = yieldRecords.reduce((sum, record) => {
+      return sum + BigInt(record.amount.toString());
+    }, BigInt(0));
 
     const [existing] = await this.db
       .select()
@@ -73,10 +88,10 @@ export class LeaderboardService {
 
     const leaderboardData = {
       userId,
-      totalPortfolioValue: user.totalPortfolioValue,
-      totalYieldEarned: totalYieldEarned[0]?.total || BigInt(0),
+      totalPortfolioValue: totalPortfolioValue,
+      totalYieldEarned: totalYieldEarned,
       propertiesOwned: properties.length,
-      questsCompleted: questsCompleted.length,
+      questsCompleted: completedQuests.length,
       updatedAt: new Date(),
     };
 
@@ -88,5 +103,7 @@ export class LeaderboardService {
     } else {
       await this.db.insert(schema.leaderboard).values(leaderboardData);
     }
+
+    this.logger.log(`Updated leaderboard for user ${userId}`);
   }
 }

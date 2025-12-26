@@ -20,8 +20,20 @@ export class QuestsService {
 
   async getQuest(questId: number) {
     try {
-      const quest = await this.contractsService.getQuest(BigInt(questId));
-      return quest;
+      // Get quest from contract by quest type (0-4)
+      const questData = await this.contractsService.getQuest(questId);
+      
+      // Also get from database if exists
+      const [dbQuest] = await this.db
+        .select()
+        .from(schema.quests)
+        .where(eq(schema.quests.questId, questId))
+        .limit(1);
+
+      return {
+        contractData: questData,
+        dbData: dbQuest,
+      };
     } catch (error) {
       this.logger.error(`Error getting quest: ${error.message}`);
       throw error;
@@ -32,7 +44,7 @@ export class QuestsService {
     const [user] = await this.db
       .select()
       .from(schema.users)
-      .where(eq(schema.users.walletAddress, walletAddress))
+      .where(eq(schema.users.walletAddress, walletAddress.toLowerCase()))
       .limit(1);
 
     if (!user) {
@@ -45,10 +57,10 @@ export class QuestsService {
       .where(eq(schema.questProgress.userId, user.id));
   }
 
-  async checkQuestCompletion(walletAddress: string, questId: number) {
+  async checkQuestCompletion(walletAddress: string, questType: number) {
     try {
-      const completed = await this.contractsService.getQuestCompletionStatus(walletAddress, BigInt(questId));
-      return { completed };
+      const completed = await this.contractsService.hasCompletedQuest(walletAddress, questType);
+      return { completed, questType };
     } catch (error) {
       this.logger.error(`Error checking quest completion: ${error.message}`);
       throw error;

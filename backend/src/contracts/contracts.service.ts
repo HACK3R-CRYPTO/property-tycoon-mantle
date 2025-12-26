@@ -107,5 +107,16 @@ export class ContractsService {
   async getTotalQuestsCompleted(playerAddress: string) {
     return this.questSystem.getTotalQuestsCompleted(playerAddress);
   }
+
+  async getQuest(questType: number) {
+    return this.questSystem.quests(questType);
+  }
+
+  async getActiveListings() {
+    // Note: Marketplace contract doesn't have a getActiveListings function
+    // This would need to be implemented by querying events or maintaining an index
+    // For now, return empty array - listings are synced via events
+    return [];
+  }
 }
 

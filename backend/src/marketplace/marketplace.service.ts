@@ -16,17 +16,36 @@ export class MarketplaceService {
 
   async getActiveListings() {
     try {
-      const listings = await this.contractsService.getActiveListings();
-      return listings;
+      // Get active listings from database (synced via events)
+      return this.db
+        .select()
+        .from(schema.marketplaceListings)
+        .where(eq(schema.marketplaceListings.isActive, true));
     } catch (error) {
       this.logger.error(`Error getting active listings: ${error.message}`);
       throw error;
     }
   }
 
-  async getListing(listingId: number) {
+  async getListing(propertyId: number) {
     try {
-      const listing = await this.contractsService.getListing(BigInt(listingId));
+      // Get listing from database by propertyId
+      const [property] = await this.db
+        .select()
+        .from(schema.properties)
+        .where(eq(schema.properties.tokenId, propertyId.toString()))
+        .limit(1);
+
+      if (!property) {
+        return null;
+      }
+
+      const [listing] = await this.db
+        .select()
+        .from(schema.marketplaceListings)
+        .where(eq(schema.marketplaceListings.propertyId, property.id))
+        .limit(1);
+
       return listing;
     } catch (error) {
       this.logger.error(`Error getting listing: ${error.message}`);
@@ -34,34 +53,16 @@ export class MarketplaceService {
     }
   }
 
-  async syncListing(listingId: number, propertyId: string, sellerId: string, price: bigint) {
-    const [listing] = await this.db
-      .insert(schema.marketplaceListings)
-      .values({
-        listingId,
-        propertyId,
-        sellerId,
-        price,
-        active: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .returning();
-    return listing;
-  }
-
-  async markAsSold(listingId: number, buyerId: string, txHash: string) {
-    const [listing] = await this.db
-      .update(schema.marketplaceListings)
-      .set({
-        active: false,
-        buyerId,
-        soldAt: new Date(),
-        transactionHash: txHash,
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.marketplaceListings.listingId, listingId))
-      .returning();
-    return listing;
+  async getAuction(propertyId: number) {
+    try {
+      const listing = await this.getListing(propertyId);
+      if (!listing || listing.listingType !== 'auction') {
+        return null;
+      }
+      return listing;
+    } catch (error) {
+      this.logger.error(`Error getting auction: ${error.message}`);
+      throw error;
+    }
   }
 }
