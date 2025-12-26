@@ -1,38 +1,23 @@
 'use client';
 
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
-import { Button } from '@/components/ui/button';
+import { useAccount } from 'wagmi';
+import { formatAddress } from '@/lib/utils';
 
 export function WalletConnect() {
   const { address, isConnected } = useAccount();
-  const { connect, connectors, isPending } = useConnect();
-  const { disconnect } = useDisconnect();
 
   if (isConnected && address) {
     return (
-      <div className="flex items-center gap-4">
-        <div className="text-sm">
-          <div className="font-medium">{address.slice(0, 6)}...{address.slice(-4)}</div>
+      <div className="flex items-center gap-3">
+        <div className="px-4 py-2 rounded-lg bg-white/10 backdrop-blur-sm border border-white/20">
+          <span className="text-sm font-medium text-white font-numbers">
+            {formatAddress(address)}
+          </span>
         </div>
-        <Button onClick={() => disconnect()} variant="outline">
-          Disconnect
-        </Button>
+        <w3m-button balance="hide" />
       </div>
     );
   }
 
-  return (
-    <div className="flex gap-2">
-      {connectors.map((connector) => (
-        <Button
-          key={connector.uid}
-          onClick={() => connect({ connector })}
-          disabled={isPending}
-        >
-          {isPending ? 'Connecting...' : `Connect ${connector.name}`}
-        </Button>
-      ))}
-    </div>
-  );
+  return <w3m-button />;
 }
-

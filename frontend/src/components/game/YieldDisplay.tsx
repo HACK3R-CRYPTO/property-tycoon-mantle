@@ -7,10 +7,11 @@ import { Button } from '@/components/ui/button';
 interface YieldDisplayProps {
   totalPendingYield: bigint;
   totalYieldEarned: bigint;
-  onClaimAll?: () => void;
+  onClaimAll?: () => void | Promise<void>;
+  isClaiming?: boolean;
 }
 
-export function YieldDisplay({ totalPendingYield, totalYieldEarned, onClaimAll }: YieldDisplayProps) {
+export function YieldDisplay({ totalPendingYield, totalYieldEarned, onClaimAll, isClaiming = false }: YieldDisplayProps) {
   const formatValue = (value: bigint) => {
     return (Number(value) / 1e18).toFixed(4);
   };
@@ -41,8 +42,12 @@ export function YieldDisplay({ totalPendingYield, totalYieldEarned, onClaimAll }
         </div>
 
         {onClaimAll && totalPendingYield > 0n && (
-          <Button onClick={onClaimAll} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
-            Claim All Yield
+          <Button 
+            onClick={onClaimAll} 
+            disabled={isClaiming}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+          >
+            {isClaiming ? 'Claiming...' : 'Claim All Yield'}
           </Button>
         )}
       </CardContent>

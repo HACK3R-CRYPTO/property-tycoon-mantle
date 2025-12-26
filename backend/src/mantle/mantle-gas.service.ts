@@ -96,18 +96,18 @@ export class MantleGasService {
       return {
         l1BaseFee: {
           wei: gasPrices.l1BaseFee.toString(),
-          gwei: ethers.formatUnits(gasPrices.l1BaseFee, 'gwei'),
-          ether: ethers.formatEther(gasPrices.l1BaseFee),
+          gwei: ethers.utils.formatUnits(gasPrices.l1BaseFee.toString(), 'gwei'),
+          ether: ethers.utils.formatEther(gasPrices.l1BaseFee.toString()),
         },
         l2GasPrice: {
           wei: gasPrices.l2GasPrice.toString(),
-          gwei: ethers.formatUnits(gasPrices.l2GasPrice, 'gwei'),
-          ether: ethers.formatEther(gasPrices.l2GasPrice),
+          gwei: ethers.utils.formatUnits(gasPrices.l2GasPrice.toString(), 'gwei'),
+          ether: ethers.utils.formatEther(gasPrices.l2GasPrice.toString()),
         },
         totalEstimate: {
           wei: gasPrices.totalEstimate.toString(),
-          gwei: ethers.formatUnits(gasPrices.totalEstimate, 'gwei'),
-          ether: ethers.formatEther(gasPrices.totalEstimate),
+          gwei: ethers.utils.formatUnits(gasPrices.totalEstimate.toString(), 'gwei'),
+          ether: ethers.utils.formatEther(gasPrices.totalEstimate.toString()),
         },
       };
     } catch (error) {

@@ -289,11 +289,11 @@ export class EventIndexerService implements OnModuleInit {
       const [property] = await this.db
         .insert(schema.properties)
         .values({
-          tokenId: tokenId,
+          tokenId: Number(tokenId),
           ownerId: user.id,
           propertyType: propertyTypeMap[propertyType] || 'Residential',
-          value: value,
-          yieldRate: propertyData.yieldRate.toString(),
+          value: BigInt(value),
+          yieldRate: Number(propertyData.yieldRate.toString()),
           isActive: true,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -322,11 +322,11 @@ export class EventIndexerService implements OnModuleInit {
       await this.db
         .update(schema.properties)
         .set({
-          rwaContractAddress: rwaContract,
-          rwaTokenId: rwaTokenId,
+          rwaContract: rwaContract,
+          rwaTokenId: Number(rwaTokenId),
           updatedAt: new Date(),
         })
-        .where(eq(schema.properties.tokenId, tokenId));
+        .where(eq(schema.properties.tokenId, Number(tokenId)));
 
       this.logger.log(`Property ${tokenId} linked to RWA`);
     } catch (error) {
@@ -345,10 +345,10 @@ export class EventIndexerService implements OnModuleInit {
         .update(schema.properties)
         .set({
           propertyType: propertyTypeMap[newType] || 'Residential',
-          value: newValue,
+          value: BigInt(newValue),
           updatedAt: new Date(),
         })
-        .where(eq(schema.properties.tokenId, tokenId));
+        .where(eq(schema.properties.tokenId, Number(tokenId)));
 
       this.logger.log(`Property ${tokenId} upgraded`);
     } catch (error) {
@@ -392,7 +392,7 @@ export class EventIndexerService implements OnModuleInit {
           ownerId: newOwner.id,
           updatedAt: new Date(),
         })
-        .where(eq(schema.properties.tokenId, tokenId));
+        .where(eq(schema.properties.tokenId, Number(tokenId)));
 
       this.logger.log(`Property ${tokenId} transferred to ${to}`);
     } catch (error) {
@@ -423,7 +423,7 @@ export class EventIndexerService implements OnModuleInit {
       const [property] = await this.db
         .select()
         .from(schema.properties)
-        .where(eq(schema.properties.tokenId, propertyId))
+        .where(eq(schema.properties.tokenId, Number(propertyId)))
         .limit(1);
 
       if (!property) {
@@ -433,20 +433,21 @@ export class EventIndexerService implements OnModuleInit {
 
       // Create yield record
       await this.db.insert(schema.yieldRecords).values({
-        userId: property.ownerId,
+        ownerId: property.ownerId,
         propertyId: property.id,
-        amount: amount,
+        amount: BigInt(amount),
+        claimed: true,
         claimedAt: new Date(),
         createdAt: new Date(),
       });
 
       // Update property total yield earned
-      const currentTotal = BigInt(property.totalYieldEarned || '0');
+      const currentTotal = BigInt(property.totalYieldEarned?.toString() || '0');
       const newTotal = currentTotal + BigInt(amount);
       await this.db
         .update(schema.properties)
         .set({
-          totalYieldEarned: newTotal.toString(),
+          totalYieldEarned: newTotal,
           updatedAt: new Date(),
         })
         .where(eq(schema.properties.id, property.id));
@@ -473,7 +474,7 @@ export class EventIndexerService implements OnModuleInit {
       const [property] = await this.db
         .select()
         .from(schema.properties)
-        .where(eq(schema.properties.tokenId, propertyId))
+        .where(eq(schema.properties.tokenId, Number(propertyId)))
         .limit(1);
 
       if (!property) {
@@ -526,7 +527,7 @@ export class EventIndexerService implements OnModuleInit {
       const [property] = await this.db
         .select()
         .from(schema.properties)
-        .where(eq(schema.properties.tokenId, propertyId))
+        .where(eq(schema.properties.tokenId, Number(propertyId)))
         .limit(1);
 
       if (property) {
@@ -563,7 +564,7 @@ export class EventIndexerService implements OnModuleInit {
       const [property] = await this.db
         .select()
         .from(schema.properties)
-        .where(eq(schema.properties.tokenId, propertyId))
+        .where(eq(schema.properties.tokenId, Number(propertyId)))
         .limit(1);
 
       if (!property) return;
@@ -612,7 +613,7 @@ export class EventIndexerService implements OnModuleInit {
       const [property] = await this.db
         .select()
         .from(schema.properties)
-        .where(eq(schema.properties.tokenId, propertyId))
+        .where(eq(schema.properties.tokenId, Number(propertyId)))
         .limit(1);
 
       if (property) {

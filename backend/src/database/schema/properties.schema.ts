@@ -12,7 +12,7 @@ export const properties = pgTable('properties', {
   yieldRate: integer('yield_rate').notNull(), // Basis points (e.g., 500 = 5%)
   rwaContract: varchar('rwa_contract', { length: 42 }),
   rwaTokenId: bigint('rwa_token_id', { mode: 'number' }),
-  totalYieldEarned: bigint('total_yield_earned', { mode: 'bigint' }).default('0').notNull(),
+  totalYieldEarned: bigint('total_yield_earned', { mode: 'bigint' }).default(BigInt(0)).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

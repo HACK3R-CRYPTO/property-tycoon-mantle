@@ -6,8 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
 interface BuildMenuProps {
-  onBuildProperty: (type: 'Residential' | 'Commercial' | 'Industrial' | 'Luxury') => void;
+  onBuildProperty: (type: 'Residential' | 'Commercial' | 'Industrial' | 'Luxury') => void | Promise<void>;
   tokenBalance: bigint;
+  isMinting?: boolean;
 }
 
 const PROPERTY_TYPES = [
@@ -45,7 +46,7 @@ const PROPERTY_TYPES = [
   },
 ];
 
-export function BuildMenu({ onBuildProperty, tokenBalance }: BuildMenuProps) {
+export function BuildMenu({ onBuildProperty, tokenBalance, isMinting = false }: BuildMenuProps) {
   const formatValue = (value: bigint) => {
     return (Number(value) / 1e18).toFixed(0);
   };
@@ -86,11 +87,11 @@ export function BuildMenu({ onBuildProperty, tokenBalance }: BuildMenuProps) {
               </div>
               <Button
                 onClick={() => onBuildProperty(prop.type)}
-                disabled={!canAfford}
+                disabled={!canAfford || isMinting}
                 className="w-full"
                 variant={canAfford ? 'default' : 'outline'}
               >
-                {canAfford ? 'Build' : 'Insufficient Funds'}
+                {isMinting ? 'Minting...' : canAfford ? 'Build' : 'Insufficient Funds'}
               </Button>
             </div>
           );

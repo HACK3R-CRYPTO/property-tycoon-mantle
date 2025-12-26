@@ -41,9 +41,11 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
 NEXT_PUBLIC_MANTLE_NETWORK=testnet
 NEXT_PUBLIC_MANTLE_RPC_URL=https://rpc.testnet.mantle.xyz
 
-# WalletConnect
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id
+# Reown AppKit (formerly WalletConnect)
+NEXT_PUBLIC_PROJECT_ID=your_reown_project_id_here
 ```
+
+Get your Project ID from [Reown Cloud](https://cloud.reown.com/). Create a new project, select AppKit, choose Next.js framework, and copy the Project ID.
 
 **Note:** Contract addresses are also hardcoded in source files as a fallback, so the app works even without `.env.local`.
 

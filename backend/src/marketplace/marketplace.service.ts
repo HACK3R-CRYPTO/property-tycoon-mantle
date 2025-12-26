@@ -33,7 +33,7 @@ export class MarketplaceService {
       const [property] = await this.db
         .select()
         .from(schema.properties)
-        .where(eq(schema.properties.tokenId, propertyId.toString()))
+        .where(eq(schema.properties.tokenId, propertyId))
         .limit(1);
 
       if (!property) {

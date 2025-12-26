@@ -13,8 +13,9 @@ interface PropertyCardProps {
     yieldRate: number;
     totalYieldEarned: bigint;
   };
-  onClaimYield?: () => void;
+  onClaimYield?: () => void | Promise<void>;
   onViewDetails?: () => void;
+  isClaiming?: boolean;
 }
 
 const PROPERTY_COLORS = {
@@ -24,7 +25,7 @@ const PROPERTY_COLORS = {
   Luxury: 'bg-pink-500',
 };
 
-export function PropertyCard({ property, onClaimYield, onViewDetails }: PropertyCardProps) {
+export function PropertyCard({ property, onClaimYield, onViewDetails, isClaiming = false }: PropertyCardProps) {
   const formatValue = (value: bigint) => {
     return (Number(value) / 1e18).toFixed(2);
   };
@@ -67,8 +68,12 @@ export function PropertyCard({ property, onClaimYield, onViewDetails }: Property
 
         <div className="flex gap-2">
           {onClaimYield && (
-            <Button onClick={onClaimYield} className="flex-1 bg-emerald-600 hover:bg-emerald-700">
-              Claim Yield
+            <Button 
+              onClick={onClaimYield} 
+              disabled={isClaiming}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {isClaiming ? 'Claiming...' : 'Claim Yield'}
             </Button>
           )}
           {onViewDetails && (

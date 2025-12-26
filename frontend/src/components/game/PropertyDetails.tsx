@@ -17,8 +17,9 @@ interface PropertyDetailsProps {
   };
   isOpen: boolean;
   onClose: () => void;
-  onClaimYield?: () => void;
+  onClaimYield?: () => void | Promise<void>;
   onLinkRWA?: () => void;
+  isClaiming?: boolean;
 }
 
 export function PropertyDetails({
@@ -27,6 +28,7 @@ export function PropertyDetails({
   onClose,
   onClaimYield,
   onLinkRWA,
+  isClaiming = false,
 }: PropertyDetailsProps) {
   if (!isOpen) return null;
 
@@ -100,8 +102,12 @@ export function PropertyDetails({
 
               <div className="flex gap-2 pt-2">
                 {onClaimYield && (
-                  <Button onClick={onClaimYield} className="flex-1 bg-emerald-600 hover:bg-emerald-700">
-                    Claim Yield
+                  <Button 
+                    onClick={onClaimYield} 
+                    disabled={isClaiming}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {isClaiming ? 'Claiming...' : 'Claim Yield'}
                   </Button>
                 )}
                 <Button onClick={onClose} variant="outline" className="flex-1">

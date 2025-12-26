@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
+import { useState, useEffect, useCallback } from 'react';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { parseEther } from 'viem';
 import { CityView } from '@/components/game/CityView';
 import { PropertyCard } from '@/components/game/PropertyCard';
 import { BuildMenu } from '@/components/game/BuildMenu';
@@ -9,10 +10,9 @@ import { YieldDisplay } from '@/components/game/YieldDisplay';
 import { PropertyDetails } from '@/components/game/PropertyDetails';
 import { GlobalChat } from '@/components/GlobalChat';
 import { WalletConnect } from '@/components/WalletConnect';
-import { MessageSquare, Building2, TrendingUp, Trophy } from 'lucide-react';
+import { MessageSquare, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { api } from '@/lib/api';
-import { getOwnerProperties, calculateYield, CONTRACTS, PropertyNFTABI } from '@/lib/contracts';
+import { getOwnerProperties, calculateYield, CONTRACTS, PROPERTY_NFT_ABI, YIELD_DISTRIBUTOR_ABI } from '@/lib/contracts';
 import { readContract } from 'wagmi/actions';
 import { wagmiConfig } from '@/lib/mantle-viem';
 
@@ -35,72 +35,154 @@ export default function GamePage() {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [showBuildMenu, setShowBuildMenu] = useState(false);
   const [showChat, setShowChat] = useState(false);
-  const [tokenBalance, setTokenBalance] = useState(0n);
-  const [totalPendingYield, setTotalPendingYield] = useState(0n);
-  const [totalYieldEarned, setTotalYieldEarned] = useState(0n);
+  const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0));
+  const [totalYieldEarned, setTotalYieldEarned] = useState<bigint>(BigInt(0));
   const [isLoading, setIsLoading] = useState(true);
+  const [isMinting, setIsMinting] = useState(false);
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [tokenBalanceValue, setTokenBalanceValue] = useState<bigint>(BigInt(0));
 
-  // Load properties
-  useEffect(() => {
+  // Load properties function
+  const loadProperties = useCallback(async () => {
     if (!address || !isConnected) return;
 
-    const loadProperties = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Get properties from backend
-        const backendProperties = await api.get(`/properties/owner/${address}`);
-        
-        // Get token IDs from contract
-        const tokenIds = await getOwnerProperties(address as `0x${string}`);
-        
-        // Map properties with positions
-        const mappedProperties: Property[] = await Promise.all(
-          tokenIds.map(async (tokenId, index) => {
-            const propData = await readContract(wagmiConfig, {
-              address: CONTRACTS.PropertyNFT,
-              abi: PROPERTY_NFT_ABI,
-              functionName: 'getProperty',
-              args: [tokenId],
-            });
-
-            return {
-              id: `prop-${tokenId}`,
-              tokenId: Number(tokenId),
-              propertyType: ['Residential', 'Commercial', 'Industrial', 'Luxury'][Number(propData.propertyType)] as Property['propertyType'],
-              value: BigInt(propData.value.toString()),
-              yieldRate: Number(propData.yieldRate),
-              totalYieldEarned: BigInt(propData.totalYieldEarned.toString()),
-              x: index % 10,
-              y: Math.floor(index / 10),
-              rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' ? propData.rwaContract : undefined,
-              rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId) : undefined,
-            };
-          })
-        );
-
-        setProperties(mappedProperties);
-
-        // Calculate total pending yield
-        let totalPending = 0n;
-        for (const tokenId of tokenIds) {
-          const yieldAmount = await calculateYield(tokenId);
-          totalPending += BigInt(yieldAmount.toString());
-        }
-        setTotalPendingYield(totalPending);
-
-        // Calculate total earned
-        const totalEarned = mappedProperties.reduce((sum, p) => sum + p.totalYieldEarned, 0n);
-        setTotalYieldEarned(totalEarned);
-      } catch (error) {
-        console.error('Failed to load properties:', error);
-      } finally {
+    try {
+      setIsLoading(true);
+      
+      // Get token IDs from contract
+      const tokenIds = await getOwnerProperties(address as `0x${string}`);
+      
+      if (tokenIds.length === 0) {
+        setProperties([]);
+        setTotalPendingYield(BigInt(0));
+        setTotalYieldEarned(BigInt(0));
         setIsLoading(false);
+        return;
       }
-    };
+      
+      // Map properties with positions
+      const mappedProperties: Property[] = await Promise.all(
+        tokenIds.map(async (tokenId: bigint, index: number) => {
+          const propData = await readContract(wagmiConfig, {
+            address: CONTRACTS.PropertyNFT,
+            abi: PROPERTY_NFT_ABI,
+            functionName: 'getProperty',
+            args: [tokenId],
+          });
 
-    loadProperties();
+          return {
+            id: `prop-${tokenId}`,
+            tokenId: Number(tokenId),
+            propertyType: ['Residential', 'Commercial', 'Industrial', 'Luxury'][Number(propData.propertyType)] as Property['propertyType'],
+            value: BigInt(propData.value.toString()),
+            yieldRate: Number(propData.yieldRate),
+            totalYieldEarned: BigInt(propData.totalYieldEarned.toString()),
+            x: index % 10,
+            y: Math.floor(index / 10),
+            rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' ? propData.rwaContract : undefined,
+            rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId) : undefined,
+          };
+        })
+      );
+
+      setProperties(mappedProperties);
+
+      // Calculate total pending yield
+      let totalPending = BigInt(0);
+      for (const tokenId of tokenIds) {
+        try {
+          const yieldAmount = await calculateYield(tokenId) as bigint;
+          totalPending += BigInt(yieldAmount.toString());
+        } catch (error) {
+          console.error(`Failed to calculate yield for property ${tokenId}:`, error);
+        }
+      }
+      setTotalPendingYield(totalPending);
+
+      // Calculate total earned
+      const totalEarned = mappedProperties.reduce((sum, p) => sum + p.totalYieldEarned, BigInt(0));
+      setTotalYieldEarned(totalEarned);
+    } catch (error) {
+      console.error('Failed to load properties:', error);
+    } finally {
+      setIsLoading(false);
+    }
   }, [address, isConnected]);
+  
+  // Load token balance function
+  const loadTokenBalance = useCallback(async () => {
+    if (!address) {
+      setTokenBalanceValue(BigInt(0));
+      return;
+    }
+    
+    try {
+      const balance = await readContract(wagmiConfig, {
+        address: CONTRACTS.GameToken,
+        abi: [
+          {
+            inputs: [{ name: 'account', type: 'address' }],
+            name: 'balanceOf',
+            outputs: [{ name: '', type: 'uint256' }],
+            stateMutability: 'view',
+            type: 'function',
+          },
+        ],
+        functionName: 'balanceOf',
+        args: [address],
+      });
+      setTokenBalanceValue(BigInt(balance.toString()));
+    } catch (error) {
+      console.error('Failed to load token balance:', error);
+      setTokenBalanceValue(BigInt(0));
+    }
+  }, [address]);
+
+  // Mint property transaction
+  const { writeContract: writeMint, data: mintHash, isPending: isMintPending } = useWriteContract();
+  
+  // Claim yield transaction
+  const { writeContract: writeClaim, data: claimHash, isPending: isClaimPending } = useWriteContract();
+
+  // Wait for mint transaction
+  const { isLoading: isMintConfirming, isSuccess: isMintSuccess } = useWaitForTransactionReceipt({
+    hash: mintHash,
+  });
+
+  // Wait for claim transaction
+  const { isLoading: isClaimConfirming, isSuccess: isClaimSuccess } = useWaitForTransactionReceipt({
+    hash: claimHash,
+  });
+
+  // Reload properties when mint succeeds
+  useEffect(() => {
+    if (isMintSuccess) {
+      loadProperties();
+      loadTokenBalance();
+      setIsMinting(false);
+    }
+  }, [isMintSuccess, loadProperties, loadTokenBalance]);
+
+  // Reload properties when claim succeeds
+  useEffect(() => {
+    if (isClaimSuccess) {
+      loadProperties();
+      loadTokenBalance();
+      setIsClaiming(false);
+    }
+  }, [isClaimSuccess, loadProperties, loadTokenBalance]);
+  
+  // Load token balance on mount and when address changes
+  useEffect(() => {
+    loadTokenBalance();
+  }, [loadTokenBalance]);
+
+  // Load properties on mount and when address changes
+  useEffect(() => {
+    if (address && isConnected) {
+      loadProperties();
+    }
+  }, [address, isConnected, loadProperties]);
 
   if (!isConnected || !address) {
     return (
@@ -144,9 +226,22 @@ export default function GamePage() {
             <YieldDisplay
               totalPendingYield={totalPendingYield}
               totalYieldEarned={totalYieldEarned}
-              onClaimAll={() => {
-                // TODO: Implement claim all yield
-                console.log('Claim all yield');
+              isClaiming={isClaiming || isClaimPending || isClaimConfirming}
+              onClaimAll={async () => {
+                if (!address || properties.length === 0) return;
+                try {
+                  setIsClaiming(true);
+                  const propertyIds = properties.map(p => BigInt(p.tokenId));
+                  writeClaim({
+                    address: CONTRACTS.YieldDistributor,
+                    abi: YIELD_DISTRIBUTOR_ABI,
+                    functionName: 'batchClaimYield',
+                    args: [propertyIds],
+                  });
+                } catch (error) {
+                  console.error('Failed to claim yield:', error);
+                  setIsClaiming(false);
+                }
               }}
             />
 
@@ -160,11 +255,45 @@ export default function GamePage() {
 
             {showBuildMenu && (
               <BuildMenu
-                tokenBalance={tokenBalance}
-                onBuildProperty={(type) => {
-                  // TODO: Implement property minting
-                  console.log('Build property:', type);
-                  setShowBuildMenu(false);
+                tokenBalance={tokenBalanceValue}
+                isMinting={isMinting || isMintPending || isMintConfirming}
+                onBuildProperty={async (type: 'Residential' | 'Commercial' | 'Industrial' | 'Luxury') => {
+                  if (!address) return;
+                  
+                  const propertyTypes: Record<string, number> = {
+                    Residential: 0,
+                    Commercial: 1,
+                    Industrial: 2,
+                    Luxury: 3,
+                  };
+                  
+                  const propertyCosts: Record<string, bigint> = {
+                    Residential: parseEther('100'),
+                    Commercial: parseEther('200'),
+                    Industrial: parseEther('500'),
+                    Luxury: parseEther('1000'),
+                  };
+                  
+                  const yieldRates: Record<string, bigint> = {
+                    Residential: parseEther('0.05'), // 5% APY
+                    Commercial: parseEther('0.08'), // 8% APY
+                    Industrial: parseEther('0.12'), // 12% APY
+                    Luxury: parseEther('0.15'), // 15% APY
+                  };
+
+                  try {
+                    setIsMinting(true);
+                    writeMint({
+                      address: CONTRACTS.PropertyNFT,
+                      abi: PROPERTY_NFT_ABI,
+                      functionName: 'mintProperty',
+                      args: [address, propertyTypes[type], propertyCosts[type], yieldRates[type]],
+                    });
+                    setShowBuildMenu(false);
+                  } catch (error) {
+                    console.error('Failed to mint property:', error);
+                    setIsMinting(false);
+                  }
                 }}
               />
             )}
@@ -181,9 +310,20 @@ export default function GamePage() {
               </div>
             ) : (
               <CityView
-                properties={properties}
-                onPropertyClick={(property) => setSelectedProperty(property)}
-                onEmptyTileClick={(x, y) => {
+                properties={properties.map(p => ({
+                  id: p.id,
+                  tokenId: p.tokenId,
+                  propertyType: p.propertyType,
+                  value: p.value,
+                  yieldRate: p.yieldRate,
+                  x: p.x,
+                  y: p.y,
+                }))}
+                onPropertyClick={(property) => {
+                  const fullProperty = properties.find(p => p.id === property.id);
+                  if (fullProperty) setSelectedProperty(fullProperty);
+                }}
+                onEmptyTileClick={(x: number, y: number) => {
                   if (showBuildMenu) {
                     // TODO: Place property at x, y
                     console.log('Place property at:', x, y);
@@ -209,9 +349,20 @@ export default function GamePage() {
                     key={property.id}
                     property={property}
                     onViewDetails={() => setSelectedProperty(property)}
-                    onClaimYield={() => {
-                      // TODO: Implement claim yield for specific property
-                      console.log('Claim yield for property:', property.tokenId);
+                    isClaiming={isClaiming || isClaimPending || isClaimConfirming}
+                    onClaimYield={async () => {
+                      try {
+                        setIsClaiming(true);
+                        writeClaim({
+                          address: CONTRACTS.YieldDistributor,
+                          abi: YIELD_DISTRIBUTOR_ABI,
+                          functionName: 'claimYield',
+                          args: [BigInt(property.tokenId)],
+                        });
+                      } catch (error) {
+                        console.error('Failed to claim yield:', error);
+                        setIsClaiming(false);
+                      }
                     }}
                   />
                 ))}
@@ -227,9 +378,22 @@ export default function GamePage() {
           property={selectedProperty}
           isOpen={!!selectedProperty}
           onClose={() => setSelectedProperty(null)}
-          onClaimYield={() => {
-            // TODO: Implement claim yield
-            console.log('Claim yield');
+          isClaiming={isClaiming || isClaimPending || isClaimConfirming}
+          onClaimYield={async () => {
+            if (!selectedProperty) return;
+            try {
+              setIsClaiming(true);
+              writeClaim({
+                address: CONTRACTS.YieldDistributor,
+                abi: YIELD_DISTRIBUTOR_ABI,
+                functionName: 'claimYield',
+                args: [BigInt(selectedProperty.tokenId)],
+              });
+              setSelectedProperty(null);
+            } catch (error) {
+              console.error('Failed to claim yield:', error);
+              setIsClaiming(false);
+            }
           }}
           onLinkRWA={() => {
             // TODO: Implement RWA linking
@@ -243,4 +407,3 @@ export default function GamePage() {
     </div>
   );
 }
-

@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject, InjectForwardRef } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { DATABASE_CONNECTION } from '../database/database.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../database/schema';
@@ -20,7 +20,7 @@ export class ChatService {
 
   constructor(
     @Inject(DATABASE_CONNECTION) private db: PostgresJsDatabase<typeof schema>,
-    @InjectForwardRef(() => WebsocketGateway) private websocketGateway: WebsocketGateway,
+    private websocketGateway: WebsocketGateway,
   ) {}
 
   async sendMessage(walletAddress: string, message: string): Promise<ChatMessageDto> {
@@ -85,7 +85,7 @@ export class ChatService {
     return messages.map((msg) => ({
       id: msg.id,
       userId: msg.userId,
-      walletAddress: msg.walletAddress,
+      walletAddress: msg.walletAddress || '',
       username: msg.username || undefined,
       message: msg.message,
       createdAt: msg.createdAt,

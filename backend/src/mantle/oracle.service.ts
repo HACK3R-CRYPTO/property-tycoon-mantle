@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 @Injectable()
 export class OracleService {
   private readonly logger = new Logger(OracleService.name);
-  private provider: ethers.JsonRpcProvider;
+  private provider: ethers.providers.JsonRpcProvider;
 
   // Chronicle Oracle addresses on Mantle
   private readonly ORACLE_ADDRESSES = {
@@ -21,7 +21,7 @@ export class OracleService {
   ];
 
   constructor() {
-    this.provider = new ethers.JsonRpcProvider(
+    this.provider = new ethers.providers.JsonRpcProvider(
       process.env.MANTLE_RPC_URL || 'https://rpc.mantle.xyz',
     );
   }

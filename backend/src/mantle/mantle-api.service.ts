@@ -129,5 +129,87 @@ export class MantleApiService {
       return 0;
     }
   }
+
+  /**
+   * Get L2 gas price
+   */
+  async getL2GasPrice(): Promise<bigint> {
+    try {
+      const response = await fetch(this.rpcUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_gasPrice',
+          params: [],
+          id: 1,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error.message);
+      }
+
+      return BigInt(data.result);
+    } catch (error) {
+      this.logger.error('Failed to get L2 gas price', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get L1 base fee
+   */
+  async getL1BaseFee(): Promise<bigint> {
+    try {
+      // Use GasPriceOracle contract address
+      const gasPriceOracleAddress = '0x420000000000000000000000000000000000000F';
+      const gasPriceOracleABI = [
+        'function l1BaseFee() view returns (uint256)',
+      ];
+
+      const response = await fetch(this.rpcUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_call',
+          params: [
+            {
+              to: gasPriceOracleAddress,
+              data: '0x519b4bd3', // l1BaseFee() function selector
+            },
+            'latest',
+          ],
+          id: 1,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error.message);
+      }
+
+      return BigInt(data.result);
+    } catch (error) {
+      this.logger.error('Failed to get L1 base fee', error);
+      throw error;
+    }
+  }
 }
 

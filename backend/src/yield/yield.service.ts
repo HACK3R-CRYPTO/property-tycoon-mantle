@@ -24,7 +24,7 @@ export class YieldService {
       const totalYield = await this.contractsService.getTotalPendingYield(walletAddress);
       return {
         totalPending: totalYield.toString(),
-        formatted: ethers.formatEther(totalYield),
+        formatted: ethers.utils.formatEther(totalYield.toString()),
       };
     } catch (error) {
       this.logger.error(`Error getting pending yield: ${error.message}`);
@@ -37,7 +37,7 @@ export class YieldService {
       const yieldAmount = await this.contractsService.calculateYield(BigInt(propertyId));
       return {
         pending: yieldAmount.toString(),
-        formatted: ethers.formatEther(yieldAmount),
+        formatted: ethers.utils.formatEther(yieldAmount.toString()),
       };
     } catch (error) {
       this.logger.error(`Error getting property yield: ${error.message}`);
@@ -92,7 +92,7 @@ export class YieldService {
 
       return {
         yieldAmount: yieldAmount.toString(),
-        formatted: ethers.formatEther(yieldAmount),
+        formatted: ethers.utils.formatEther(yieldAmount.toString()),
         yieldRate,
         days,
       };
@@ -115,8 +115,8 @@ export class YieldService {
         l2GasPrice: l2GasPrice.toString(),
         l1BaseFee: l1BaseFee.toString(),
         formatted: {
-          l2GasPrice: ethers.formatUnits(l2GasPrice, 'gwei'),
-          l1BaseFee: ethers.formatUnits(l1BaseFee, 'gwei'),
+          l2GasPrice: ethers.utils.formatUnits(l2GasPrice.toString(), 'gwei'),
+          l1BaseFee: ethers.utils.formatUnits(l1BaseFee.toString(), 'gwei'),
         },
       };
     } catch (error) {

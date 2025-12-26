@@ -1,10 +1,10 @@
 import { createConfig, http } from 'wagmi';
-import { mantle, mantleTestnet } from '@mantleio/viem/chains';
+import { mantle, mantleSepoliaTestnet } from '@mantleio/viem/chains';
 import { metaMask, walletConnect } from 'wagmi/connectors';
 
 // Determine which chain to use based on environment
 const chain = process.env.NEXT_PUBLIC_MANTLE_NETWORK === 'testnet' 
-  ? mantleTestnet 
+  ? mantleSepoliaTestnet 
   : mantle;
 
 // WalletConnect project ID (get from https://cloud.walletconnect.com)
@@ -24,7 +24,7 @@ export const wagmiConfig = createConfig({
 });
 
 // Export chain info for use in components
-export { chain, mantle, mantleTestnet };
+export { chain, mantle, mantleSepoliaTestnet };
 
 // Helper to get chain config
 export function getChainConfig() {
