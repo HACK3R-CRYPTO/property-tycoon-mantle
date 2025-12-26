@@ -1,98 +1,225 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Property Tycoon Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS backend for Property Tycoon. Manages properties. Distributes yield. Handles marketplace. Tracks quests. Updates leaderboards. Real-time updates via Socket.io. Mantle SDK integration. Oracle price feeds.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## What This Backend Does
 
-## Description
+You submit property minting requests. Backend validates and processes. You claim yield. Backend distributes rewards. You trade properties. Backend handles marketplace. You complete quests. Backend tracks progress. Leaderboard updates in real time. Portfolio values update instantly. Yield calculations happen automatically. All powered by Mantle Network.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Prerequisites
 
-## Project setup
+Install Node.js 18 or higher. Install npm or yarn. Set up PostgreSQL database. Configure Mantle network access. Have contract addresses ready.
+
+## Installation
+
+Navigate to backend directory:
 
 ```bash
-$ npm install
+cd property-tycoon-mantle/backend
 ```
 
-## Compile and run the project
+Install dependencies:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
 ```
 
-## Run tests
+Create `.env` file:
+
+```env
+# Database
+DATABASE_URL=postgresql://postgres:password@localhost:5432/property_tycoon
+
+# Mantle Network
+MANTLE_RPC_URL=https://rpc.sepolia.mantle.xyz
+L1_RPC_URL=https://eth.llamarpc.com
+
+# Contract Addresses (Mantle Sepolia Testnet)
+PROPERTY_NFT_ADDRESS=0x0AE7119c7187D88643fb7B409937B68828eE733D
+GAME_TOKEN_ADDRESS=0x32D9a9b9e241Da421f34786De0B39fD34D1EfeA8
+YIELD_DISTRIBUTOR_ADDRESS=0x8ee6365644426A4b21B062D05596613b8cbffbe3
+MARKETPLACE_ADDRESS=0x6389D7168029715DE118Baf51B6D32eE1EBEa46B
+QUEST_SYSTEM_ADDRESS=0xb5a595A6cd30D1798387A2c781E0646FCA8c4AeD
+
+# Oracle Addresses (Chronicle)
+CHRONICLE_USDC_ORACLE=0x0000000000000000000000000000000000000000
+CHRONICLE_USDT_ORACLE=0x0000000000000000000000000000000000000000
+CHRONICLE_ETH_ORACLE=0x0000000000000000000000000000000000000000
+CHRONICLE_MNT_ORACLE=0x0000000000000000000000000000000000000000
+
+# Private Key (for contract interactions)
+PRIVATE_KEY=your_private_key_here
+
+# Server
+PORT=3001
+```
+
+## Database Setup
+
+Start PostgreSQL using Docker:
 
 ```bash
-# unit tests
-$ npm run test
+docker-compose up -d postgres
+```
 
-# e2e tests
-$ npm run test:e2e
+Run migrations (when implemented):
 
-# test coverage
-$ npm run test:cov
+```bash
+npm run migration:run
+```
+
+## Development
+
+Start development server:
+
+```bash
+npm run start:dev
+```
+
+Server runs on http://localhost:3001
+
+## Build for Production
+
+```bash
+npm run build
+npm run start:prod
+```
+
+## Project Structure
+
+```
+backend/
+├── src/
+│   ├── mantle/
+│   │   ├── mantle-sdk.service.ts      # Mantle SDK integration
+│   │   ├── oracle.service.ts          # Chronicle Oracle integration
+│   │   ├── mantle-api.service.ts     # Mantle custom API methods
+│   │   └── mantle.module.ts
+│   ├── properties/
+│   │   ├── properties.module.ts
+│   │   ├── properties.controller.ts
+│   │   └── properties.service.ts
+│   ├── yield/
+│   │   ├── yield.module.ts
+│   │   ├── yield.controller.ts
+│   │   └── yield.service.ts
+│   ├── marketplace/
+│   │   ├── marketplace.module.ts
+│   │   ├── marketplace.controller.ts
+│   │   └── marketplace.service.ts
+│   ├── quests/
+│   │   ├── quests.module.ts
+│   │   ├── quests.controller.ts
+│   │   └── quests.service.ts
+│   ├── leaderboard/
+│   │   ├── leaderboard.module.ts
+│   │   ├── leaderboard.controller.ts
+│   │   └── leaderboard.service.ts
+│   ├── websocket/
+│   │   ├── websocket.gateway.ts       # Socket.io real-time updates
+│   │   └── websocket.module.ts
+│   ├── database/
+│   │   ├── schema.ts                  # Drizzle schema
+│   │   └── database.module.ts
+│   └── app.module.ts
+├── package.json
+└── README.md
+```
+
+## API Endpoints
+
+### Properties
+
+GET /properties - List all properties
+
+GET /properties/:id - Get property by ID
+
+GET /properties/owner/:address - Get properties by owner
+
+POST /properties/mint - Mint new property
+
+### Yield
+
+GET /yield/pending/:address - Get pending yield for address
+
+POST /yield/claim - Claim yield for property
+
+POST /yield/batch-claim - Batch claim yield
+
+### Marketplace
+
+GET /marketplace/listings - Get all listings
+
+POST /marketplace/list - List property for sale
+
+POST /marketplace/buy - Buy property
+
+### Quests
+
+GET /quests - List all quests
+
+GET /quests/progress/:address - Get quest progress
+
+POST /quests/complete - Complete quest
+
+### Leaderboard
+
+GET /leaderboard - Global leaderboard
+
+GET /leaderboard/neighborhood/:id - Neighborhood leaderboard
+
+## Mantle Integration
+
+Backend uses Mantle SDK for cross-chain features. Oracle service fetches prices from Chronicle. Mantle API service uses custom methods. Event indexer listens to contract events. Real-time updates via Socket.io.
+
+### Mantle SDK
+
+Cross-chain messaging. Asset bridging. Gas estimation. Message status checking.
+
+### Oracle Service
+
+Chronicle Oracle integration. USDC/USDT price feeds. Property yield rate calculation. RWA property value fetching.
+
+### Mantle API
+
+eth_getBlockRange for efficient batch queries. rollup_getInfo for node monitoring. Custom Mantle methods.
+
+## Real-Time Updates
+
+Socket.io handles real-time updates. Events emitted when properties created. Events emitted when yield claimed. Events emitted when marketplace trades. Events emitted when leaderboard updates. Frontend subscribes to events. Updates happen instantly.
+
+## Event Indexing
+
+Backend listens to contract events. PropertyCreated events update database. YieldClaimed events update leaderboards. MarketplaceTrade events update listings. QuestCompleted events update progress. All events indexed automatically.
+
+## Contract Addresses
+
+Update contract addresses in `.env` after deployment:
+
+Property NFT: 0x0000000000000000000000000000000000000000
+
+Game Token: 0x0000000000000000000000000000000000000000
+
+Yield Distributor: 0x0000000000000000000000000000000000000000
+
+Marketplace: 0x0000000000000000000000000000000000000000
+
+Quest System: 0x0000000000000000000000000000000000000000
+
+## Testing
+
+Run unit tests:
+
+```bash
+npm run test
+```
+
+Run e2e tests:
+
+```bash
+npm run test:e2e
 ```
 
 ## Deployment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Deploy to your preferred platform. Set environment variables. Configure database connection. Update contract addresses. Start server.

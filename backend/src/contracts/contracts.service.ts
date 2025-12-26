@@ -1,0 +1,111 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ethers } from 'ethers';
+import * as PropertyNFTABI from './abis/PropertyNFT.json';
+import * as GameTokenABI from './abis/GameToken.json';
+import * as YieldDistributorABI from './abis/YieldDistributor.json';
+import * as MarketplaceABI from './abis/Marketplace.json';
+import * as QuestSystemABI from './abis/QuestSystem.json';
+
+@Injectable()
+export class ContractsService {
+  private readonly logger = new Logger(ContractsService.name);
+  private provider: ethers.providers.JsonRpcProvider;
+  private wallet: ethers.Wallet;
+  
+  public propertyNFT: ethers.Contract;
+  public gameToken: ethers.Contract;
+  public yieldDistributor: ethers.Contract;
+  public marketplace: ethers.Contract;
+  public questSystem: ethers.Contract;
+
+  constructor(private configService: ConfigService) {
+    this.initializeContracts();
+  }
+
+  private initializeContracts() {
+    try {
+      const rpcUrl = this.configService.get<string>('MANTLE_RPC_URL');
+      const privateKey = this.configService.get<string>('PRIVATE_KEY');
+
+      if (!rpcUrl || !privateKey) {
+        this.logger.error('Missing MANTLE_RPC_URL or PRIVATE_KEY for contract service.');
+        return;
+      }
+
+      this.provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+      this.wallet = new ethers.Wallet(privateKey, this.provider);
+
+      const propertyNFTAddress = this.configService.get<string>('PROPERTY_NFT_ADDRESS');
+      const gameTokenAddress = this.configService.get<string>('GAME_TOKEN_ADDRESS');
+      const yieldDistributorAddress = this.configService.get<string>('YIELD_DISTRIBUTOR_ADDRESS');
+      const marketplaceAddress = this.configService.get<string>('MARKETPLACE_ADDRESS');
+      const questSystemAddress = this.configService.get<string>('QUEST_SYSTEM_ADDRESS');
+
+      if (propertyNFTAddress) {
+        this.propertyNFT = new ethers.Contract(propertyNFTAddress, PropertyNFTABI as any, this.wallet);
+      }
+      if (gameTokenAddress) {
+        this.gameToken = new ethers.Contract(gameTokenAddress, GameTokenABI as any, this.wallet);
+      }
+      if (yieldDistributorAddress) {
+        this.yieldDistributor = new ethers.Contract(yieldDistributorAddress, YieldDistributorABI as any, this.wallet);
+      }
+      if (marketplaceAddress) {
+        this.marketplace = new ethers.Contract(marketplaceAddress, MarketplaceABI as any, this.wallet);
+      }
+      if (questSystemAddress) {
+        this.questSystem = new ethers.Contract(questSystemAddress, QuestSystemABI as any, this.wallet);
+      }
+
+      this.logger.log('Smart contracts initialized with wallet signer.');
+    } catch (error) {
+      this.logger.error('Failed to initialize smart contracts:', error);
+    }
+  }
+
+  getProvider(): ethers.providers.JsonRpcProvider {
+    return this.provider;
+  }
+
+  getWallet(): ethers.Wallet {
+    return this.wallet;
+  }
+
+  async getProperty(tokenId: bigint) {
+    return this.propertyNFT.getProperty(tokenId);
+  }
+
+  async getOwnerProperties(ownerAddress: string) {
+    return this.propertyNFT.getOwnerProperties(ownerAddress);
+  }
+
+  async getOwnerPropertyCount(ownerAddress: string) {
+    return this.propertyNFT.getOwnerPropertyCount(ownerAddress);
+  }
+
+  async calculateYield(propertyId: bigint) {
+    return this.yieldDistributor.calculateYield(propertyId);
+  }
+
+  async getTotalPendingYield(ownerAddress: string) {
+    return this.yieldDistributor.getTotalPendingYield(ownerAddress);
+  }
+
+  async getListing(propertyId: bigint) {
+    return this.marketplace.listings(propertyId);
+  }
+
+  async getAuction(propertyId: bigint) {
+    return this.marketplace.auctions(propertyId);
+  }
+
+  async hasCompletedQuest(playerAddress: string, questType: number) {
+    return this.questSystem.hasCompletedQuest(playerAddress, questType);
+  }
+
+  async getTotalQuestsCompleted(playerAddress: string) {
+    return this.questSystem.getTotalQuestsCompleted(playerAddress);
+  }
+}
+
