@@ -10,6 +10,7 @@ import { YieldModule } from './yield/yield.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
 import { QuestsModule } from './quests/quests.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { ChatModule } from './chat/chat.module';
 import { WebsocketGateway } from './websocket/websocket.gateway';
 import { EventsModule } from './events/events.module';
 
@@ -24,6 +25,7 @@ import { EventsModule } from './events/events.module';
     MarketplaceModule,
     QuestsModule,
     LeaderboardModule,
+    ChatModule,
     EventsModule,
   ],
   controllers: [AppController],

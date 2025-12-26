@@ -206,6 +206,10 @@ backend/
 │   │   ├── leaderboard.controller.ts
 │   │   ├── leaderboard.service.ts
 │   │   └── leaderboard.module.ts
+│   ├── chat/                      # Global chat system
+│   │   ├── chat.controller.ts
+│   │   ├── chat.service.ts
+│   │   └── chat.module.ts
 │   └── websocket/                 # Real-time updates
 │       └── websocket.gateway.ts   # Socket.io gateway
 ├── package.json
@@ -465,6 +469,70 @@ Get global leaderboard rankings.
 ]
 ```
 
+### Chat
+
+#### POST /chat
+Send a chat message.
+
+**Request Body:**
+```json
+{
+  "message": "Hello everyone!",
+  "walletAddress": "0x..."
+}
+```
+
+**Headers:**
+- `x-wallet-address` (optional) - Wallet address if not in body
+
+**Response:**
+```json
+{
+  "id": "uuid",
+  "userId": "uuid",
+  "walletAddress": "0x...",
+  "username": "Player1",
+  "message": "Hello everyone!",
+  "createdAt": "2024-01-01T00:00:00Z"
+}
+```
+
+#### GET /chat/messages
+Get recent chat messages.
+
+**Query Parameters:**
+- `limit` (number, optional) - Number of messages (default: 50)
+
+**Response:**
+```json
+[
+  {
+    "id": "uuid",
+    "walletAddress": "0x...",
+    "username": "Player1",
+    "message": "Hello everyone!",
+    "createdAt": "2024-01-01T00:00:00Z"
+  }
+]
+```
+
+**Query Parameters:**
+- `limit` (number, optional) - Number of results (default: 100)
+
+**Response:**
+```json
+[
+  {
+    "userId": "uuid",
+    "totalPortfolioValue": "1000000000000000000000",
+    "totalYieldCollected": "50000000000000000000",
+    "propertiesOwned": "5",
+    "questsCompleted": "3",
+    "rank": 1
+  }
+]
+```
+
 ## Services
 
 ### PropertiesService
@@ -519,6 +587,14 @@ Calculates and maintains leaderboard rankings.
 - `getGlobalLeaderboard(limit: number)` - Get global rankings
 - `updateLeaderboard(userId: string)` - Update user's leaderboard entry
 - `calculateRankings()` - Recalculate all rankings
+
+### ChatService
+
+Manages global chat messages.
+
+**Methods:**
+- `sendMessage(walletAddress: string, message: string)` - Send a chat message
+- `getRecentMessages(limit: number)` - Get recent messages (default: 50)
 
 ### ContractsService
 
@@ -577,6 +653,23 @@ Subscribe to portfolio updates for a wallet address.
 
 ```javascript
 socket.emit('subscribe:portfolio', { address: '0x...' });
+```
+
+#### subscribe:chat
+Subscribe to global chat messages.
+
+```javascript
+socket.emit('subscribe:chat');
+```
+
+#### chat:message
+Send a chat message via WebSocket (alternative to REST API).
+
+```javascript
+socket.emit('chat:message', { 
+  walletAddress: '0x...', 
+  message: 'Hello!' 
+});
 ```
 
 ### Server → Client
