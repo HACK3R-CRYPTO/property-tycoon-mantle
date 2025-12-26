@@ -59,7 +59,7 @@ export default function GamePage() {
           tokenIds.map(async (tokenId, index) => {
             const propData = await readContract(wagmiConfig, {
               address: CONTRACTS.PropertyNFT,
-              abi: PropertyNFTABI,
+              abi: PROPERTY_NFT_ABI,
               functionName: 'getProperty',
               args: [tokenId],
             });
