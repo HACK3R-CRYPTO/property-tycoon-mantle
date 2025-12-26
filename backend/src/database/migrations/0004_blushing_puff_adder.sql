@@ -1,0 +1,1 @@
+ALTER TABLE "buildings" ADD COLUMN "construction_completed_at" timestamp DEFAULT now() NOT NULL;
