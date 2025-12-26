@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import { useAccount } from 'wagmi';
 import { WalletConnect } from '@/components/WalletConnect';
 import { GlobalChat } from '@/components/GlobalChat';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Home() {
+  const { isConnected } = useAccount();
   const [chatOpen, setChatOpen] = useState(false);
 
   return (
@@ -41,7 +43,7 @@ export default function Home() {
             <p className="text-xl text-gray-300 mb-8">
               Invest in properties. Earn real yield. Compete on the leaderboard.
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8 mb-8">
               <div className="bg-white/10 backdrop-blur-md rounded-lg p-6 border border-white/10">
                 <h3 className="text-xl font-semibold text-white mb-2">Buy Properties</h3>
                 <p className="text-gray-300">Purchase residential, commercial, and luxury properties</p>
@@ -55,6 +57,14 @@ export default function Home() {
                 <p className="text-gray-300">Sell properties on the marketplace and climb the leaderboard</p>
               </div>
             </div>
+            {isConnected && (
+              <a href="/game">
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white text-lg px-8 py-6">
+                  <Building2 className="w-5 h-5 mr-2" />
+                  Enter Game
+                </Button>
+              </a>
+            )}
           </div>
         </div>
       </main>
