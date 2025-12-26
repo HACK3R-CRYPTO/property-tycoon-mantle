@@ -734,6 +734,19 @@ Emitted to leaderboard subscribers when rankings change.
 }
 ```
 
+#### chat:new
+Emitted to chat subscribers when a new message is sent.
+
+```json
+{
+  "id": "uuid",
+  "walletAddress": "0x...",
+  "username": "Player1",
+  "message": "Hello everyone!",
+  "createdAt": "2024-01-01T00:00:00Z"
+}
+```
+
 ## Mantle Integration
 
 ### Mantle SDK Service
