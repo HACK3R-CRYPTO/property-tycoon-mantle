@@ -3,10 +3,10 @@ version: '3.8'
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: clash-on-somnia-db
+    container_name: property-tycoon-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: clash_on_somnia
+      POSTGRES_DB: property_tycoon
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     ports:
