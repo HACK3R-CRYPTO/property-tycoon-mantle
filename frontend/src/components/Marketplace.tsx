@@ -133,10 +133,22 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
       return;
     }
     try {
+      console.log('Loading properties for address:', address);
       const properties = await api.get(`/properties/owner/${address}`);
       console.log('Loaded properties for listing:', properties);
+      console.log('Properties count:', Array.isArray(properties) ? properties.length : 'not an array');
+      
       // Ensure properties is an array
       if (Array.isArray(properties)) {
+        // Log each property to see its structure
+        properties.forEach((p: any, idx: number) => {
+          console.log(`Property ${idx}:`, {
+            tokenId: p.tokenId,
+            propertyType: p.propertyType,
+            value: p.value,
+            isActive: p.isActive,
+          });
+        });
         setMyProperties(properties);
       } else {
         console.warn('Properties API returned non-array:', properties);
