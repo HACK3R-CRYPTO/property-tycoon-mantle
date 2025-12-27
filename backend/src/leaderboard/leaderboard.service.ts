@@ -339,36 +339,55 @@ export class LeaderboardService {
               
               this.logger.log(`Inserted property ${tokenIdNum} for ${normalizedAddress}`);
             } catch (insertError: any) {
+              // Log the full error to understand what's happening
+              const errorMsg = insertError.message || String(insertError);
+              const errorStr = JSON.stringify(insertError, null, 2);
+              
               // If insert fails due to unique constraint, update instead
-              if (insertError.message && (
-                insertError.message.includes('unique') || 
-                insertError.message.includes('duplicate') ||
-                insertError.message.includes('violates unique constraint')
-              )) {
+              // Check multiple ways the error might be represented
+              const isUniqueError = 
+                errorMsg.includes('unique') || 
+                errorMsg.includes('duplicate') ||
+                errorMsg.includes('violates unique constraint') ||
+                errorMsg.includes('23505') || // PostgreSQL unique violation error code
+                insertError.code === '23505' ||
+                (insertError as any).code === '23505';
+              
+              if (isUniqueError) {
                 // Property already exists, update it
-                await this.db
-                  .update(schema.properties)
-                  .set({
-                    ownerId: user.id,
-                    propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
-                    value: BigInt(propData.value.toString()),
-                    yieldRate: yieldRateValue,
-                    rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-                      ? propData.rwaContract 
-                      : undefined,
-                    rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
-                    updatedAt: new Date(),
-                  })
-                  .where(eq(schema.properties.tokenId, tokenIdNum));
-                
-                this.logger.log(`Updated property ${tokenIdNum} for ${normalizedAddress} (was duplicate)`);
+                try {
+                  await this.db
+                    .update(schema.properties)
+                    .set({
+                      ownerId: user.id,
+                      propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
+                      value: BigInt(propData.value.toString()),
+                      yieldRate: yieldRateValue,
+                      rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+                        ? propData.rwaContract 
+                        : undefined,
+                      rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
+                      updatedAt: new Date(),
+                    })
+                    .where(eq(schema.properties.tokenId, tokenIdNum));
+                  
+                  this.logger.log(`Updated property ${tokenIdNum} for ${normalizedAddress} (was duplicate)`);
+                } catch (updateError: any) {
+                  this.logger.error(`Failed to update property ${tokenIdNum} after duplicate insert: ${updateError.message}`);
+                  // Continue anyway
+                }
               } else {
+                // Log the actual error for debugging
+                this.logger.error(`Insert failed for property ${tokenIdNum}, not a unique constraint: ${errorMsg}`);
+                this.logger.error(`Full error: ${errorStr}`);
                 // Re-throw if it's not a unique constraint error
                 throw insertError;
               }
             }
           } catch (dbError: any) {
-            this.logger.error(`Database error syncing property ${tokenIdNum}: ${dbError.message}`, dbError.stack);
+            const errorMsg = dbError.message || String(dbError);
+            this.logger.error(`Database error syncing property ${tokenIdNum}: ${errorMsg}`);
+            this.logger.error(`Error details: ${JSON.stringify(dbError, null, 2)}`);
             // Continue with next property even if this one fails
           }
         } catch (error) {
