@@ -8,6 +8,8 @@ import * as schema from '../database/schema';
 import { eq } from 'drizzle-orm';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { MantleApiService } from '../mantle/mantle-api.service';
+import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { GuildsService } from '../guilds/guilds.service';
 
 @Injectable()
 export class EventIndexerService implements OnModuleInit {
@@ -22,6 +24,8 @@ export class EventIndexerService implements OnModuleInit {
     @Inject(DATABASE_CONNECTION) private db: PostgresJsDatabase<typeof schema>,
     private websocketGateway: WebsocketGateway,
     private mantleApiService: MantleApiService,
+    private leaderboardService: LeaderboardService,
+    private guildsService: GuildsService,
   ) {}
 
   async onModuleInit() {
@@ -307,6 +311,15 @@ export class EventIndexerService implements OnModuleInit {
         propertyType: property.propertyType,
       });
 
+      // Update leaderboard
+      await this.leaderboardService.updateLeaderboard(user.id);
+
+      // Update guild stats if user is in a guild
+      const userGuild = await this.guildsService.getUserGuild(user.id);
+      if (userGuild) {
+        await this.guildsService.updateGuildStats(userGuild.id);
+      }
+
       this.logger.log(`Property created in database: ${property.id}`);
     } catch (error) {
       this.logger.error(`Error handling PropertyCreated: ${error.message}`, error.stack);
@@ -385,6 +398,15 @@ export class EventIndexerService implements OnModuleInit {
           .returning();
       }
 
+      // Get old owner from property
+      const [property] = await this.db
+        .select()
+        .from(schema.properties)
+        .where(eq(schema.properties.tokenId, Number(tokenId)))
+        .limit(1);
+
+      const oldOwnerId = property?.ownerId;
+
       // Update property owner
       await this.db
         .update(schema.properties)
@@ -393,6 +415,21 @@ export class EventIndexerService implements OnModuleInit {
           updatedAt: new Date(),
         })
         .where(eq(schema.properties.tokenId, Number(tokenId)));
+
+      // Update leaderboards for both old and new owners
+      if (oldOwnerId) {
+        await this.leaderboardService.updateLeaderboard(oldOwnerId);
+        const oldOwnerGuild = await this.guildsService.getUserGuild(oldOwnerId);
+        if (oldOwnerGuild) {
+          await this.guildsService.updateGuildStats(oldOwnerGuild.id);
+        }
+      }
+
+      await this.leaderboardService.updateLeaderboard(newOwner.id);
+      const newOwnerGuild = await this.guildsService.getUserGuild(newOwner.id);
+      if (newOwnerGuild) {
+        await this.guildsService.updateGuildStats(newOwnerGuild.id);
+      }
 
       this.logger.log(`Property ${tokenId} transferred to ${to}`);
     } catch (error) {

@@ -13,7 +13,9 @@ import { WalletConnect } from '@/components/WalletConnect';
 import { GameGuide } from '@/components/game/GameGuide';
 import { Leaderboard } from '@/components/Leaderboard';
 import { Guilds } from '@/components/Guilds';
-import { MessageSquare, Building2, BookOpen, Trophy, Users } from 'lucide-react';
+import { Marketplace } from '@/components/Marketplace';
+import { Quests } from '@/components/Quests';
+import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getOwnerProperties, calculateYield, CONTRACTS, PROPERTY_NFT_ABI, YIELD_DISTRIBUTOR_ABI } from '@/lib/contracts';
 import { readContract } from 'wagmi/actions';
@@ -43,6 +45,8 @@ export default function GamePage() {
   const [showGuide, setShowGuide] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showGuilds, setShowGuilds] = useState(false);
+  const [showMarketplace, setShowMarketplace] = useState(false);
+  const [showQuests, setShowQuests] = useState(false);
   const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0));
   const [totalYieldEarned, setTotalYieldEarned] = useState<bigint>(BigInt(0));
   const [isLoading, setIsLoading] = useState(true);
@@ -443,6 +447,22 @@ export default function GamePage() {
               <Users className="w-4 h-4 mr-2" />
               Guilds
             </Button>
+            <Button
+              onClick={() => setShowMarketplace(!showMarketplace)}
+              variant="outline"
+              className="border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+            >
+              <ShoppingBag className="w-4 h-4 mr-2" />
+              Marketplace
+            </Button>
+            <Button
+              onClick={() => setShowQuests(!showQuests)}
+              variant="outline"
+              className="border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10"
+            >
+              <Target className="w-4 h-4 mr-2" />
+              Quests
+            </Button>
             <WalletConnect />
             <Button
               onClick={() => setShowChat(true)}
@@ -674,6 +694,40 @@ export default function GamePage() {
             </div>
             <div className="p-4">
               <Guilds />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Marketplace Modal */}
+      {showMarketplace && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Marketplace</h2>
+              <Button onClick={() => setShowMarketplace(false)} variant="ghost" size="sm">
+                ✕
+              </Button>
+            </div>
+            <div className="p-4">
+              <Marketplace />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quests Modal */}
+      {showQuests && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Quests</h2>
+              <Button onClick={() => setShowQuests(false)} variant="ghost" size="sm">
+                ✕
+              </Button>
+            </div>
+            <div className="p-4">
+              <Quests />
             </div>
           </div>
         </div>

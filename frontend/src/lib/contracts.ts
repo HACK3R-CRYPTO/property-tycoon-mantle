@@ -100,6 +100,26 @@ export const YIELD_DISTRIBUTOR_ABI = [
   },
 ] as const;
 
+export const MARKETPLACE_ABI = [
+  {
+    inputs: [{ name: 'propertyId', type: 'uint256' }],
+    name: 'buyProperty',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+] as const;
+
+export const QUEST_SYSTEM_ABI = [
+  {
+    inputs: [{ name: 'questType', type: 'uint256' }],
+    name: 'claimQuestReward',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+] as const;
+
 /**
  * Mint a property NFT
  */

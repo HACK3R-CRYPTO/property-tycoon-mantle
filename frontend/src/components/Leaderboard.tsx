@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Trophy, Medal, Award, TrendingUp } from 'lucide-react';
+import { Trophy, Medal, Award, TrendingUp, ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
+import { VisitPortfolio } from './VisitPortfolio';
 
 interface LeaderboardEntry {
   rank: number;
@@ -20,6 +22,7 @@ export function Leaderboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'global' | 'guilds'>('global');
   const [guildLeaderboard, setGuildLeaderboard] = useState<any[]>([]);
+  const [visitingPortfolio, setVisitingPortfolio] = useState<{ address: string; username?: string } | null>(null);
 
   useEffect(() => {
     loadLeaderboard();
@@ -111,9 +114,20 @@ export function Leaderboard() {
                       </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-emerald-400 font-semibold">{formatValue(entry.totalPortfolioValue)} TYCOON</p>
-                    <p className="text-xs text-gray-400">Yield: {formatValue(entry.totalYieldEarned)}</p>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-emerald-400 font-semibold">{formatValue(entry.totalPortfolioValue)} TYCOON</p>
+                      <p className="text-xs text-gray-400">Yield: {formatValue(entry.totalYieldEarned)}</p>
+                    </div>
+                    <Button
+                      onClick={() => setVisitingPortfolio({ address: entry.walletAddress, username: entry.username })}
+                      variant="outline"
+                      size="sm"
+                      className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+                    >
+                      <ExternalLink className="w-3 h-3 mr-1" />
+                      Visit
+                    </Button>
                   </div>
                 </div>
               ))
@@ -148,6 +162,14 @@ export function Leaderboard() {
           </div>
         )}
       </CardContent>
+
+      {visitingPortfolio && (
+        <VisitPortfolio
+          walletAddress={visitingPortfolio.address}
+          username={visitingPortfolio.username}
+          onClose={() => setVisitingPortfolio(null)}
+        />
+      )}
     </Card>
   );
 }

@@ -50,17 +50,17 @@ Example: Buy 1000 TYCOON tokens once. Mint 5 properties. Properties generate yie
 
 ## Multiplayer Features
 
-See other players portfolios. Visit top tycoons. Browse their properties. See how they arranged their empire. Learn from the best. Get inspired by successful portfolios.
+See other players portfolios. Visit top tycoons. Browse their properties. See how they arranged their empire. Learn from the best. Get inspired by successful portfolios. Click "Visit" on any leaderboard entry to view their complete portfolio.
 
-Global leaderboard shows all players. Ranked by portfolio value. Ranked by total yield. Ranked by properties owned. See your position. See top ten. Updates in real time.
+Global leaderboard shows all players. Ranked by portfolio value. Ranked by total yield. Ranked by properties owned. See your position. See top ten. Updates automatically when properties change. Leaderboard refreshes in real time via WebSocket events.
 
-Marketplace connects players. Browse properties for sale. See seller information. View property details. Buy from other players. Sell your properties. Set your prices. Trade with community. No need to always mint new. Buy from others.
+Guilds create communities. Join existing guilds. Create your own guild. See guild members properties. Share guild benefits. Compete in guild leaderboards. Guild stats update automatically when members properties change. Combined portfolio value and yield tracking.
 
-Neighborhoods create communities. Join existing neighborhoods. Create your own neighborhood. See neighbors properties. Share neighborhood benefits. Compete in neighborhood leaderboards. Chat with neighbors. Collaborate on strategies. Group discounts on property purchases.
+Marketplace connects players. Browse properties for sale. See seller information. View property details. Buy from other players. Sell your properties. Set your prices. Trade with community. No need to always mint new. Buy from others. Fixed price and auction listings supported.
+
+Quest system rewards players. Complete investment challenges. Diversify your portfolio. Optimize your yield. Earn bonus rewards. Unlock achievements. Track progress in real time. Claim rewards when completed.
 
 Global chat connects everyone. Talk with all players. Share tips and strategies. Announce property sales. Discuss market trends. Real-time messaging. Build community.
-
-Friends system. Add friends. See friends portfolios. Compare progress. Challenge friends. Learn together.
 
 ## Real-Time Features
 
