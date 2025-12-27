@@ -1,14 +1,20 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { DATABASE_CONNECTION } from '../database/database.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../database/schema';
 import { desc, sql, eq, and } from 'drizzle-orm';
+import { PropertiesService } from '../properties/properties.service';
+import { ContractsService } from '../contracts/contracts.service';
 
 @Injectable()
 export class LeaderboardService {
   private readonly logger = new Logger(LeaderboardService.name);
 
-  constructor(@Inject(DATABASE_CONNECTION) private db: PostgresJsDatabase<typeof schema>) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private db: PostgresJsDatabase<typeof schema>,
+    @Inject(forwardRef(() => PropertiesService)) private propertiesService: PropertiesService,
+    private contractsService: ContractsService,
+  ) {}
 
   async getGlobalLeaderboard(limit: number = 100) {
     const rankings = await this.db
@@ -40,10 +46,20 @@ export class LeaderboardService {
       .limit(1);
 
     if (!user) {
+      this.logger.warn(`User ${userId} not found for leaderboard update`);
       return;
     }
 
-    // Get user's properties
+    // Sync properties from blockchain first to ensure we have all properties
+    try {
+      this.logger.log(`Syncing properties from blockchain for user ${user.walletAddress} before leaderboard update`);
+      await this.propertiesService.syncFromChain(user.walletAddress);
+    } catch (error) {
+      this.logger.error(`Failed to sync properties for leaderboard update: ${error.message}`, error.stack);
+      // Continue with database properties even if sync fails
+    }
+
+    // Get user's properties (now synced from blockchain)
     const properties = await this.db
       .select()
       .from(schema.properties)
@@ -104,6 +120,40 @@ export class LeaderboardService {
       await this.db.insert(schema.leaderboard).values(leaderboardData);
     }
 
-    this.logger.log(`Updated leaderboard for user ${userId}`);
+    const portfolioValueStr = (Number(totalPortfolioValue) / 1e18).toFixed(2);
+    this.logger.log(`Updated leaderboard for user ${userId}: ${properties.length} properties, ${portfolioValueStr} TYCOON portfolio`);
+  }
+
+  async syncAndUpdateLeaderboard(walletAddress: string) {
+    const normalizedAddress = walletAddress.toLowerCase();
+    
+    // Find or create user
+    let [user] = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.walletAddress, normalizedAddress))
+      .limit(1);
+
+    if (!user) {
+      // Try to sync properties first, which will create the user
+      try {
+        await this.propertiesService.syncFromChain(walletAddress);
+        [user] = await this.db
+          .select()
+          .from(schema.users)
+          .where(eq(schema.users.walletAddress, normalizedAddress))
+          .limit(1);
+      } catch (error) {
+        this.logger.error(`Failed to sync user ${walletAddress}: ${error.message}`);
+        throw error;
+      }
+    }
+
+    if (!user) {
+      throw new Error(`User not found and could not be created for ${walletAddress}`);
+    }
+
+    // Sync properties and update leaderboard
+    await this.updateLeaderboard(user.id);
   }
 }

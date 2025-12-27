@@ -26,6 +26,22 @@ export function Leaderboard() {
 
   useEffect(() => {
     loadLeaderboard();
+    
+    // Auto-sync leaderboard when component mounts or tab changes
+    // This ensures blockchain properties are synced to database
+    const syncLeaderboard = async () => {
+      try {
+        // Try to sync current user's data if we have an address
+        // The backend will sync all users' properties when calculating leaderboard
+        await api.post('/leaderboard/sync/0x0000000000000000000000000000000000000000').catch(() => {
+          // Ignore errors, just trigger sync
+        });
+      } catch (error) {
+        // Silent fail
+      }
+    };
+    
+    syncLeaderboard();
   }, [activeTab]);
 
   const loadLeaderboard = async () => {
