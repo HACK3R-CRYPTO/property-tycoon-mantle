@@ -74,6 +74,9 @@ export class LeaderboardService {
       return rankings.map((r, index) => ({
         ...r,
         rank: index + 1,
+        // Convert BigInt values to strings for JSON serialization
+        totalPortfolioValue: r.totalPortfolioValue ? r.totalPortfolioValue.toString() : '0',
+        totalYieldEarned: r.totalYieldEarned ? r.totalYieldEarned.toString() : '0',
       }));
     } catch (error) {
       this.logger.error(`Error fetching leaderboard: ${error.message}`, error.stack);
