@@ -137,40 +137,82 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
     }
     try {
       console.log('Loading properties for address:', address);
-      const properties = await api.get(`/properties/owner/${address}`);
-      console.log('Loaded properties for listing:', properties);
-      console.log('Properties count:', Array.isArray(properties) ? properties.length : 'not an array');
       
-      // Ensure properties is an array
-      if (Array.isArray(properties)) {
-        // Log each property to see its structure
-        properties.forEach((p: any, idx: number) => {
-          console.log(`Property ${idx}:`, {
-            tokenId: p.tokenId,
-            propertyType: p.propertyType,
-            value: p.value,
-            isActive: p.isActive,
-          });
-        });
-        setMyProperties(properties);
-      } else {
-        console.warn('Properties API returned non-array:', properties);
-        setMyProperties([]);
+      // Load directly from blockchain first (like the game page does)
+      let propertiesFromChain: any[] = [];
+      try {
+        const tokenIds = await getOwnerProperties(address as `0x${string}`);
+        console.log('Found properties on-chain:', tokenIds);
+        
+        if (tokenIds && tokenIds.length > 0) {
+          // Fetch property details for each token
+          propertiesFromChain = await Promise.all(
+            tokenIds.map(async (tokenId: bigint) => {
+              try {
+                const propData = await readContract(wagmiConfig, {
+                  address: CONTRACTS.PropertyNFT,
+                  abi: PROPERTY_NFT_ABI,
+                  functionName: 'getProperty',
+                  args: [tokenId],
+                });
+                
+                return {
+                  tokenId: Number(tokenId),
+                  propertyType: ['Residential', 'Commercial', 'Industrial', 'Luxury'][Number(propData.propertyType)] || 'Residential',
+                  value: BigInt(propData.value.toString()),
+                  yieldRate: Number(propData.yieldRate.toString()),
+                  totalYieldEarned: BigInt(propData.totalYieldEarned?.toString() || '0'),
+                  isActive: propData.isActive,
+                };
+              } catch (error) {
+                console.error(`Failed to fetch property ${tokenId}:`, error);
+                return null;
+              }
+            })
+          );
+          
+          // Filter out nulls
+          propertiesFromChain = propertiesFromChain.filter(p => p !== null);
+          console.log(`Loaded ${propertiesFromChain.length} properties from blockchain`);
+        }
+      } catch (chainError) {
+        console.error('Failed to load properties from chain:', chainError);
       }
       
-      // If no properties found and autoSync is enabled, try syncing automatically
-      if (Array.isArray(properties) && properties.length === 0 && autoSync) {
-        console.log('No properties found, attempting automatic sync...');
+      // Try to load from database (for coordinates and other metadata)
+      let propertiesFromDb: any[] = [];
+      try {
+        propertiesFromDb = await api.get(`/properties/owner/${address}`);
+        console.log('Loaded properties from database:', propertiesFromDb.length);
+      } catch (dbError) {
+        console.warn('Failed to load from database (will use chain data):', dbError);
+      }
+      
+      // Merge: use chain data as source of truth, add DB metadata if available
+      const mergedProperties = propertiesFromChain.map((chainProp: any) => {
+        const dbProp = propertiesFromDb.find((p: any) => p.tokenId === chainProp.tokenId);
+        return {
+          ...chainProp,
+          // Add DB metadata if available
+          x: dbProp?.x,
+          y: dbProp?.y,
+          id: dbProp?.id || `prop-${chainProp.tokenId}`,
+        };
+      });
+      
+      console.log(`Total properties available: ${mergedProperties.length}`);
+      setMyProperties(mergedProperties);
+      
+      // If we have properties from chain but not in DB, try to sync them (optional)
+      if (mergedProperties.length > 0 && propertiesFromDb.length === 0 && autoSync) {
+        console.log('Properties found on-chain but not in DB, attempting sync...');
         try {
-          const syncResult = await api.post(`/properties/sync/${address}`);
-          console.log('Auto-sync result:', syncResult);
-          if (syncResult.success && syncResult.properties && syncResult.properties.length > 0) {
-            console.log(`Auto-synced ${syncResult.properties.length} properties`);
-            setMyProperties(syncResult.properties);
-          }
+          await api.post(`/properties/sync/${address}`).catch(() => {
+            // Ignore sync errors, we already have the properties from chain
+            console.log('Sync failed but properties are available from chain');
+          });
         } catch (syncError) {
-          console.error('Auto-sync failed:', syncError);
-          // Don't show error to user, just log it
+          console.log('Sync failed but properties are available from chain');
         }
       }
     } catch (error) {
