@@ -7,13 +7,19 @@ export const api = {
     return response.json();
   },
 
-  async post(endpoint: string, data: any) {
-    const response = await fetch(`${API_URL}${endpoint}`, {
+  async post(endpoint: string, data?: any) {
+    const options: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+    };
+    if (data) {
+      options.body = JSON.stringify(data);
+    }
+    const response = await fetch(`${API_URL}${endpoint}`, options);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API error: ${response.statusText} - ${errorText}`);
+    }
     return response.json();
   },
 
