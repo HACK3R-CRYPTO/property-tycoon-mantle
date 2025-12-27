@@ -86,6 +86,13 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
     }
   }, [address, preselectedProperty]);
 
+  // Reload properties when modal opens
+  useEffect(() => {
+    if (showListProperty && address) {
+      loadMyProperties();
+    }
+  }, [showListProperty, address]);
+
   useEffect(() => {
     if (isPurchaseSuccess || isListSuccess || isCancelSuccess) {
       setPurchasingId(null);
@@ -121,12 +128,23 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
   };
 
   const loadMyProperties = async () => {
-    if (!address) return;
+    if (!address) {
+      setMyProperties([]);
+      return;
+    }
     try {
       const properties = await api.get(`/properties/owner/${address}`);
-      setMyProperties(properties);
+      console.log('Loaded properties for listing:', properties);
+      // Ensure properties is an array
+      if (Array.isArray(properties)) {
+        setMyProperties(properties);
+      } else {
+        console.warn('Properties API returned non-array:', properties);
+        setMyProperties([]);
+      }
     } catch (error) {
       console.error('Failed to load my properties:', error);
+      setMyProperties([]);
     }
   };
 
@@ -215,7 +233,8 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
         }
       }, 1000);
     }
-  }, [isApproveSuccess, selectedProperty, listingPrice, listingType, auctionDuration, needsApproval, writeList]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isApproveSuccess, selectedProperty, listingPrice, listingType, auctionDuration, needsApproval]);
 
   const cancelListing = async (propertyId: number) => {
     if (!address || !isConnected) return;
@@ -419,23 +438,58 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
             <CardContent className="space-y-4">
               <div>
                 <label className="text-sm text-gray-400 mb-2 block">Select Property</label>
-                <select
-                  value={selectedProperty?.tokenId || ''}
-                  onChange={(e) => {
-                    const prop = myProperties.find((p: any) => p.tokenId === Number(e.target.value));
-                    setSelectedProperty(prop);
-                  }}
-                  className="w-full p-2 rounded-lg bg-white/5 border border-white/10 text-white"
-                >
-                  <option value="">Choose a property...</option>
-                  {myProperties
-                    .filter((p: any) => !myListings.some((l: Listing) => l.property.tokenId === p.tokenId))
-                    .map((prop: any) => (
-                      <option key={prop.tokenId} value={prop.tokenId}>
-                        {prop.propertyType} #{prop.tokenId} - {formatValue(BigInt(prop.value?.toString() || '0'))} TYCOON
-                      </option>
-                    ))}
-                </select>
+                {preselectedProperty ? (
+                  <div className="p-3 bg-blue-900/20 rounded-lg border border-blue-500/30">
+                    <p className="text-white font-semibold">
+                      {preselectedProperty.propertyType} Property #{preselectedProperty.tokenId}
+                    </p>
+                    <p className="text-xs text-gray-400">Value: {formatValue(preselectedProperty.value)} TYCOON</p>
+                  </div>
+                ) : (
+                  <>
+                    {myProperties.length === 0 ? (
+                      <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+                        <p className="text-sm text-gray-400">Loading your properties...</p>
+                        {address && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            If no properties appear, make sure you own properties and they're synced.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <select
+                        value={selectedProperty?.tokenId || ''}
+                        onChange={(e) => {
+                          const prop = myProperties.find((p: any) => p.tokenId === Number(e.target.value));
+                          setSelectedProperty(prop);
+                          setNeedsApproval(false); // Reset approval flag when property changes
+                        }}
+                        className="w-full p-2 rounded-lg bg-white/5 border border-white/10 text-white"
+                      >
+                        <option value="">Choose a property...</option>
+                        {myProperties
+                          .filter((p: any) => {
+                            // Filter out properties that are already listed
+                            const isListed = myListings.some((l: Listing) => {
+                              const listingTokenId = l.property?.tokenId || l.propertyId;
+                              return listingTokenId === p.tokenId;
+                            });
+                            return !isListed;
+                          })
+                          .map((prop: any) => {
+                            const tokenId = prop.tokenId || prop.token_id;
+                            const propertyType = prop.propertyType || prop.property_type || 'Unknown';
+                            const value = prop.value || prop.value || '0';
+                            return (
+                              <option key={tokenId} value={tokenId}>
+                                {propertyType} #{tokenId} - {formatValue(BigInt(value?.toString() || '0'))} TYCOON
+                              </option>
+                            );
+                          })}
+                      </select>
+                    )}
+                  </>
+                )}
               </div>
 
               <div>

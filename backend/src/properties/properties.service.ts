@@ -52,7 +52,22 @@ export class PropertiesService {
 
   async findByOwner(ownerId: string) {
     return this.db
-      .select()
+      .select({
+        id: schema.properties.id,
+        tokenId: schema.properties.tokenId,
+        ownerId: schema.properties.ownerId,
+        propertyType: schema.properties.propertyType,
+        value: schema.properties.value,
+        yieldRate: schema.properties.yieldRate,
+        rwaContract: schema.properties.rwaContract,
+        rwaTokenId: schema.properties.rwaTokenId,
+        totalYieldEarned: schema.properties.totalYieldEarned,
+        x: schema.properties.x,
+        y: schema.properties.y,
+        isActive: schema.properties.isActive,
+        createdAt: schema.properties.createdAt,
+        updatedAt: schema.properties.updatedAt,
+      })
       .from(schema.properties)
       .where(eq(schema.properties.ownerId, ownerId));
   }
@@ -61,7 +76,7 @@ export class PropertiesService {
     const [user] = await this.db
       .select()
       .from(schema.users)
-      .where(eq(schema.users.walletAddress, walletAddress))
+      .where(eq(schema.users.walletAddress, walletAddress.toLowerCase()))
       .limit(1);
 
     if (!user) {
