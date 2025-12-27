@@ -127,7 +127,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
     }
   };
 
-  const loadMyProperties = async () => {
+  const loadMyProperties = async (autoSync: boolean = true) => {
     if (!address) {
       setMyProperties([]);
       return;
@@ -153,6 +153,22 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
       } else {
         console.warn('Properties API returned non-array:', properties);
         setMyProperties([]);
+      }
+      
+      // If no properties found and autoSync is enabled, try syncing automatically
+      if (Array.isArray(properties) && properties.length === 0 && autoSync) {
+        console.log('No properties found, attempting automatic sync...');
+        try {
+          const syncResult = await api.post(`/properties/sync/${address}`);
+          console.log('Auto-sync result:', syncResult);
+          if (syncResult.success && syncResult.properties && syncResult.properties.length > 0) {
+            console.log(`Auto-synced ${syncResult.properties.length} properties`);
+            setMyProperties(syncResult.properties);
+          }
+        } catch (syncError) {
+          console.error('Auto-sync failed:', syncError);
+          // Don't show error to user, just log it
+        }
       }
     } catch (error) {
       console.error('Failed to load my properties:', error);
