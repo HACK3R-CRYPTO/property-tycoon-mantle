@@ -161,7 +161,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
                   propertyType: ['Residential', 'Commercial', 'Industrial', 'Luxury'][Number(propData.propertyType)] || 'Residential',
                   value: BigInt(propData.value.toString()),
                   yieldRate: Number(propData.yieldRate.toString()),
-                  totalYieldEarned: BigInt(propData.totalYieldEarned?.toString() || '0'),
+                  totalYieldEarned: propData.totalYieldEarned ? BigInt(propData.totalYieldEarned.toString()) : undefined,
                   isActive: propData.isActive,
                 };
               } catch (error) {
