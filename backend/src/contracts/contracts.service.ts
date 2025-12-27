@@ -58,8 +58,15 @@ export class ContractsService implements OnModuleInit {
       this.logger.log(`PropertyNFT Address: ${propertyNFTAddress || 'NOT SET'}`);
 
       if (propertyNFTAddress) {
-        // Ensure ABI is an array
-        const propertyNFTAbi = Array.isArray(PropertyNFTABI) ? PropertyNFTABI : (PropertyNFTABI as any).abi || PropertyNFTABI;
+        // Handle ABI - it might be wrapped in default export or be direct array
+        let propertyNFTAbi: any = PropertyNFTABI;
+        if (!Array.isArray(propertyNFTAbi)) {
+          propertyNFTAbi = (PropertyNFTABI as any).default || (PropertyNFTABI as any).abi || PropertyNFTABI;
+        }
+        if (!Array.isArray(propertyNFTAbi)) {
+          this.logger.error(`PropertyNFT ABI type: ${typeof propertyNFTAbi}, isArray: ${Array.isArray(propertyNFTAbi)}`);
+          throw new Error('PropertyNFT ABI is not an array');
+        }
         this.propertyNFT = new ethers.Contract(propertyNFTAddress, propertyNFTAbi, this.wallet);
         this.logger.log(`PropertyNFT contract initialized at ${propertyNFTAddress}`);
       } else {
@@ -67,19 +74,43 @@ export class ContractsService implements OnModuleInit {
       }
       
       if (gameTokenAddress) {
-        const gameTokenAbi = Array.isArray(GameTokenABI) ? GameTokenABI : (GameTokenABI as any).abi || GameTokenABI;
+        let gameTokenAbi: any = GameTokenABI;
+        if (!Array.isArray(gameTokenAbi)) {
+          gameTokenAbi = (GameTokenABI as any).default || (GameTokenABI as any).abi || GameTokenABI;
+        }
+        if (!Array.isArray(gameTokenAbi)) {
+          throw new Error('GameToken ABI is not an array');
+        }
         this.gameToken = new ethers.Contract(gameTokenAddress, gameTokenAbi, this.wallet);
       }
       if (yieldDistributorAddress) {
-        const yieldDistributorAbi = Array.isArray(YieldDistributorABI) ? YieldDistributorABI : (YieldDistributorABI as any).abi || YieldDistributorABI;
+        let yieldDistributorAbi: any = YieldDistributorABI;
+        if (!Array.isArray(yieldDistributorAbi)) {
+          yieldDistributorAbi = (YieldDistributorABI as any).default || (YieldDistributorABI as any).abi || YieldDistributorABI;
+        }
+        if (!Array.isArray(yieldDistributorAbi)) {
+          throw new Error('YieldDistributor ABI is not an array');
+        }
         this.yieldDistributor = new ethers.Contract(yieldDistributorAddress, yieldDistributorAbi, this.wallet);
       }
       if (marketplaceAddress) {
-        const marketplaceAbi = Array.isArray(MarketplaceABI) ? MarketplaceABI : (MarketplaceABI as any).abi || MarketplaceABI;
+        let marketplaceAbi: any = MarketplaceABI;
+        if (!Array.isArray(marketplaceAbi)) {
+          marketplaceAbi = (MarketplaceABI as any).default || (MarketplaceABI as any).abi || MarketplaceABI;
+        }
+        if (!Array.isArray(marketplaceAbi)) {
+          throw new Error('Marketplace ABI is not an array');
+        }
         this.marketplace = new ethers.Contract(marketplaceAddress, marketplaceAbi, this.wallet);
       }
       if (questSystemAddress) {
-        const questSystemAbi = Array.isArray(QuestSystemABI) ? QuestSystemABI : (QuestSystemABI as any).abi || QuestSystemABI;
+        let questSystemAbi: any = QuestSystemABI;
+        if (!Array.isArray(questSystemAbi)) {
+          questSystemAbi = (QuestSystemABI as any).default || (QuestSystemABI as any).abi || QuestSystemABI;
+        }
+        if (!Array.isArray(questSystemAbi)) {
+          throw new Error('QuestSystem ABI is not an array');
+        }
         this.questSystem = new ethers.Contract(questSystemAddress, questSystemAbi, this.wallet);
       }
 
