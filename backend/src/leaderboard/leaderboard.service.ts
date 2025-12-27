@@ -15,6 +15,37 @@ export class LeaderboardService {
   ) {}
 
   async getGlobalLeaderboard(limit: number = 100) {
+    // First, sync all users' properties from blockchain to ensure accurate rankings
+    this.logger.log('Syncing all users\' properties from blockchain before fetching leaderboard...');
+    
+    try {
+      // Get all users
+      const allUsers = await this.db
+        .select({
+          id: schema.users.id,
+          walletAddress: schema.users.walletAddress,
+        })
+        .from(schema.users);
+
+      // Sync properties for each user
+      for (const user of allUsers) {
+        try {
+          await this.syncUserPropertiesFromChain(user.walletAddress);
+          // Update leaderboard for this user
+          await this.updateLeaderboard(user.id);
+        } catch (error) {
+          this.logger.error(`Failed to sync properties for user ${user.walletAddress}: ${error.message}`);
+          // Continue with other users even if one fails
+        }
+      }
+      
+      this.logger.log(`Synced properties for ${allUsers.length} users`);
+    } catch (error) {
+      this.logger.error(`Error syncing properties before leaderboard fetch: ${error.message}`, error.stack);
+      // Continue to return leaderboard even if sync fails
+    }
+
+    // Now fetch the updated leaderboard
     const rankings = await this.db
       .select({
         userId: schema.leaderboard.userId,
