@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 import * as PropertyNFTABI from './abis/PropertyNFT.json';
@@ -8,7 +8,7 @@ import * as MarketplaceABI from './abis/Marketplace.json';
 import * as QuestSystemABI from './abis/QuestSystem.json';
 
 @Injectable()
-export class ContractsService {
+export class ContractsService implements OnModuleInit {
   private readonly logger = new Logger(ContractsService.name);
   private provider: ethers.providers.JsonRpcProvider;
   private wallet: ethers.Wallet;
@@ -20,10 +20,11 @@ export class ContractsService {
   public questSystem: ethers.Contract;
 
   constructor(private configService: ConfigService) {
-    // Delay initialization slightly to ensure ConfigModule has loaded env vars
-    setTimeout(() => {
-      this.initializeContracts();
-    }, 100);
+    // Don't initialize in constructor - wait for OnModuleInit
+  }
+
+  onModuleInit() {
+    this.initializeContracts();
   }
 
   private initializeContracts() {
