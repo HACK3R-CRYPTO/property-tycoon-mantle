@@ -15,56 +15,71 @@ export class LeaderboardService {
   ) {}
 
   async getGlobalLeaderboard(limit: number = 100) {
-    // First, sync all users' properties from blockchain to ensure accurate rankings
-    this.logger.log('Syncing all users\' properties from blockchain before fetching leaderboard...');
-    
+    // Try to sync properties, but don't fail if sync doesn't work
+    // This ensures leaderboard still loads even if blockchain calls fail
     try {
-      // Get all users
-      const allUsers = await this.db
-        .select({
-          id: schema.users.id,
-          walletAddress: schema.users.walletAddress,
-        })
-        .from(schema.users);
+      // Check if contract is initialized
+      if (this.contractsService.propertyNFT) {
+        this.logger.log('Syncing users\' properties from blockchain before fetching leaderboard...');
+        
+        // Get all users (limit to avoid timeout)
+        const allUsers = await this.db
+          .select({
+            id: schema.users.id,
+            walletAddress: schema.users.walletAddress,
+          })
+          .from(schema.users)
+          .limit(20); // Limit to first 20 users to avoid timeout
 
-      // Sync properties for each user
-      for (const user of allUsers) {
-        try {
-          await this.syncUserPropertiesFromChain(user.walletAddress);
-          // Update leaderboard for this user
-          await this.updateLeaderboard(user.id);
-        } catch (error) {
-          this.logger.error(`Failed to sync properties for user ${user.walletAddress}: ${error.message}`);
-          // Continue with other users even if one fails
+        this.logger.log(`Found ${allUsers.length} users to sync`);
+
+        // Sync properties for each user
+        for (const user of allUsers) {
+          try {
+            await this.syncUserPropertiesFromChain(user.walletAddress);
+            // Update leaderboard for this user
+            await this.updateLeaderboard(user.id);
+          } catch (error) {
+            this.logger.error(`Failed to sync properties for user ${user.walletAddress}: ${error.message}`);
+            // Continue with other users even if one fails
+          }
         }
+        
+        this.logger.log(`Synced properties for ${allUsers.length} users`);
+      } else {
+        this.logger.warn('PropertyNFT contract not initialized, skipping sync');
       }
-      
-      this.logger.log(`Synced properties for ${allUsers.length} users`);
     } catch (error) {
       this.logger.error(`Error syncing properties before leaderboard fetch: ${error.message}`, error.stack);
       // Continue to return leaderboard even if sync fails
     }
 
-    // Now fetch the updated leaderboard
-    const rankings = await this.db
-      .select({
-        userId: schema.leaderboard.userId,
-        totalPortfolioValue: schema.leaderboard.totalPortfolioValue,
-        totalYieldEarned: schema.leaderboard.totalYieldEarned,
-        propertiesOwned: schema.leaderboard.propertiesOwned,
-        questsCompleted: schema.leaderboard.questsCompleted,
-        walletAddress: schema.users.walletAddress,
-        username: schema.users.username,
-      })
-      .from(schema.leaderboard)
-      .leftJoin(schema.users, eq(schema.leaderboard.userId, schema.users.id))
-      .orderBy(desc(schema.leaderboard.totalPortfolioValue))
-      .limit(limit);
+    // Now fetch the updated leaderboard (always return, even if sync failed)
+    try {
+      const rankings = await this.db
+        .select({
+          userId: schema.leaderboard.userId,
+          totalPortfolioValue: schema.leaderboard.totalPortfolioValue,
+          totalYieldEarned: schema.leaderboard.totalYieldEarned,
+          propertiesOwned: schema.leaderboard.propertiesOwned,
+          questsCompleted: schema.leaderboard.questsCompleted,
+          walletAddress: schema.users.walletAddress,
+          username: schema.users.username,
+        })
+        .from(schema.leaderboard)
+        .leftJoin(schema.users, eq(schema.leaderboard.userId, schema.users.id))
+        .orderBy(desc(schema.leaderboard.totalPortfolioValue))
+        .limit(limit);
 
-    return rankings.map((r, index) => ({
-      ...r,
-      rank: index + 1,
-    }));
+      return rankings.map((r, index) => ({
+        ...r,
+        rank: index + 1,
+      }));
+    } catch (error) {
+      this.logger.error(`Error fetching leaderboard: ${error.message}`, error.stack);
+      // Return empty array if query fails
+      return [];
+    }
   }
 
   async updateLeaderboard(userId: string) {
