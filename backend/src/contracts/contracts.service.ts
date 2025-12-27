@@ -28,8 +28,12 @@ export class ContractsService {
       const rpcUrl = this.configService.get<string>('MANTLE_RPC_URL');
       const privateKey = this.configService.get<string>('PRIVATE_KEY');
 
+      this.logger.log(`Initializing contracts - RPC URL: ${rpcUrl ? 'SET' : 'MISSING'}, Private Key: ${privateKey ? 'SET' : 'MISSING'}`);
+
       if (!rpcUrl || !privateKey) {
         this.logger.error('Missing MANTLE_RPC_URL or PRIVATE_KEY for contract service.');
+        this.logger.error(`MANTLE_RPC_URL: ${rpcUrl || 'NOT SET'}`);
+        this.logger.error(`PRIVATE_KEY: ${privateKey ? 'SET (hidden)' : 'NOT SET'}`);
         return;
       }
 
@@ -42,9 +46,15 @@ export class ContractsService {
       const marketplaceAddress = this.configService.get<string>('MARKETPLACE_ADDRESS');
       const questSystemAddress = this.configService.get<string>('QUEST_SYSTEM_ADDRESS');
 
+      this.logger.log(`PropertyNFT Address: ${propertyNFTAddress || 'NOT SET'}`);
+
       if (propertyNFTAddress) {
         this.propertyNFT = new ethers.Contract(propertyNFTAddress, PropertyNFTABI as any, this.wallet);
+        this.logger.log(`PropertyNFT contract initialized at ${propertyNFTAddress}`);
+      } else {
+        this.logger.error('PROPERTY_NFT_ADDRESS not set in environment variables');
       }
+      
       if (gameTokenAddress) {
         this.gameToken = new ethers.Contract(gameTokenAddress, GameTokenABI as any, this.wallet);
       }
@@ -58,9 +68,14 @@ export class ContractsService {
         this.questSystem = new ethers.Contract(questSystemAddress, QuestSystemABI as any, this.wallet);
       }
 
-      this.logger.log('Smart contracts initialized with wallet signer.');
+      if (this.propertyNFT) {
+        this.logger.log('Smart contracts initialized successfully with wallet signer.');
+      } else {
+        this.logger.error('PropertyNFT contract failed to initialize!');
+      }
     } catch (error) {
       this.logger.error('Failed to initialize smart contracts:', error);
+      this.logger.error('Error details:', error.message, error.stack);
     }
   }
 
