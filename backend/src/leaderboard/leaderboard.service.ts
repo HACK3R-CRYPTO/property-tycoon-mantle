@@ -112,10 +112,25 @@ export class LeaderboardService {
     }
 
     // Get user's properties (now synced from blockchain)
-    const properties = await this.db
+    let properties = await this.db
       .select()
       .from(schema.properties)
       .where(eq(schema.properties.ownerId, userId));
+
+    // If no properties in database, try to sync from blockchain directly
+    if (properties.length === 0 && this.contractsService.propertyNFT) {
+      try {
+        this.logger.log(`No properties in DB for user ${user.walletAddress}, syncing from blockchain...`);
+        await this.syncUserPropertiesFromChain(user.walletAddress);
+        // Try again after sync
+        properties = await this.db
+          .select()
+          .from(schema.properties)
+          .where(eq(schema.properties.ownerId, userId));
+      } catch (error) {
+        this.logger.error(`Failed to sync properties from blockchain: ${error.message}`);
+      }
+    }
 
     // Calculate total portfolio value
     const totalPortfolioValue = properties.reduce((sum, prop) => {
