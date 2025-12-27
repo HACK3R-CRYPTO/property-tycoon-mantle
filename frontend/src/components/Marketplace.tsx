@@ -39,7 +39,7 @@ interface MarketplaceProps {
   onListed?: () => void;
 }
 
-export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps = {}) {
+export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps = {} as MarketplaceProps) {
   const { address, isConnected } = useAccount();
   const [listings, setListings] = useState<Listing[]>([]);
   const [myListings, setMyListings] = useState<Listing[]>([]);
@@ -62,10 +62,17 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
     hash: listHash,
   });
 
+  const { writeContract: writeApprove, data: approveHash, isPending: isApprovePending } = useWriteContract();
+  const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt({
+    hash: approveHash,
+  });
+
   const { writeContract: writeCancel, data: cancelHash, isPending: isCancelPending } = useWriteContract();
   const { isLoading: isCancelConfirming, isSuccess: isCancelSuccess } = useWaitForTransactionReceipt({
     hash: cancelHash,
   });
+
+  const [needsApproval, setNeedsApproval] = useState(false);
 
   useEffect(() => {
     loadListings();
