@@ -225,17 +225,6 @@ export class LeaderboardService {
           const tokenIdNum = typeof tokenId === 'bigint' ? Number(tokenId) : Number(tokenId);
           const propData = await this.contractsService.getProperty(BigInt(tokenIdNum));
           
-          // Check if property already exists (using BigInt for comparison since tokenId is stored as bigint)
-          const existing = await this.db
-            .select()
-            .from(schema.properties)
-            .where(eq(schema.properties.tokenId, tokenIdNum))
-            .limit(1);
-
-          if (existing.length > 0) {
-            this.logger.log(`Property ${tokenIdNum} already exists in database, skipping insert`);
-            continue;
-          }
           const propertyTypeNum = typeof propData.propertyType === 'bigint' 
             ? Number(propData.propertyType) 
             : Number(propData.propertyType);
@@ -263,34 +252,43 @@ export class LeaderboardService {
             ? Number(propData.rwaTokenId.toString()) 
             : undefined;
           
+          // Use upsert (ON CONFLICT) to handle duplicates gracefully
           try {
-            await this.db.insert(schema.properties).values({
-              tokenId: tokenIdNum,
-              ownerId: user.id,
-              propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
-              value: BigInt(propData.value.toString()),
-              yieldRate: yieldRateValue,
-              rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-                ? propData.rwaContract 
-                : undefined,
-              rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            });
+            await this.db
+              .insert(schema.properties)
+              .values({
+                tokenId: tokenIdNum,
+                ownerId: user.id,
+                propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
+                value: BigInt(propData.value.toString()),
+                yieldRate: yieldRateValue,
+                rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+                  ? propData.rwaContract 
+                  : undefined,
+                rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .onConflictDoUpdate({
+                target: schema.properties.tokenId,
+                set: {
+                  ownerId: user.id, // Update owner in case of transfer
+                  propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
+                  value: BigInt(propData.value.toString()),
+                  yieldRate: yieldRateValue,
+                  rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+                    ? propData.rwaContract 
+                    : undefined,
+                  rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
+                  updatedAt: new Date(),
+                },
+              });
             
             this.logger.log(`Synced property ${tokenIdNum} for ${normalizedAddress}`);
           } catch (dbError: any) {
-            // Check if it's a unique constraint violation (property already exists)
-            if (dbError.message && dbError.message.includes('unique') || dbError.message && dbError.message.includes('duplicate')) {
-              this.logger.log(`Property ${tokenIdNum} already exists in database, skipping`);
-            } else {
-              this.logger.error(`Database error inserting property ${tokenIdNum}: ${dbError.message}`);
-              throw dbError;
-            }
+            this.logger.error(`Database error inserting/updating property ${tokenIdNum}: ${dbError.message}`, dbError.stack);
+            // Continue with next property even if this one fails
           }
-        } else {
-          this.logger.log(`Property ${tokenIdNum} already exists in database`);
-        }
         } catch (error) {
           this.logger.error(`Error syncing property ${tokenId}: ${error.message}`);
           // Continue with next property
