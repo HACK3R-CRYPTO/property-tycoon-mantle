@@ -58,23 +58,29 @@ export class ContractsService implements OnModuleInit {
       this.logger.log(`PropertyNFT Address: ${propertyNFTAddress || 'NOT SET'}`);
 
       if (propertyNFTAddress) {
-        this.propertyNFT = new ethers.Contract(propertyNFTAddress, PropertyNFTABI as any, this.wallet);
+        // Ensure ABI is an array
+        const propertyNFTAbi = Array.isArray(PropertyNFTABI) ? PropertyNFTABI : (PropertyNFTABI as any).abi || PropertyNFTABI;
+        this.propertyNFT = new ethers.Contract(propertyNFTAddress, propertyNFTAbi, this.wallet);
         this.logger.log(`PropertyNFT contract initialized at ${propertyNFTAddress}`);
       } else {
         this.logger.error('PROPERTY_NFT_ADDRESS not set in environment variables');
       }
       
       if (gameTokenAddress) {
-        this.gameToken = new ethers.Contract(gameTokenAddress, GameTokenABI as any, this.wallet);
+        const gameTokenAbi = Array.isArray(GameTokenABI) ? GameTokenABI : (GameTokenABI as any).abi || GameTokenABI;
+        this.gameToken = new ethers.Contract(gameTokenAddress, gameTokenAbi, this.wallet);
       }
       if (yieldDistributorAddress) {
-        this.yieldDistributor = new ethers.Contract(yieldDistributorAddress, YieldDistributorABI as any, this.wallet);
+        const yieldDistributorAbi = Array.isArray(YieldDistributorABI) ? YieldDistributorABI : (YieldDistributorABI as any).abi || YieldDistributorABI;
+        this.yieldDistributor = new ethers.Contract(yieldDistributorAddress, yieldDistributorAbi, this.wallet);
       }
       if (marketplaceAddress) {
-        this.marketplace = new ethers.Contract(marketplaceAddress, MarketplaceABI as any, this.wallet);
+        const marketplaceAbi = Array.isArray(MarketplaceABI) ? MarketplaceABI : (MarketplaceABI as any).abi || MarketplaceABI;
+        this.marketplace = new ethers.Contract(marketplaceAddress, marketplaceAbi, this.wallet);
       }
       if (questSystemAddress) {
-        this.questSystem = new ethers.Contract(questSystemAddress, QuestSystemABI as any, this.wallet);
+        const questSystemAbi = Array.isArray(QuestSystemABI) ? QuestSystemABI : (QuestSystemABI as any).abi || QuestSystemABI;
+        this.questSystem = new ethers.Contract(questSystemAddress, questSystemAbi, this.wallet);
       }
 
       if (this.propertyNFT) {
