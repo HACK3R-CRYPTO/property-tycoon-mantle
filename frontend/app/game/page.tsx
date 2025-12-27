@@ -11,12 +11,13 @@ import { PropertyDetails } from '@/components/game/PropertyDetails';
 import { GlobalChat } from '@/components/GlobalChat';
 import { WalletConnect } from '@/components/WalletConnect';
 import { GameGuide } from '@/components/game/GameGuide';
-import { Leaderboard } from '@/components/Leaderboard';
 import { Guilds } from '@/components/Guilds';
 import { Marketplace } from '@/components/Marketplace';
 import { Quests } from '@/components/Quests';
 import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import Link from 'next/link';
 import { getOwnerProperties, calculateYield, CONTRACTS, PROPERTY_NFT_ABI, YIELD_DISTRIBUTOR_ABI } from '@/lib/contracts';
 import { readContract, getBlock, getPublicClient } from 'wagmi/actions';
 import { createPublicClient, http, parseAbiItem } from 'viem';
@@ -45,7 +46,6 @@ export default function GamePage() {
   const [showBuildMenu, setShowBuildMenu] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showGuilds, setShowGuilds] = useState(false);
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [showQuests, setShowQuests] = useState(false);
@@ -985,14 +985,15 @@ export default function GamePage() {
               <BookOpen className="w-4 h-4 mr-2" />
               How to Play
             </Button>
-            <Button
-              onClick={() => setShowLeaderboard(!showLeaderboard)}
-              variant="outline"
-              className="border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
-            >
-              <Trophy className="w-4 h-4 mr-2" />
-              Leaderboard
-            </Button>
+            <Link href="/leaderboard">
+              <Button
+                variant="outline"
+                className="border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
+              >
+                <Trophy className="w-4 h-4 mr-2" />
+                Leaderboard
+              </Button>
+            </Link>
             <Button
               onClick={() => setShowGuilds(!showGuilds)}
               variant="outline"
@@ -1156,7 +1157,8 @@ export default function GamePage() {
                 <p className="text-sm mt-2">Build your first property to get started!</p>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[600px] overflow-y-auto">
+              <ScrollArea className="h-[600px] pr-4">
+                <div className="space-y-3">
                 {properties.map((property) => (
                   <PropertyCard
                     key={property.id}
@@ -1179,8 +1181,9 @@ export default function GamePage() {
                       }
                     }}
                   />
-                ))}
-              </div>
+                  ))}
+                </div>
+              </ScrollArea>
             )}
           </div>
         </div>
@@ -1228,34 +1231,25 @@ export default function GamePage() {
       {/* Game Guide */}
       <GameGuide isOpen={showGuide} onClose={() => setShowGuide(false)} />
 
-      {/* Leaderboard Modal */}
-      {showLeaderboard && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">Leaderboard</h2>
-              <Button onClick={() => setShowLeaderboard(false)} variant="ghost" size="sm">
-                ✕
-              </Button>
-            </div>
-            <div className="p-4">
-              <Leaderboard />
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Guilds Modal */}
       {showGuilds && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
+        <div 
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowGuilds(false);
+          }}
+        >
+          <div 
+            className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">Guilds</h2>
-              <Button onClick={() => setShowGuilds(false)} variant="ghost" size="sm">
+              <Button onClick={() => setShowGuilds(false)} variant="ghost" size="sm" className="hover:bg-white/10 rounded-full">
                 ✕
               </Button>
             </div>
-            <div className="p-4">
+            <div className="flex-1 overflow-y-auto min-h-0 p-4">
               <Guilds />
             </div>
           </div>
@@ -1264,15 +1258,23 @@ export default function GamePage() {
 
       {/* Marketplace Modal */}
       {showMarketplace && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
+        <div 
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowMarketplace(false);
+          }}
+        >
+          <div 
+            className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">Marketplace</h2>
-              <Button onClick={() => setShowMarketplace(false)} variant="ghost" size="sm">
+              <Button onClick={() => setShowMarketplace(false)} variant="ghost" size="sm" className="hover:bg-white/10 rounded-full">
                 ✕
               </Button>
             </div>
-            <div className="p-4">
+            <div className="flex-1 overflow-y-auto min-h-0 p-4">
               <Marketplace />
             </div>
           </div>
@@ -1281,15 +1283,23 @@ export default function GamePage() {
 
       {/* Quests Modal */}
       {showQuests && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
+        <div 
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowQuests(false);
+          }}
+        >
+          <div 
+            className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">Quests</h2>
-              <Button onClick={() => setShowQuests(false)} variant="ghost" size="sm">
+              <Button onClick={() => setShowQuests(false)} variant="ghost" size="sm" className="hover:bg-white/10 rounded-full">
                 ✕
               </Button>
             </div>
-            <div className="p-4">
+            <div className="flex-1 overflow-y-auto min-h-0 p-4">
               <Quests />
             </div>
           </div>
@@ -1298,9 +1308,20 @@ export default function GamePage() {
 
       {/* Sell Property Modal */}
       {showSellProperty && propertyToSell && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
+        <div 
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowSellProperty(false);
+              setPropertyToSell(null);
+            }
+          }}
+        >
+          <div 
+            className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">Sell Property</h2>
               <Button onClick={() => {
                 setShowSellProperty(false);

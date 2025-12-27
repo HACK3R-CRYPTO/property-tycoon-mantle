@@ -6,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import { formatAddress } from '@/lib/utils'
+import { getOwnerProperties, CONTRACTS, PROPERTY_NFT_ABI } from '@/lib/contracts'
+import { readContract } from 'wagmi/actions'
+import { wagmiConfig } from '@/lib/mantle-viem'
 
 interface Property {
   id: string
@@ -35,12 +38,105 @@ export function VisitPortfolio({ address, username, onClose }: VisitPortfolioPro
   const loadPortfolio = async () => {
     setIsLoading(true)
     try {
-      const data = await api.get(`/properties/owner/${address}`)
-      setProperties(data.properties || [])
-      setTotalValue(data.totalValue || BigInt(0))
-      setTotalYield(data.totalYield || BigInt(0))
+      // Try backend first (faster if synced)
+      try {
+        const data = await api.get(`/properties/owner/${address}`)
+        if (data && data.length > 0) {
+          // Backend returns array directly
+          const backendProperties = Array.isArray(data) ? data : (data.properties || [])
+          const formattedProps = backendProperties.map((p: any) => ({
+            id: p.id || `prop-${p.tokenId}`,
+            tokenId: p.tokenId,
+            propertyType: p.propertyType,
+            value: BigInt(p.value?.toString() || '0'),
+            yieldRate: p.yieldRate || 0,
+            totalYieldEarned: BigInt(p.totalYieldEarned?.toString() || '0'),
+          }))
+          setProperties(formattedProps)
+          
+          const totalVal = formattedProps.reduce((sum, p) => sum + p.value, BigInt(0))
+          const totalYld = formattedProps.reduce((sum, p) => sum + p.totalYieldEarned, BigInt(0))
+          setTotalValue(totalVal)
+          setTotalYield(totalYld)
+          setIsLoading(false)
+          return
+        }
+      } catch (backendError) {
+        console.warn('Backend unavailable, loading from blockchain:', backendError)
+      }
+      
+      // Fallback to blockchain (source of truth)
+      console.log('Loading properties from blockchain for:', address)
+      const tokenIds = await getOwnerProperties(address as `0x${string}`)
+      if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
+        setProperties([])
+        setTotalValue(BigInt(0))
+        setTotalYield(BigInt(0))
+        setIsLoading(false)
+        return
+      }
+      
+      // Get property data from blockchain
+      const blockchainProperties = await Promise.all(
+        tokenIds.map(async (tokenId) => {
+          try {
+            const propData = await readContract(wagmiConfig, {
+              address: CONTRACTS.PropertyNFT,
+              abi: PROPERTY_NFT_ABI,
+              functionName: 'getProperty',
+              args: [BigInt(Number(tokenId))],
+            }) as {
+              propertyType: bigint | number;
+              value: bigint;
+              yieldRate: bigint;
+              totalYieldEarned: bigint;
+            };
+            
+            const propertyTypeNum = typeof propData.propertyType === 'bigint' 
+              ? Number(propData.propertyType) 
+              : Number(propData.propertyType);
+            const propertyTypes = ['Residential', 'Commercial', 'Industrial', 'Luxury'];
+            
+            // Convert yieldRate to percentage
+            let yieldRateValue = Number(propData.yieldRate.toString());
+            if (yieldRateValue > 1e15) {
+              yieldRateValue = Number(propData.yieldRate.toString()) / 1e18 * 100;
+            } else if (yieldRateValue < 100 && yieldRateValue > 0) {
+              yieldRateValue = yieldRateValue * 100;
+            }
+            if (yieldRateValue < 100) {
+              yieldRateValue = 500; // Default 5%
+            }
+            
+            return {
+              id: `prop-${tokenId}`,
+              tokenId: Number(tokenId),
+              propertyType: propertyTypes[propertyTypeNum] || 'Residential',
+              value: BigInt(propData.value.toString()),
+              yieldRate: yieldRateValue / 100, // Convert to percentage
+              totalYieldEarned: BigInt(propData.totalYieldEarned.toString()),
+            };
+          } catch (error) {
+            console.error(`Failed to load property ${tokenId}:`, error)
+            return null
+          }
+        })
+      )
+      
+      const validProperties = blockchainProperties.filter((p): p is NonNullable<typeof p> => p !== null)
+      setProperties(validProperties)
+      
+      const totalVal = validProperties.reduce((sum, p) => sum + p.value, BigInt(0))
+      const totalYld = validProperties.reduce((sum, p) => sum + p.totalYieldEarned, BigInt(0))
+      setTotalValue(totalVal)
+      setTotalYield(totalYld)
+      
+      console.log(`✅ Loaded ${validProperties.length} properties from blockchain for ${address}`)
     } catch (error) {
       console.error('Failed to load portfolio:', error)
+      setProperties([])
+      setTotalValue(BigInt(0))
+      setTotalYield(BigInt(0))
     } finally {
       setIsLoading(false)
     }
@@ -53,20 +149,39 @@ export function VisitPortfolio({ address, username, onClose }: VisitPortfolioPro
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="bg-gray-900 border-white/20 w-full max-w-3xl max-h-[80vh] overflow-y-auto">
-        <CardHeader className="sticky top-0 bg-gray-900 border-b border-white/10 flex flex-row items-center justify-between">
+    <div 
+      className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-4"
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+      onClick={(e) => {
+        // Close when clicking backdrop
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <Card 
+        className="bg-gray-900 border-white/20 w-full max-w-3xl max-h-[90vh] flex flex-col mx-auto my-auto"
+        style={{ margin: 'auto' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <CardHeader className="flex-shrink-0 bg-gray-900 border-b border-white/10 flex flex-row items-center justify-between">
           <div>
             <CardTitle className="text-2xl font-bold text-white">
               {username || formatAddress(address)}'s Portfolio
             </CardTitle>
             <p className="text-sm text-gray-400 mt-1">{formatAddress(address)}</p>
           </div>
-          <Button onClick={onClose} variant="ghost" size="sm" className="text-white">
+          <Button 
+            onClick={onClose} 
+            variant="ghost" 
+            size="sm" 
+            className="text-white hover:bg-white/10 rounded-full p-2"
+            aria-label="Close"
+          >
             <X className="w-5 h-5" />
           </Button>
         </CardHeader>
-        <CardContent className="p-6">
+        <CardContent className="p-6 flex-1 overflow-y-auto min-h-0">
           <div className="grid grid-cols-2 gap-4 mb-6">
             <Card className="bg-blue-500/10 border-blue-500/20">
               <CardContent className="p-4">
