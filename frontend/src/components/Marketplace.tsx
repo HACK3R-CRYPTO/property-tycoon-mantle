@@ -338,7 +338,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
         abi: MARKETPLACE_ABI,
         functionName: 'buyProperty',
         args: [BigInt(listing.property.tokenId)],
-        value: listing.price,
+        value: BigInt(listing.price.toString()),
       });
     } catch (error: any) {
       console.error('Failed to purchase:', error);
@@ -573,7 +573,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
                             
                             // Filter out properties that are already listed
                             const isListed = myListings.some((l: Listing) => {
-                              const listingTokenId = l.property?.tokenId || l.property?.token_id || l.propertyId;
+                              const listingTokenId = l.property?.tokenId || l.propertyId;
                               return Number(listingTokenId) === Number(propTokenId);
                             });
                             
