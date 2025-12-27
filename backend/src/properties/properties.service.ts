@@ -75,6 +75,8 @@ export class PropertiesService {
   async findByWalletAddress(walletAddress: string) {
     const normalizedAddress = walletAddress.toLowerCase();
     
+    this.logger.log(`Finding properties for wallet: ${normalizedAddress}`);
+    
     // First try to find user in database
     let [user] = await this.db
       .select()
@@ -86,15 +88,20 @@ export class PropertiesService {
     if (!user) {
       this.logger.log(`User not found for ${normalizedAddress}, attempting to sync from chain...`);
       try {
-        await this.syncFromChain(walletAddress);
-        // Try again after sync
+        const syncedProperties = await this.syncFromChain(walletAddress);
+        if (syncedProperties && syncedProperties.length > 0) {
+          this.logger.log(`Successfully synced ${syncedProperties.length} properties for ${normalizedAddress}`);
+          return syncedProperties;
+        }
+        // Try again after sync to get user
         [user] = await this.db
           .select()
           .from(schema.users)
           .where(eq(schema.users.walletAddress, normalizedAddress))
           .limit(1);
       } catch (error) {
-        this.logger.error(`Failed to sync user ${normalizedAddress} from chain: ${error.message}`);
+        this.logger.error(`Failed to sync user ${normalizedAddress} from chain: ${error.message}`, error.stack);
+        // Don't return empty, try to continue
       }
     }
 
@@ -103,16 +110,24 @@ export class PropertiesService {
       return [];
     }
 
-    const properties = await this.findByOwner(user.id);
+    let properties = await this.findByOwner(user.id);
+    this.logger.log(`Found ${properties.length} properties in database for ${normalizedAddress}`);
     
     // If no properties found but user exists, try syncing from chain
     if (properties.length === 0) {
-      this.logger.log(`No properties found for ${normalizedAddress}, attempting to sync from chain...`);
+      this.logger.log(`No properties found in database for ${normalizedAddress}, attempting to sync from chain...`);
       try {
-        await this.syncFromChain(walletAddress);
-        return await this.findByOwner(user.id);
+        const syncedProperties = await this.syncFromChain(walletAddress);
+        if (syncedProperties && syncedProperties.length > 0) {
+          this.logger.log(`Successfully synced ${syncedProperties.length} properties for ${normalizedAddress}`);
+          return syncedProperties;
+        }
+        // Try fetching again after sync
+        properties = await this.findByOwner(user.id);
       } catch (error) {
-        this.logger.error(`Failed to sync properties for ${normalizedAddress}: ${error.message}`);
+        this.logger.error(`Failed to sync properties for ${normalizedAddress}: ${error.message}`, error.stack);
+        // Return empty array on error
+        return [];
       }
     }
 
@@ -142,9 +157,27 @@ export class PropertiesService {
   async syncFromChain(walletAddress: string) {
     try {
       const normalizedAddress = walletAddress.toLowerCase();
-      const properties = await this.contractsService.getOwnerProperties(walletAddress);
       
-      this.logger.log(`Syncing ${properties.length} properties from chain for ${normalizedAddress}`);
+      // Check if contract is initialized
+      if (!this.contractsService.propertyNFT) {
+        this.logger.error('PropertyNFT contract not initialized');
+        throw new Error('Contract not initialized. Please check backend configuration.');
+      }
+
+      this.logger.log(`Fetching properties from chain for ${normalizedAddress}...`);
+      let properties: bigint[];
+      try {
+        properties = await this.contractsService.getOwnerProperties(walletAddress);
+        // Convert to array if needed
+        if (!Array.isArray(properties)) {
+          this.logger.warn('getOwnerProperties returned non-array, converting...');
+          properties = Array.isArray(properties) ? properties : [];
+        }
+        this.logger.log(`Found ${properties.length} properties on-chain for ${normalizedAddress}`);
+      } catch (error) {
+        this.logger.error(`Failed to fetch properties from chain: ${error.message}`, error.stack);
+        throw new Error(`Failed to fetch properties from blockchain: ${error.message}`);
+      }
       
       // Get or create user
       let [user] = await this.db
@@ -171,40 +204,54 @@ export class PropertiesService {
       }
 
       let syncedCount = 0;
+      let errorCount = 0;
+      
       for (const tokenId of properties) {
         try {
-          const propertyData = await this.contractsService.getProperty(tokenId);
+          const tokenIdNum = typeof tokenId === 'bigint' ? Number(tokenId) : Number(tokenId);
+          this.logger.log(`Syncing property ${tokenIdNum}...`);
+          
+          const propertyData = await this.contractsService.getProperty(BigInt(tokenIdNum));
           
           const existing = await this.db
             .select()
             .from(schema.properties)
-            .where(eq(schema.properties.tokenId, Number(tokenId)))
+            .where(eq(schema.properties.tokenId, tokenIdNum))
             .limit(1);
 
           if (existing.length === 0) {
+            const propertyTypeNum = typeof propertyData.propertyType === 'bigint' 
+              ? Number(propertyData.propertyType) 
+              : Number(propertyData.propertyType);
+            
             await this.create({
-              tokenId: Number(tokenId),
+              tokenId: tokenIdNum,
               ownerId: user.id,
-              propertyType: this.mapPropertyType(propertyData.propertyType),
+              propertyType: this.mapPropertyType(propertyTypeNum),
               value: BigInt(propertyData.value.toString()),
-              yieldRate: Number(propertyData.yieldRate),
+              yieldRate: Number(propertyData.yieldRate.toString()),
               rwaContract: propertyData.rwaContract !== '0x0000000000000000000000000000000000000000' 
                 ? propertyData.rwaContract 
                 : undefined,
-              rwaTokenId: propertyData.rwaTokenId ? Number(propertyData.rwaTokenId) : undefined,
+              rwaTokenId: propertyData.rwaTokenId ? Number(propertyData.rwaTokenId.toString()) : undefined,
             });
             syncedCount++;
-            this.logger.log(`Synced property ${tokenId} for ${normalizedAddress}`);
+            this.logger.log(`✓ Synced property ${tokenIdNum} for ${normalizedAddress}`);
+          } else {
+            this.logger.log(`Property ${tokenIdNum} already exists in database`);
           }
         } catch (error) {
-          this.logger.error(`Error syncing property ${tokenId}: ${error.message}`);
+          errorCount++;
+          this.logger.error(`Error syncing property ${tokenId}: ${error.message}`, error.stack);
         }
       }
 
-      this.logger.log(`Synced ${syncedCount} new properties for ${normalizedAddress}`);
-      return this.findByOwner(user.id);
+      this.logger.log(`Sync complete: ${syncedCount} new properties synced, ${errorCount} errors for ${normalizedAddress}`);
+      const finalProperties = await this.findByOwner(user.id);
+      this.logger.log(`Total properties in database for ${normalizedAddress}: ${finalProperties.length}`);
+      return finalProperties;
     } catch (error) {
-      this.logger.error(`Error syncing properties from chain: ${error.message}`);
+      this.logger.error(`Error syncing properties from chain: ${error.message}`, error.stack);
       throw error;
     }
   }

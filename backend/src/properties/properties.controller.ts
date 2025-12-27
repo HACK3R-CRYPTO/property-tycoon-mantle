@@ -21,8 +21,17 @@ export class PropertiesController {
   }
 
   @Post('sync/:address')
-  syncFromChain(@Param('address') address: string) {
-    return this.propertiesService.syncFromChain(address);
+  async syncFromChain(@Param('address') address: string) {
+    try {
+      const properties = await this.propertiesService.syncFromChain(address);
+      return {
+        success: true,
+        propertiesCount: properties.length,
+        properties,
+      };
+    } catch (error) {
+      throw error;
+    }
   }
 
   @Put(':tokenId/coordinates')
