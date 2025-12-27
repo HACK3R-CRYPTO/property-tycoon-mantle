@@ -156,82 +156,94 @@ export class LeaderboardService {
 
   private async syncUserPropertiesFromChain(walletAddress: string) {
     if (!this.contractsService.propertyNFT) {
-      this.logger.error('PropertyNFT contract not initialized');
+      this.logger.warn('PropertyNFT contract not initialized, skipping sync');
       return;
     }
 
-    const normalizedAddress = walletAddress.toLowerCase();
-    
-    // Get or create user
-    let [user] = await this.db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.walletAddress, normalizedAddress))
-      .limit(1);
+    try {
+      const normalizedAddress = walletAddress.toLowerCase();
+      
+      // Get or create user
+      let [user] = await this.db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.walletAddress, normalizedAddress))
+        .limit(1);
 
-    if (!user) {
-      this.logger.log(`Creating user for ${normalizedAddress}`);
-      [user] = await this.db
-        .insert(schema.users)
-        .values({
-          walletAddress: normalizedAddress,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .returning();
-    }
-
-    // Get properties from blockchain
-    const tokenIds = await this.contractsService.getOwnerProperties(walletAddress);
-    
-    if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
-      this.logger.log(`No properties found on-chain for ${normalizedAddress}`);
-      return;
-    }
-
-    // Sync each property
-    for (const tokenId of tokenIds) {
-      try {
-        const tokenIdNum = typeof tokenId === 'bigint' ? Number(tokenId) : Number(tokenId);
-        const propData = await this.contractsService.getProperty(BigInt(tokenIdNum));
-        
-        const existing = await this.db
-          .select()
-          .from(schema.properties)
-          .where(eq(schema.properties.tokenId, tokenIdNum))
-          .limit(1);
-
-        if (existing.length === 0) {
-          const propertyTypeNum = typeof propData.propertyType === 'bigint' 
-            ? Number(propData.propertyType) 
-            : Number(propData.propertyType);
-          
-          const propertyTypeMap: Record<number, string> = {
-            0: 'Residential',
-            1: 'Commercial',
-            2: 'Industrial',
-            3: 'Luxury',
-          };
-
-          await this.db.insert(schema.properties).values({
-            tokenId: tokenIdNum,
-            ownerId: user.id,
-            propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
-            value: BigInt(propData.value.toString()),
-            yieldRate: Number(propData.yieldRate.toString()),
-            rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-              ? propData.rwaContract 
-              : undefined,
-            rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId.toString()) : undefined,
+      if (!user) {
+        this.logger.log(`Creating user for ${normalizedAddress}`);
+        [user] = await this.db
+          .insert(schema.users)
+          .values({
+            walletAddress: normalizedAddress,
             createdAt: new Date(),
             updatedAt: new Date(),
-          });
-          
-          this.logger.log(`Synced property ${tokenIdNum} for ${normalizedAddress}`);
-        }
-      } catch (error) {
-        this.logger.error(`Error syncing property ${tokenId}: ${error.message}`);
+          })
+          .returning();
       }
+
+      // Get properties from blockchain
+      let tokenIds: any[];
+      try {
+        tokenIds = await this.contractsService.getOwnerProperties(walletAddress);
+      } catch (error) {
+        this.logger.error(`Failed to get properties from blockchain for ${walletAddress}: ${error.message}`);
+        return;
+      }
+      
+      if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
+        // No properties found, but that's okay
+        return;
+      }
+
+      // Sync each property
+      for (const tokenId of tokenIds) {
+        try {
+          const tokenIdNum = typeof tokenId === 'bigint' ? Number(tokenId) : Number(tokenId);
+          const propData = await this.contractsService.getProperty(BigInt(tokenIdNum));
+          
+          const existing = await this.db
+            .select()
+            .from(schema.properties)
+            .where(eq(schema.properties.tokenId, tokenIdNum))
+            .limit(1);
+
+          if (existing.length === 0) {
+            const propertyTypeNum = typeof propData.propertyType === 'bigint' 
+              ? Number(propData.propertyType) 
+              : Number(propData.propertyType);
+            
+            const propertyTypeMap: Record<number, string> = {
+              0: 'Residential',
+              1: 'Commercial',
+              2: 'Industrial',
+              3: 'Luxury',
+            };
+
+            await this.db.insert(schema.properties).values({
+              tokenId: tokenIdNum,
+              ownerId: user.id,
+              propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
+              value: BigInt(propData.value.toString()),
+              yieldRate: Number(propData.yieldRate.toString()),
+              rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+                ? propData.rwaContract 
+                : undefined,
+              rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId.toString()) : undefined,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            });
+            
+            this.logger.log(`Synced property ${tokenIdNum} for ${normalizedAddress}`);
+          }
+        } catch (error) {
+          this.logger.error(`Error syncing property ${tokenId}: ${error.message}`);
+          // Continue with next property
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Error in syncUserPropertiesFromChain for ${walletAddress}: ${error.message}`, error.stack);
+      throw error;
     }
   }
 
