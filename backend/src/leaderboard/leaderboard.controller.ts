@@ -15,3 +15,4 @@ export class LeaderboardController {
     await this.leaderboardService.syncAndUpdateLeaderboard(address);
     return { success: true, message: 'Leaderboard synced and updated' };
   }
+}
