@@ -479,25 +479,42 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
                         className="w-full p-2 rounded-lg bg-white/5 border border-white/10 text-white"
                       >
                         <option value="">Choose a property...</option>
-                        {myProperties
-                          .filter((p: any) => {
+                        {(() => {
+                          const availableProperties = myProperties.filter((p: any) => {
+                            const propTokenId = p.tokenId || p.token_id;
+                            if (!propTokenId) {
+                              console.warn('Property missing tokenId:', p);
+                              return false;
+                            }
+                            
                             // Filter out properties that are already listed
                             const isListed = myListings.some((l: Listing) => {
-                              const listingTokenId = l.property?.tokenId || l.propertyId;
-                              return listingTokenId === p.tokenId;
+                              const listingTokenId = l.property?.tokenId || l.property?.token_id || l.propertyId;
+                              return Number(listingTokenId) === Number(propTokenId);
                             });
+                            
                             return !isListed;
-                          })
-                          .map((prop: any) => {
+                          });
+                          
+                          console.log(`Available properties for dropdown: ${availableProperties.length} out of ${myProperties.length}`);
+                          
+                          if (availableProperties.length === 0 && myProperties.length > 0) {
+                            console.warn('All properties are filtered out. Properties:', myProperties);
+                            console.warn('My listings:', myListings);
+                          }
+                          
+                          return availableProperties.map((prop: any) => {
                             const tokenId = prop.tokenId || prop.token_id;
                             const propertyType = prop.propertyType || prop.property_type || 'Unknown';
-                            const value = prop.value || prop.value || '0';
+                            const value = prop.value || '0';
+                            const valueStr = typeof value === 'bigint' ? value.toString() : (value?.toString() || '0');
                             return (
                               <option key={tokenId} value={tokenId}>
-                                {propertyType} #{tokenId} - {formatValue(BigInt(value?.toString() || '0'))} TYCOON
+                                {propertyType} #{tokenId} - {formatValue(BigInt(valueStr))} TYCOON
                               </option>
                             );
-                          })}
+                          });
+                        })()}
                       </select>
                     )}
                   </>
