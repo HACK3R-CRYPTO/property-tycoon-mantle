@@ -356,12 +356,17 @@ export class LeaderboardService {
               if (isUniqueError) {
                 // Property already exists, update it
                 try {
+                  // Ensure value is properly converted to BigInt for database
+                  const valueBigInt = typeof propData.value === 'bigint' 
+                    ? propData.value 
+                    : BigInt(propData.value.toString());
+                  
                   await this.db
                     .update(schema.properties)
                     .set({
                       ownerId: user.id,
                       propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
-                      value: BigInt(propData.value.toString()),
+                      value: valueBigInt,
                       yieldRate: yieldRateValue,
                       rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
                         ? propData.rwaContract 
@@ -387,7 +392,18 @@ export class LeaderboardService {
           } catch (dbError: any) {
             const errorMsg = dbError.message || String(dbError);
             this.logger.error(`Database error syncing property ${tokenIdNum}: ${errorMsg}`);
-            this.logger.error(`Error details: ${JSON.stringify(dbError, null, 2)}`);
+            // Log error details without BigInt serialization issues
+            try {
+              const errorDetails = {
+                message: dbError.message,
+                code: dbError.code,
+                name: dbError.name,
+                stack: dbError.stack?.substring(0, 500), // Limit stack trace
+              };
+              this.logger.error(`Error details: ${JSON.stringify(errorDetails, null, 2)}`);
+            } catch (e) {
+              this.logger.error(`Error details: ${errorMsg}`);
+            }
             // Continue with next property even if this one fails
           }
         } catch (error) {
