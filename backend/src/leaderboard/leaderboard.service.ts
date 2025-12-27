@@ -317,34 +317,10 @@ export class LeaderboardService {
             ? Number(propData.rwaTokenId.toString()) 
             : undefined;
           
-          // Check if property exists, then update or insert
+          // Try to insert, if it fails due to unique constraint, update instead
           try {
-            const existing = await this.db
-              .select()
-              .from(schema.properties)
-              .where(eq(schema.properties.tokenId, tokenIdNum))
-              .limit(1);
-
-            if (existing.length > 0) {
-              // Update existing property
-              await this.db
-                .update(schema.properties)
-                .set({
-                  ownerId: user.id,
-                  propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
-                  value: BigInt(propData.value.toString()),
-                  yieldRate: yieldRateValue,
-                  rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-                    ? propData.rwaContract 
-                    : undefined,
-                  rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
-                  updatedAt: new Date(),
-                })
-                .where(eq(schema.properties.tokenId, tokenIdNum));
-              
-              this.logger.log(`Updated property ${tokenIdNum} for ${normalizedAddress}`);
-            } else {
-              // Insert new property
+            // First try to insert
+            try {
               await this.db
                 .insert(schema.properties)
                 .values({
@@ -362,6 +338,34 @@ export class LeaderboardService {
                 });
               
               this.logger.log(`Inserted property ${tokenIdNum} for ${normalizedAddress}`);
+            } catch (insertError: any) {
+              // If insert fails due to unique constraint, update instead
+              if (insertError.message && (
+                insertError.message.includes('unique') || 
+                insertError.message.includes('duplicate') ||
+                insertError.message.includes('violates unique constraint')
+              )) {
+                // Property already exists, update it
+                await this.db
+                  .update(schema.properties)
+                  .set({
+                    ownerId: user.id,
+                    propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
+                    value: BigInt(propData.value.toString()),
+                    yieldRate: yieldRateValue,
+                    rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+                      ? propData.rwaContract 
+                      : undefined,
+                    rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(schema.properties.tokenId, tokenIdNum));
+                
+                this.logger.log(`Updated property ${tokenIdNum} for ${normalizedAddress} (was duplicate)`);
+              } else {
+                // Re-throw if it's not a unique constraint error
+                throw insertError;
+              }
             }
           } catch (dbError: any) {
             this.logger.error(`Database error syncing property ${tokenIdNum}: ${dbError.message}`, dbError.stack);
