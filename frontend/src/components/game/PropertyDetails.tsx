@@ -70,7 +70,7 @@ export function PropertyDetails({
                   <p className="text-xs text-gray-400 mb-1">Yield Rate</p>
                   <p className="text-lg font-semibold text-emerald-400 flex items-center gap-1">
                     <TrendingUp className="w-4 h-4" />
-                    {property.yieldRate / 100}% APY
+                    {(property.yieldRate / 100).toFixed(1)}% APY
                   </p>
                 </div>
               </div>

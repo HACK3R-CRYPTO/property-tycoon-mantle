@@ -88,11 +88,32 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
         PropertyNFT.Property memory prop = propertyNFT.getProperty(propertyId);
         if (prop.value == 0 || prop.yieldRate == 0) return 0;
         
-        uint256 timeSinceUpdate = block.timestamp - lastYieldUpdate[propertyId];
-        if (timeSinceUpdate < YIELD_UPDATE_INTERVAL) return pendingYield[propertyId];
+        // If lastYieldUpdate is 0, use property creation time (first time)
+        uint256 lastUpdate = lastYieldUpdate[propertyId];
+        if (lastUpdate == 0) {
+            lastUpdate = prop.createdAt;
+        }
         
+        uint256 timeSinceUpdate = block.timestamp - lastUpdate;
+        
+        // Cap yield calculation to prevent overflow (max 365 days)
+        if (timeSinceUpdate > 365 days) {
+            timeSinceUpdate = 365 days;
+        }
+        
+        if (timeSinceUpdate < YIELD_UPDATE_INTERVAL) {
+            return pendingYield[propertyId];
+        }
+        
+        // Calculate daily yield: (value * yieldRate) / (365 * 10000)
+        // yieldRate is in basis points (500 = 5%)
         uint256 dailyYield = (prop.value * prop.yieldRate) / (365 * 10000);
         uint256 periods = timeSinceUpdate / YIELD_UPDATE_INTERVAL;
+        
+        // Cap periods to prevent overflow
+        if (periods > 365) {
+            periods = 365;
+        }
         
         return pendingYield[propertyId] + (dailyYield * periods);
     }

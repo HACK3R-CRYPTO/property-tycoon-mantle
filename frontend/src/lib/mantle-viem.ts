@@ -1,6 +1,6 @@
 import { createConfig, http } from 'wagmi';
 import { mantle, mantleSepoliaTestnet } from '@mantleio/viem/chains';
-import { metaMask, walletConnect } from 'wagmi/connectors';
+import { walletConnect } from 'wagmi/connectors';
 
 // Determine which chain to use based on environment
 const chain = process.env.NEXT_PUBLIC_MANTLE_NETWORK === 'testnet' 
@@ -14,7 +14,7 @@ const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '';
 export const wagmiConfig = createConfig({
   chains: [chain],
   connectors: [
-    metaMask(),
+    // MetaMask is handled by Reown AppKit, no need for direct connector
     walletConnect({ projectId }),
   ],
   transports: {

@@ -77,7 +77,7 @@ export function BuildMenu({ onBuildProperty, tokenBalance, isMinting = false }: 
                   </div>
                   <div>
                     <h4 className="text-white font-semibold">{prop.name}</h4>
-                    <p className="text-xs text-gray-400">{prop.description}</p>
+                    <p className="text-xs text-gray-400 mt-1">{prop.description}</p>
                   </div>
                 </div>
                 <div className="text-right">

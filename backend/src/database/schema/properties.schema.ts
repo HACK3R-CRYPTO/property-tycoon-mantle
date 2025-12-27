@@ -13,6 +13,8 @@ export const properties = pgTable('properties', {
   rwaContract: varchar('rwa_contract', { length: 42 }),
   rwaTokenId: bigint('rwa_token_id', { mode: 'number' }),
   totalYieldEarned: bigint('total_yield_earned', { mode: 'bigint' }).default(BigInt(0)).notNull(),
+  x: integer('x'), // X coordinate on the map
+  y: integer('y'), // Y coordinate on the map
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

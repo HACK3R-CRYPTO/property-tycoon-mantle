@@ -14,7 +14,9 @@ export interface ChatMessage {
   isMe?: boolean;
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL 
+  ? process.env.NEXT_PUBLIC_API_URL.replace('/api', '') 
+  : 'http://localhost:3001';
 
 export function useChat() {
   const { address } = useAccount();
@@ -47,47 +49,69 @@ export function useChat() {
   useEffect(() => {
     if (!address) return;
 
+    console.log('Connecting to WebSocket at:', BACKEND_URL);
     const socket = io(BACKEND_URL, {
       transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
     });
 
     socket.on('connect', () => {
-      console.log('Connected to chat');
+      console.log('✅ Connected to chat WebSocket');
       socket.emit('subscribe:chat');
     });
 
-    socket.on('chat:new', (message: ChatMessage) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          ...message,
-          isMe: message.walletAddress?.toLowerCase() === address?.toLowerCase(),
-        },
-      ]);
+    socket.on('connect_error', (error) => {
+      console.error('❌ WebSocket connection error:', error);
     });
 
-    socket.on('disconnect', () => {
-      console.log('Disconnected from chat');
+    socket.on('chat:new', (message: ChatMessage) => {
+      console.log('📨 New chat message received:', message);
+      setMessages((prev) => {
+        // Check if message already exists to avoid duplicates
+        if (prev.some(m => m.id === message.id)) {
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            ...message,
+            isMe: message.walletAddress?.toLowerCase() === address?.toLowerCase(),
+          },
+        ];
+      });
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('🔌 Disconnected from chat:', reason);
     });
 
     socketRef.current = socket;
 
     return () => {
+      console.log('🧹 Cleaning up WebSocket connection');
       socket.disconnect();
     };
   }, [address]);
 
   const sendMessage = async (message: string) => {
-    if (!address || !message.trim()) return;
+    if (!address || !message.trim()) {
+      console.warn('Cannot send message: missing address or empty message');
+      return;
+    }
 
     setIsSending(true);
     try {
-      await api.post('/chat', {
+      console.log('📤 Sending message:', message);
+      const response = await api.post('/chat', {
         message: message.trim(),
         walletAddress: address,
       });
+      console.log('✅ Message sent successfully:', response);
+      // Message will be added via WebSocket event
     } catch (error) {
-      console.error('Failed to send message:', error);
+      console.error('❌ Failed to send message:', error);
       throw error;
     } finally {
       setIsSending(false);

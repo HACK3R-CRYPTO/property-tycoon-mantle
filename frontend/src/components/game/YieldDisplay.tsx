@@ -13,8 +13,26 @@ interface YieldDisplayProps {
 
 export function YieldDisplay({ totalPendingYield, totalYieldEarned, onClaimAll, isClaiming = false }: YieldDisplayProps) {
   const formatValue = (value: bigint) => {
-    return (Number(value) / 1e18).toFixed(4);
+    // Convert from wei to TYCOON (divide by 1e18)
+    const tycoonAmount = Number(value) / 1e18;
+    
+    // Format with appropriate decimal places
+    if (tycoonAmount < 0.0001) {
+      return '0.0000';
+    }
+    if (tycoonAmount < 1) {
+      return tycoonAmount.toFixed(4);
+    }
+    if (tycoonAmount < 1000) {
+      return tycoonAmount.toFixed(2);
+    }
+    // For large amounts, use comma separators
+    return tycoonAmount.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
   };
+
+  // Calculate daily yield rate for display
+  const dailyYield = Number(totalPendingYield) / 1e18;
+  const dailyRate = dailyYield > 0 ? (dailyYield / 365).toFixed(4) : '0.0000';
 
   return (
     <Card className="border-white/10 bg-gradient-to-br from-emerald-900/20 to-teal-900/20 backdrop-blur-md">
@@ -34,6 +52,15 @@ export function YieldDisplay({ totalPendingYield, totalYieldEarned, onClaimAll, 
             <DollarSign className="w-6 h-6" />
             {formatValue(totalPendingYield)} TYCOON
           </p>
+          {totalPendingYield === BigInt(0) ? (
+            <p className="text-xs text-gray-500 mt-1">
+              Yield accumulates daily. Check back tomorrow!
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 mt-1">
+              ~{dailyRate} TYCOON/day
+            </p>
+          )}
         </div>
 
         <div>

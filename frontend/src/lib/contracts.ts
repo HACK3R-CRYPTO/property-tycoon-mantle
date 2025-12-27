@@ -31,7 +31,7 @@ if (typeof window !== 'undefined') {
 export const CONTRACTS = {
   PropertyNFT: (process.env.NEXT_PUBLIC_PROPERTY_NFT_ADDRESS || '0x0AE7119c7187D88643fb7B409937B68828eE733D') as Address,
   GameToken: (process.env.NEXT_PUBLIC_GAME_TOKEN_ADDRESS || '0x32D9a9b9e241Da421f34786De0B39fD34D1EfeA8') as Address,
-  YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0x8ee6365644426A4b21B062D05596613b8cbffbe3') as Address,
+  YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0x7549a25b9a5206569f6778c6be6a7620687f5A38') as Address,
   Marketplace: (process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || '0x6389D7168029715DE118Baf51B6D32eE1EBEa46B') as Address,
   QuestSystem: (process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS || '0xb5a595A6cd30D1798387A2c781E0646FCA8c4AeD') as Address,
 } as const;

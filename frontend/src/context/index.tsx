@@ -32,7 +32,15 @@ const modal = createAppKit({
 })
 
 function ContextProvider({ children, cookies }: { children: ReactNode; cookies: string | null }) {
-  const initialState = cookieToInitialState(wagmiAdapter.wagmiConfig as Config, cookies)
+  // Safely parse cookies - handle null or empty strings
+  let initialState;
+  try {
+    initialState = cookies ? cookieToInitialState(wagmiAdapter.wagmiConfig as Config, cookies) : undefined;
+  } catch (error) {
+    console.warn('Failed to parse cookies for wagmi initialState:', error);
+    initialState = undefined;
+  }
+  
   return (
     <WagmiProvider config={wagmiAdapter.wagmiConfig as Config} initialState={initialState}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>

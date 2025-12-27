@@ -10,11 +10,16 @@ import { YieldDisplay } from '@/components/game/YieldDisplay';
 import { PropertyDetails } from '@/components/game/PropertyDetails';
 import { GlobalChat } from '@/components/GlobalChat';
 import { WalletConnect } from '@/components/WalletConnect';
-import { MessageSquare, Building2 } from 'lucide-react';
+import { GameGuide } from '@/components/game/GameGuide';
+import { Leaderboard } from '@/components/Leaderboard';
+import { Guilds } from '@/components/Guilds';
+import { MessageSquare, Building2, BookOpen, Trophy, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getOwnerProperties, calculateYield, CONTRACTS, PROPERTY_NFT_ABI, YIELD_DISTRIBUTOR_ABI } from '@/lib/contracts';
 import { readContract } from 'wagmi/actions';
 import { wagmiConfig } from '@/lib/mantle-viem';
+import { api } from '@/lib/api';
+import { io, Socket } from 'socket.io-client';
 
 interface Property {
   id: string;
@@ -35,12 +40,16 @@ export default function GamePage() {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [showBuildMenu, setShowBuildMenu] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showGuilds, setShowGuilds] = useState(false);
   const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0));
   const [totalYieldEarned, setTotalYieldEarned] = useState<bigint>(BigInt(0));
   const [isLoading, setIsLoading] = useState(true);
   const [isMinting, setIsMinting] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
   const [tokenBalanceValue, setTokenBalanceValue] = useState<bigint>(BigInt(0));
+  const [otherPlayersProperties, setOtherPlayersProperties] = useState<Array<Property & { owner: string; isOwned: boolean }>>([]);
 
   // Load properties function
   const loadProperties = useCallback(async () => {
@@ -60,41 +69,99 @@ export default function GamePage() {
         return;
       }
       
-      // Map properties with positions
+      // Deduplicate tokenIds by converting to numbers and using Set
+      const uniqueTokenIds = Array.from(new Set(tokenIds.map(id => Number(id))));
+      
+      // Get properties from backend to get coordinates
+      let backendProperties: any[] = [];
+      try {
+        backendProperties = await api.get(`/properties/owner/${address}`);
+      } catch (error) {
+        console.error('Failed to load properties from backend:', error);
+      }
+      
+      // Map properties with positions from backend or default
       const mappedProperties: Property[] = await Promise.all(
-        tokenIds.map(async (tokenId: bigint, index: number) => {
+        uniqueTokenIds.map(async (tokenId: number, index: number) => {
           const propData = await readContract(wagmiConfig, {
             address: CONTRACTS.PropertyNFT,
             abi: PROPERTY_NFT_ABI,
             functionName: 'getProperty',
-            args: [tokenId],
+            args: [BigInt(tokenId)],
           });
+
+          // Find matching backend property for coordinates
+          const backendProp = backendProperties.find((p: any) => Number(p.tokenId) === tokenId);
+
+          // Convert yieldRate from basis points (e.g., 500 = 5%)
+          // yieldRate is stored as basis points in the contract (500 = 5%)
+          // Convert BigInt to number properly
+          const yieldRateRaw = propData.yieldRate;
+          const yieldRateBigInt = typeof yieldRateRaw === 'bigint' 
+            ? yieldRateRaw 
+            : BigInt(String(yieldRateRaw));
+          let yieldRateValue = Number(yieldRateBigInt);
+          
+          // Debug: log the raw value to help diagnose issues
+          console.log(`Property ${tokenId} raw yieldRate:`, yieldRateValue);
+          
+          // Ensure it's in basis points format (if somehow stored incorrectly, fix it)
+          // If value is less than 100, it might be stored as percentage (5 instead of 500)
+          // If value is very large (> 1e15), it might be in wei format
+          if (yieldRateValue < 100 && yieldRateValue > 0) {
+            // Likely stored as percentage (5), convert to basis points (500)
+            yieldRateValue = yieldRateValue * 100;
+            console.log(`Converted ${yieldRateValue / 100}% to ${yieldRateValue} basis points`);
+          } else if (yieldRateValue > 1e15) {
+            // Likely stored in wei format, convert to basis points
+            yieldRateValue = Number(yieldRateBigInt) / 1e18 * 100;
+            console.log(`Converted from wei to ${yieldRateValue} basis points`);
+          }
+          // Otherwise, assume it's already in basis points (500 = 5%)
+          
+          // Final validation: ensure yieldRate is reasonable (between 100 and 10000 basis points = 1% to 100%)
+          if (yieldRateValue < 100) {
+            console.warn(`Property ${tokenId} has suspiciously low yieldRate: ${yieldRateValue}. Defaulting to 500 (5%)`);
+            yieldRateValue = 500; // Default to 5% for Residential
+          }
+
+          // Use coordinates from backend if available, otherwise use index-based positioning
+          const x = backendProp?.x !== null && backendProp?.x !== undefined 
+            ? Number(backendProp.x) 
+            : index % 10;
+          const y = backendProp?.y !== null && backendProp?.y !== undefined 
+            ? Number(backendProp.y) 
+            : Math.floor(index / 10);
 
           return {
             id: `prop-${tokenId}`,
-            tokenId: Number(tokenId),
+            tokenId: tokenId,
             propertyType: ['Residential', 'Commercial', 'Industrial', 'Luxury'][Number(propData.propertyType)] as Property['propertyType'],
             value: BigInt(propData.value.toString()),
-            yieldRate: Number(propData.yieldRate),
+            yieldRate: yieldRateValue, // Store as basis points (500 = 5%)
             totalYieldEarned: BigInt(propData.totalYieldEarned.toString()),
-            x: index % 10,
-            y: Math.floor(index / 10),
+            x: x,
+            y: y,
             rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' ? propData.rwaContract : undefined,
             rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId) : undefined,
+            isOwned: true, // Mark as owned
           };
         })
       );
 
       setProperties(mappedProperties);
 
-      // Calculate total pending yield
+      // Calculate total pending yield (use unique tokenIds)
       let totalPending = BigInt(0);
-      for (const tokenId of tokenIds) {
+      for (const tokenId of uniqueTokenIds) {
         try {
-          const yieldAmount = await calculateYield(tokenId) as bigint;
-          totalPending += BigInt(yieldAmount.toString());
+          const yieldAmount = await calculateYield(BigInt(tokenId));
+          // Ensure we're working with bigint
+          const yieldBigInt = typeof yieldAmount === 'bigint' ? yieldAmount : BigInt(yieldAmount?.toString() || '0');
+          totalPending += yieldBigInt;
         } catch (error) {
           console.error(`Failed to calculate yield for property ${tokenId}:`, error);
+          // If calculation fails, yield is 0 for that property
         }
       }
       setTotalPendingYield(totalPending);
@@ -154,14 +221,63 @@ export default function GamePage() {
     hash: claimHash,
   });
 
-  // Reload properties when mint succeeds
+  // Reload properties when mint succeeds and assign coordinates automatically
   useEffect(() => {
     if (isMintSuccess) {
-      loadProperties();
-      loadTokenBalance();
+      const refreshData = async () => {
+        // Wait for event indexer to process
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Refresh properties to get the new one
+        await loadProperties();
+        
+        // Get the latest property token ID and assign coordinates automatically
+        try {
+          const tokenIds = await getOwnerProperties(address as `0x${string}`);
+          if (tokenIds.length > 0) {
+            const latestTokenId = Number(tokenIds[tokenIds.length - 1]);
+            
+            // Find next available position on the map (simple grid placement)
+            // Get all existing properties to find occupied positions
+            const existingProps = await api.get(`/properties/owner/${address}`).catch(() => []);
+            const occupiedPositions = new Set(
+              existingProps.map((p: any) => `${p.x ?? -1},${p.y ?? -1}`)
+            );
+            
+            // Find first available position (left to right, top to bottom)
+            let foundPosition = false;
+            for (let y = 0; y < 15 && !foundPosition; y++) {
+              for (let x = 0; x < 20 && !foundPosition; x++) {
+                const posKey = `${x},${y}`;
+                if (!occupiedPositions.has(posKey)) {
+                  // Save coordinates to backend
+                  await api.put(`/properties/${latestTokenId}/coordinates`, {
+                    x,
+                    y,
+                  });
+                  console.log(`Auto-placed property ${latestTokenId} at (${x}, ${y})`);
+                  foundPosition = true;
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Failed to assign coordinates:', error);
+        }
+        
+        // Refresh balance
+        await loadTokenBalance();
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await loadTokenBalance();
+        
+        // Reload properties again to show the new position
+        await loadProperties();
+      };
+      
+      refreshData();
       setIsMinting(false);
     }
-  }, [isMintSuccess, loadProperties, loadTokenBalance]);
+  }, [isMintSuccess, address, loadProperties, loadTokenBalance]);
 
   // Reload properties when claim succeeds
   useEffect(() => {
@@ -177,12 +293,109 @@ export default function GamePage() {
     loadTokenBalance();
   }, [loadTokenBalance]);
 
+  // WebSocket for real-time updates (replaces periodic refresh)
+  useEffect(() => {
+    if (!address || !isConnected) return;
+
+    const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL 
+      ? process.env.NEXT_PUBLIC_API_URL.replace('/api', '') 
+      : 'http://localhost:3001';
+
+    const socket: Socket = io(BACKEND_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+    });
+
+    socket.on('connect', () => {
+      console.log('✅ Connected to WebSocket for real-time updates');
+      // Subscribe to portfolio updates for this address
+      socket.emit('subscribe:portfolio', { address });
+    });
+
+    // Listen for property created events
+    socket.on('property:created', (data: { propertyId: string; owner: string; propertyType: string }) => {
+      if (data.owner.toLowerCase() === address?.toLowerCase()) {
+        console.log('📦 New property created, refreshing...');
+        loadProperties();
+        loadTokenBalance();
+      }
+    });
+
+    // Listen for yield claimed events
+    socket.on('yield:claimed', (data: { propertyId: string; owner: string; amount: string }) => {
+      if (data.owner.toLowerCase() === address?.toLowerCase()) {
+        console.log('💰 Yield claimed, refreshing...');
+        loadProperties();
+        loadTokenBalance();
+      }
+    });
+
+    // Listen for portfolio updates
+    socket.on('portfolio:updated', () => {
+      console.log('📊 Portfolio updated, refreshing...');
+      loadProperties();
+      loadTokenBalance();
+    });
+
+    socket.on('disconnect', () => {
+      console.log('🔌 Disconnected from WebSocket');
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [address, isConnected, loadProperties, loadTokenBalance]);
+
+  // No periodic refresh - only refresh on:
+  // 1. User actions (mint, claim)
+  // 2. WebSocket events (real-time updates)
+  // This prevents constant loading and improves UX
+
+  // Load other players' properties for multiplayer view
+  const loadOtherPlayersProperties = useCallback(async () => {
+    if (!address) return;
+    try {
+      const allProperties = await api.get('/properties');
+      const otherProps = allProperties
+        .filter((p: any) => {
+          const ownerAddr = p.owner?.walletAddress || p.owner?.wallet_address;
+          return ownerAddr?.toLowerCase() !== address?.toLowerCase();
+        })
+        .slice(0, 50) // Limit to 50 other properties for performance
+        .map((p: any) => {
+          const ownerAddr = p.owner?.walletAddress || p.owner?.wallet_address || '';
+          // Use coordinates from backend if available, otherwise skip (properties without coordinates aren't placed)
+          if (p.x === null || p.x === undefined || p.y === null || p.y === undefined) {
+            return null;
+          }
+          return {
+            id: `other-prop-${p.tokenId}`,
+            tokenId: Number(p.tokenId),
+            propertyType: p.propertyType as Property['propertyType'],
+            value: BigInt(p.value?.toString() || '0'),
+            yieldRate: Number(p.yieldRate || 0),
+            totalYieldEarned: BigInt(p.totalYieldEarned?.toString() || '0'),
+            x: Number(p.x),
+            y: Number(p.y),
+            owner: ownerAddr,
+            isOwned: false,
+          };
+        })
+        .filter((p: any) => p !== null); // Remove properties without coordinates
+      setOtherPlayersProperties(otherProps);
+    } catch (error) {
+      console.error('Failed to load other players properties:', error);
+      setOtherPlayersProperties([]);
+    }
+  }, [address]);
+
   // Load properties on mount and when address changes
   useEffect(() => {
     if (address && isConnected) {
       loadProperties();
+      loadOtherPlayersProperties();
     }
-  }, [address, isConnected, loadProperties]);
+  }, [address, isConnected, loadProperties, loadOtherPlayersProperties]);
 
   if (!isConnected || !address) {
     return (
@@ -206,6 +419,30 @@ export default function GamePage() {
             <p className="text-sm text-gray-400">Build your real estate empire</p>
           </div>
           <div className="flex items-center gap-4">
+            <Button
+              onClick={() => setShowGuide(true)}
+              variant="outline"
+              className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+            >
+              <BookOpen className="w-4 h-4 mr-2" />
+              How to Play
+            </Button>
+            <Button
+              onClick={() => setShowLeaderboard(!showLeaderboard)}
+              variant="outline"
+              className="border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
+            >
+              <Trophy className="w-4 h-4 mr-2" />
+              Leaderboard
+            </Button>
+            <Button
+              onClick={() => setShowGuilds(!showGuilds)}
+              variant="outline"
+              className="border-green-500/50 text-green-400 hover:bg-green-500/10"
+            >
+              <Users className="w-4 h-4 mr-2" />
+              Guilds
+            </Button>
             <WalletConnect />
             <Button
               onClick={() => setShowChat(true)}
@@ -258,6 +495,7 @@ export default function GamePage() {
                 tokenBalance={tokenBalanceValue}
                 isMinting={isMinting || isMintPending || isMintConfirming}
                 onBuildProperty={async (type: 'Residential' | 'Commercial' | 'Industrial' | 'Luxury') => {
+                  // Mint property immediately without tile selection
                   if (!address) return;
                   
                   const propertyTypes: Record<string, number> = {
@@ -275,15 +513,15 @@ export default function GamePage() {
                   };
                   
                   const yieldRates: Record<string, bigint> = {
-                    Residential: parseEther('0.05'), // 5% APY
-                    Commercial: parseEther('0.08'), // 8% APY
-                    Industrial: parseEther('0.12'), // 12% APY
-                    Luxury: parseEther('0.15'), // 15% APY
+                    Residential: BigInt(500), // 5% APY in basis points
+                    Commercial: BigInt(800), // 8% APY in basis points
+                    Industrial: BigInt(1200), // 12% APY in basis points
+                    Luxury: BigInt(1500), // 15% APY in basis points
                   };
 
                   try {
                     setIsMinting(true);
-                    writeMint({
+                    await writeMint({
                       address: CONTRACTS.PropertyNFT,
                       abi: PROPERTY_NFT_ABI,
                       functionName: 'mintProperty',
@@ -319,15 +557,14 @@ export default function GamePage() {
                   x: p.x,
                   y: p.y,
                 }))}
+                otherPlayersProperties={otherPlayersProperties}
                 onPropertyClick={(property) => {
                   const fullProperty = properties.find(p => p.id === property.id);
                   if (fullProperty) setSelectedProperty(fullProperty);
                 }}
                 onEmptyTileClick={(x: number, y: number) => {
-                  if (showBuildMenu) {
-                    // TODO: Place property at x, y
-                    console.log('Place property at:', x, y);
-                  }
+                  // Empty tile clicks don't do anything now
+                  // Properties are minted directly from the build menu
                 }}
               />
             )}
@@ -404,6 +641,43 @@ export default function GamePage() {
 
       {/* Global Chat */}
       <GlobalChat isOpen={showChat} onClose={() => setShowChat(false)} />
+      
+      {/* Game Guide */}
+      <GameGuide isOpen={showGuide} onClose={() => setShowGuide(false)} />
+
+      {/* Leaderboard Modal */}
+      {showLeaderboard && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Leaderboard</h2>
+              <Button onClick={() => setShowLeaderboard(false)} variant="ghost" size="sm">
+                ✕
+              </Button>
+            </div>
+            <div className="p-4">
+              <Leaderboard />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Guilds Modal */}
+      {showGuilds && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Guilds</h2>
+              <Button onClick={() => setShowGuilds(false)} variant="ghost" size="sm">
+                ✕
+              </Button>
+            </div>
+            <div className="p-4">
+              <Guilds />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

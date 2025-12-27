@@ -15,7 +15,30 @@ export class PropertiesService {
   ) {}
 
   async findAll() {
-    return this.db.select().from(schema.properties);
+    return this.db
+      .select({
+        id: schema.properties.id,
+        tokenId: schema.properties.tokenId,
+        ownerId: schema.properties.ownerId,
+        propertyType: schema.properties.propertyType,
+        value: schema.properties.value,
+        yieldRate: schema.properties.yieldRate,
+        rwaContract: schema.properties.rwaContract,
+        rwaTokenId: schema.properties.rwaTokenId,
+        totalYieldEarned: schema.properties.totalYieldEarned,
+        x: schema.properties.x,
+        y: schema.properties.y,
+        isActive: schema.properties.isActive,
+        createdAt: schema.properties.createdAt,
+        updatedAt: schema.properties.updatedAt,
+        owner: {
+          id: schema.users.id,
+          walletAddress: schema.users.walletAddress,
+          username: schema.users.username,
+        },
+      })
+      .from(schema.properties)
+      .leftJoin(schema.users, eq(schema.properties.ownerId, schema.users.id));
   }
 
   async findById(id: string) {
@@ -111,6 +134,19 @@ export class PropertiesService {
       this.logger.error(`Error syncing properties from chain: ${error.message}`);
       throw error;
     }
+  }
+
+  async updateCoordinates(tokenId: number, x: number, y: number) {
+    const [updated] = await this.db
+      .update(schema.properties)
+      .set({
+        x,
+        y,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.properties.tokenId, tokenId))
+      .returning();
+    return updated;
   }
 
   private mapPropertyType(type: number): string {

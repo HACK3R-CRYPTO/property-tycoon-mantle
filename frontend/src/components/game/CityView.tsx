@@ -13,8 +13,14 @@ interface Property {
   y: number;
 }
 
+interface OtherPlayerProperty extends Property {
+  owner: string;
+  isOwned: boolean;
+}
+
 interface CityViewProps {
   properties: Property[];
+  otherPlayersProperties?: OtherPlayerProperty[];
   onPropertyClick?: (property: Property) => void;
   onEmptyTileClick?: (x: number, y: number) => void;
 }
@@ -32,7 +38,7 @@ const PROPERTY_COLORS = {
   Luxury: 0xff69b4, // Pink
 };
 
-export function CityView({ properties, onPropertyClick, onEmptyTileClick }: CityViewProps) {
+export function CityView({ properties, otherPlayersProperties = [], onPropertyClick, onEmptyTileClick }: CityViewProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
   const stageRef = useRef<Container | null>(null);
@@ -71,9 +77,27 @@ export function CityView({ properties, onPropertyClick, onEmptyTileClick }: City
       gridLayerRef.current = gridLayer;
       propertiesLayerRef.current = propertiesLayer;
 
-      // Draw grid
+      // Draw background terrain/land tiles (always draw all tiles as empty land)
+      const terrainGraphics = new Graphics();
+      for (let x = 0; x < GRID_WIDTH; x++) {
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+          // Draw empty land tile with subtle pattern
+          terrainGraphics.beginFill(0x2d2d44, 0.6); // Darker land color
+          terrainGraphics.drawRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+          terrainGraphics.endFill();
+          
+          // Add subtle texture pattern (dots) to show it's buildable land
+          terrainGraphics.beginFill(0x3a3a55, 0.3);
+          terrainGraphics.drawCircle(x * TILE_SIZE + TILE_SIZE / 4, y * TILE_SIZE + TILE_SIZE / 4, 2);
+          terrainGraphics.drawCircle(x * TILE_SIZE + (TILE_SIZE * 3) / 4, y * TILE_SIZE + (TILE_SIZE * 3) / 4, 2);
+          terrainGraphics.endFill();
+        }
+      }
+      gridLayer.addChild(terrainGraphics);
+
+      // Draw grid lines (more visible)
       const gridGraphics = new Graphics();
-      gridGraphics.lineStyle(1, 0x2a2a3e, 0.5);
+      gridGraphics.lineStyle(1, 0x4a4a6e, 0.8); // More visible grid lines
 
       // Vertical lines
       for (let x = 0; x <= GRID_WIDTH; x++) {
@@ -92,17 +116,30 @@ export function CityView({ properties, onPropertyClick, onEmptyTileClick }: City
       // Make stage interactive
       app.stage.eventMode = 'static';
       app.stage.hitArea = app.screen;
+      
       app.stage.on('pointerdown', (e) => {
         const x = Math.floor(e.global.x / TILE_SIZE);
         const y = Math.floor(e.global.y / TILE_SIZE);
         
-        // Check if clicked on property
-        const property = properties.find(p => p.x === x && p.y === y);
-        if (property) {
-          onPropertyClick?.(property);
-        } else {
-          onEmptyTileClick?.(x, y);
+        // Validate coordinates
+        if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
+        
+        // Check if clicked on your property
+        const yourProperty = properties.find(p => p.x === x && p.y === y);
+        if (yourProperty) {
+          onPropertyClick?.(yourProperty);
+          return;
         }
+        
+        // Check if clicked on other player's property
+        const otherProperty = otherPlayersProperties.find(p => p.x === x && p.y === y);
+        if (otherProperty) {
+          // Don't allow building on other players' properties
+          return;
+        }
+        
+        // It's an empty tile
+        onEmptyTileClick?.(x, y);
       });
 
       setSpritesLoaded(true);
@@ -118,19 +155,60 @@ export function CityView({ properties, onPropertyClick, onEmptyTileClick }: City
     };
   }, []);
 
-  // Render properties
+  // Update click handler when properties or callbacks change
   useEffect(() => {
-    if (!propertiesLayerRef.current || !spritesLoaded) return;
+    if (!appRef.current || !spritesLoaded) return;
+    
+    const stage = appRef.current.stage;
+    
+    // Remove old pointerdown handler
+    stage.removeAllListeners('pointerdown');
+    
+    // Add new handler that checks current properties
+    stage.on('pointerdown', (e) => {
+      const x = Math.floor(e.global.x / TILE_SIZE);
+      const y = Math.floor(e.global.y / TILE_SIZE);
+      
+      // Validate coordinates
+      if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
+      
+      // Check if clicked on your property
+      const yourProperty = properties.find(p => p.x === x && p.y === y);
+      if (yourProperty) {
+        onPropertyClick?.(yourProperty);
+        return;
+      }
+      
+      // Check if clicked on other player's property
+      const otherProperty = otherPlayersProperties.find(p => p.x === x && p.y === y);
+      if (otherProperty) {
+        // Don't allow building on other players' properties
+        return;
+      }
+      
+      // It's an empty tile - call the handler
+      console.log('Empty tile clicked:', x, y);
+      onEmptyTileClick?.(x, y);
+    });
+  }, [properties, otherPlayersProperties, spritesLoaded, onPropertyClick, onEmptyTileClick]);
+
+  // Render properties (yours and other players') and selected tile
+  useEffect(() => {
+    if (!propertiesLayerRef.current || !gridLayerRef.current || !spritesLoaded) return;
 
     // Clear existing properties
     propertiesLayerRef.current.removeChildren();
+    
 
-    properties.forEach((property) => {
+    // Render other players' properties first (dimmer, in background)
+    otherPlayersProperties.forEach((property) => {
+      if (property.isOwned) return; // Skip if it's yours (will render below)
+      
       const propertyGraphics = new Graphics();
       const color = PROPERTY_COLORS[property.propertyType];
       
-      // Draw property tile
-      propertyGraphics.beginFill(color, 0.8);
+      // Draw other player's property (dimmer, with border)
+      propertyGraphics.beginFill(color, 0.4); // Dimmer
       propertyGraphics.drawRect(
         property.x * TILE_SIZE + 2,
         property.y * TILE_SIZE + 2,
@@ -139,8 +217,8 @@ export function CityView({ properties, onPropertyClick, onEmptyTileClick }: City
       );
       propertyGraphics.endFill();
       
-      // Border
-      propertyGraphics.lineStyle(2, color, 1);
+      // Dashed border to show it's not yours
+      propertyGraphics.lineStyle(2, color, 0.6);
       propertyGraphics.drawRect(
         property.x * TILE_SIZE + 2,
         property.y * TILE_SIZE + 2,
@@ -148,11 +226,57 @@ export function CityView({ properties, onPropertyClick, onEmptyTileClick }: City
         TILE_SIZE - 4
       );
 
-      // Property type label
+      // Property type label (smaller, dimmer)
       const label = new Text({
         text: property.propertyType[0],
         style: {
-          fontSize: 18,
+          fontSize: 14,
+          fill: 0xaaaaaa,
+          fontWeight: 'bold',
+        },
+      });
+      label.x = property.x * TILE_SIZE + TILE_SIZE / 2 - label.width / 2;
+      label.y = property.y * TILE_SIZE + TILE_SIZE / 2 - label.height / 2;
+
+      propertyGraphics.addChild(label);
+      propertyGraphics.eventMode = 'static';
+      propertyGraphics.cursor = 'default';
+      propertyGraphics.interactiveChildren = false;
+      // Don't block clicks - let stage handle them
+      propertyGraphics.hitArea = null;
+
+      propertiesLayerRef.current.addChild(propertyGraphics);
+    });
+
+    // Render your properties on top (bright, clickable)
+    properties.forEach((property) => {
+      const propertyGraphics = new Graphics();
+      const color = PROPERTY_COLORS[property.propertyType];
+      
+      // Draw property tile (bright)
+      propertyGraphics.beginFill(color, 0.9);
+      propertyGraphics.drawRect(
+        property.x * TILE_SIZE + 2,
+        property.y * TILE_SIZE + 2,
+        TILE_SIZE - 4,
+        TILE_SIZE - 4
+      );
+      propertyGraphics.endFill();
+      
+      // Bright border with glow effect
+      propertyGraphics.lineStyle(3, color, 1);
+      propertyGraphics.drawRect(
+        property.x * TILE_SIZE + 2,
+        property.y * TILE_SIZE + 2,
+        TILE_SIZE - 4,
+        TILE_SIZE - 4
+      );
+
+      // Property type label (bright)
+      const label = new Text({
+        text: property.propertyType[0],
+        style: {
+          fontSize: 20,
           fill: 0xffffff,
           fontWeight: 'bold',
         },
@@ -163,13 +287,25 @@ export function CityView({ properties, onPropertyClick, onEmptyTileClick }: City
       propertyGraphics.addChild(label);
       propertyGraphics.eventMode = 'static';
       propertyGraphics.cursor = 'pointer';
-      propertyGraphics.on('pointerdown', () => {
+      propertyGraphics.interactiveChildren = false;
+      // Set hitArea to only the property rectangle, not the full tile
+      propertyGraphics.hitArea = {
+        contains: (x: number, y: number) => {
+          const tileX = property.x * TILE_SIZE + 2;
+          const tileY = property.y * TILE_SIZE + 2;
+          return x >= tileX && x <= tileX + TILE_SIZE - 4 && 
+                 y >= tileY && y <= tileY + TILE_SIZE - 4;
+        }
+      };
+      // Handle click on property
+      propertyGraphics.on('pointerdown', (e) => {
+        e.stopPropagation(); // Stop event from reaching stage
         onPropertyClick?.(property);
       });
 
       propertiesLayerRef.current.addChild(propertyGraphics);
     });
-  }, [properties, spritesLoaded, onPropertyClick]);
+      }, [properties, otherPlayersProperties, spritesLoaded, onPropertyClick]);
 
   return (
     <div className="w-full bg-gray-900 rounded-lg border border-white/10 p-4">

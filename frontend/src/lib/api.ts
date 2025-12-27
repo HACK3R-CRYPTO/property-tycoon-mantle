@@ -16,5 +16,15 @@ export const api = {
     if (!response.ok) throw new Error(`API error: ${response.statusText}`);
     return response.json();
   },
+
+  async put(endpoint: string, data: any) {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+    return response.json();
+  },
 };
 

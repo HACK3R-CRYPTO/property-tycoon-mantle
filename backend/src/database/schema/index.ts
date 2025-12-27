@@ -5,4 +5,5 @@ export * from './marketplace.schema';
 export * from './quests.schema';
 export * from './leaderboard.schema';
 export * from './chat.schema';
+export * from './guilds.schema';
 

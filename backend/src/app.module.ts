@@ -11,6 +11,7 @@ import { MarketplaceModule } from './marketplace/marketplace.module';
 import { QuestsModule } from './quests/quests.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { ChatModule } from './chat/chat.module';
+import { GuildsModule } from './guilds/guilds.module';
 import { WebsocketGateway } from './websocket/websocket.gateway';
 import { EventsModule } from './events/events.module';
 
@@ -26,6 +27,7 @@ import { EventsModule } from './events/events.module';
     QuestsModule,
     LeaderboardModule,
     ChatModule,
+    GuildsModule,
     EventsModule,
   ],
   controllers: [AppController],

@@ -14,12 +14,15 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
-  const cookieString = cookieStore.toString();
+  // Get the cookie header string - format as "name=value; name2=value2"
+  const cookieHeader = cookieStore.getAll()
+    .map(cookie => `${cookie.name}=${cookie.value}`)
+    .join('; ') || null;
   
   return (
     <html lang="en">
       <body>
-        <ContextProvider cookies={cookieString}>{children}</ContextProvider>
+        <ContextProvider cookies={cookieHeader}>{children}</ContextProvider>
       </body>
     </html>
   );
