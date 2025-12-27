@@ -338,8 +338,8 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
         abi: MARKETPLACE_ABI,
         functionName: 'buyProperty',
         args: [BigInt(listing.property.tokenId)],
-        value: BigInt(listing.price.toString()),
-      });
+        value: listing.price as bigint,
+      } as any);
     } catch (error: any) {
       console.error('Failed to purchase:', error);
       alert(error.message || 'Failed to purchase property');
