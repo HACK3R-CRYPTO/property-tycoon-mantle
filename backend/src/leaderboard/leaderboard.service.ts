@@ -317,27 +317,20 @@ export class LeaderboardService {
             ? Number(propData.rwaTokenId.toString()) 
             : undefined;
           
-          // Use upsert (ON CONFLICT) to handle duplicates gracefully
+          // Check if property exists, then update or insert
           try {
-            await this.db
-              .insert(schema.properties)
-              .values({
-                tokenId: tokenIdNum,
-                ownerId: user.id,
-                propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
-                value: BigInt(propData.value.toString()),
-                yieldRate: yieldRateValue,
-                rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-                  ? propData.rwaContract 
-                  : undefined,
-                rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .onConflictDoUpdate({
-                target: schema.properties.tokenId,
-                set: {
-                  ownerId: user.id, // Update owner in case of transfer
+            const existing = await this.db
+              .select()
+              .from(schema.properties)
+              .where(eq(schema.properties.tokenId, tokenIdNum))
+              .limit(1);
+
+            if (existing.length > 0) {
+              // Update existing property
+              await this.db
+                .update(schema.properties)
+                .set({
+                  ownerId: user.id,
                   propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
                   value: BigInt(propData.value.toString()),
                   yieldRate: yieldRateValue,
@@ -346,12 +339,32 @@ export class LeaderboardService {
                     : undefined,
                   rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
                   updatedAt: new Date(),
-                },
-              });
-            
-            this.logger.log(`Synced property ${tokenIdNum} for ${normalizedAddress}`);
+                })
+                .where(eq(schema.properties.tokenId, tokenIdNum));
+              
+              this.logger.log(`Updated property ${tokenIdNum} for ${normalizedAddress}`);
+            } else {
+              // Insert new property
+              await this.db
+                .insert(schema.properties)
+                .values({
+                  tokenId: tokenIdNum,
+                  ownerId: user.id,
+                  propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
+                  value: BigInt(propData.value.toString()),
+                  yieldRate: yieldRateValue,
+                  rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+                    ? propData.rwaContract 
+                    : undefined,
+                  rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                });
+              
+              this.logger.log(`Inserted property ${tokenIdNum} for ${normalizedAddress}`);
+            }
           } catch (dbError: any) {
-            this.logger.error(`Database error inserting/updating property ${tokenIdNum}: ${dbError.message}`, dbError.stack);
+            this.logger.error(`Database error syncing property ${tokenIdNum}: ${dbError.message}`, dbError.stack);
             // Continue with next property even if this one fails
           }
         } catch (error) {

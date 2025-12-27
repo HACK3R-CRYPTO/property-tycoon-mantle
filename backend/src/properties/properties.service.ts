@@ -226,28 +226,19 @@ export class PropertiesService {
             yieldRateValue = yieldRateValue * 100;
           }
 
-          // Use upsert to handle duplicates gracefully
+          // Check if property exists, then update or insert
           try {
-            await this.db
-              .insert(schema.properties)
-              .values({
-                tokenId: tokenIdNum,
-                ownerId: user.id,
-                propertyType: this.mapPropertyType(propertyTypeNum),
-                value: BigInt(propertyData.value.toString()),
-                yieldRate: yieldRateValue,
-                rwaContract: propertyData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-                  ? propertyData.rwaContract 
-                  : undefined,
-                rwaTokenId: propertyData.rwaTokenId && Number(propertyData.rwaTokenId.toString()) > 0 
-                  ? Number(propertyData.rwaTokenId.toString()) 
-                  : undefined,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .onConflictDoUpdate({
-                target: schema.properties.tokenId,
-                set: {
+            const existing = await this.db
+              .select()
+              .from(schema.properties)
+              .where(eq(schema.properties.tokenId, tokenIdNum))
+              .limit(1);
+
+            if (existing.length > 0) {
+              // Update existing property
+              await this.db
+                .update(schema.properties)
+                .set({
                   ownerId: user.id,
                   propertyType: this.mapPropertyType(propertyTypeNum),
                   value: BigInt(propertyData.value.toString()),
@@ -259,13 +250,36 @@ export class PropertiesService {
                     ? Number(propertyData.rwaTokenId.toString()) 
                     : undefined,
                   updatedAt: new Date(),
-                },
-              });
+                })
+                .where(eq(schema.properties.tokenId, tokenIdNum));
+              
+              this.logger.log(`✓ Updated property ${tokenIdNum} for ${normalizedAddress}`);
+            } else {
+              // Insert new property
+              await this.db
+                .insert(schema.properties)
+                .values({
+                  tokenId: tokenIdNum,
+                  ownerId: user.id,
+                  propertyType: this.mapPropertyType(propertyTypeNum),
+                  value: BigInt(propertyData.value.toString()),
+                  yieldRate: yieldRateValue,
+                  rwaContract: propertyData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+                    ? propertyData.rwaContract 
+                    : undefined,
+                  rwaTokenId: propertyData.rwaTokenId && Number(propertyData.rwaTokenId.toString()) > 0 
+                    ? Number(propertyData.rwaTokenId.toString()) 
+                    : undefined,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                });
+              
+              this.logger.log(`✓ Inserted property ${tokenIdNum} for ${normalizedAddress}`);
+            }
             syncedCount++;
-            this.logger.log(`✓ Synced property ${tokenIdNum} for ${normalizedAddress}`);
           } catch (dbError: any) {
             errorCount++;
-            this.logger.error(`Database error syncing property ${tokenIdNum}: ${dbError.message}`);
+            this.logger.error(`Database error syncing property ${tokenIdNum}: ${dbError.message}`, dbError.stack);
           }
         } catch (error) {
           errorCount++;
