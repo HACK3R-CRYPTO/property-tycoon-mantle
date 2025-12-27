@@ -178,8 +178,9 @@ export class LeaderboardService {
 
   private async syncUserPropertiesFromChain(walletAddress: string) {
     if (!this.contractsService.propertyNFT) {
-      this.logger.warn('PropertyNFT contract not initialized, skipping sync');
-      return;
+      this.logger.error('PropertyNFT contract not initialized! Cannot sync from blockchain.');
+      this.logger.error('Please ensure MANTLE_RPC_URL, PRIVATE_KEY, and PROPERTY_NFT_ADDRESS are set in backend .env');
+      throw new Error('Contract not initialized. Please check backend configuration.');
     }
 
     try {
