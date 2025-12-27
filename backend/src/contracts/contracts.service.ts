@@ -29,15 +29,20 @@ export class ContractsService implements OnModuleInit {
 
   private initializeContracts() {
     try {
-      const rpcUrl = this.configService.get<string>('MANTLE_RPC_URL');
-      const privateKey = this.configService.get<string>('PRIVATE_KEY');
+      // Use process.env as fallback if ConfigService doesn't have values
+      const rpcUrl = this.configService.get<string>('MANTLE_RPC_URL') || process.env.MANTLE_RPC_URL;
+      const privateKey = this.configService.get<string>('PRIVATE_KEY') || process.env.PRIVATE_KEY;
 
-      this.logger.log(`Initializing contracts - RPC URL: ${rpcUrl ? 'SET' : 'MISSING'}, Private Key: ${privateKey ? 'SET' : 'MISSING'}`);
+      this.logger.log(`[ContractsService] Initializing contracts...`);
+      this.logger.log(`[ContractsService] RPC URL: ${rpcUrl ? 'SET' : 'MISSING'}`);
+      this.logger.log(`[ContractsService] Private Key: ${privateKey ? 'SET' : 'MISSING'}`);
 
       if (!rpcUrl || !privateKey) {
-        this.logger.error('Missing MANTLE_RPC_URL or PRIVATE_KEY for contract service.');
-        this.logger.error(`MANTLE_RPC_URL: ${rpcUrl || 'NOT SET'}`);
-        this.logger.error(`PRIVATE_KEY: ${privateKey ? 'SET (hidden)' : 'NOT SET'}`);
+        this.logger.error('[ContractsService] Missing MANTLE_RPC_URL or PRIVATE_KEY for contract service.');
+        this.logger.error(`[ContractsService] ConfigService MANTLE_RPC_URL: ${this.configService.get<string>('MANTLE_RPC_URL') || 'NOT SET'}`);
+        this.logger.error(`[ContractsService] process.env MANTLE_RPC_URL: ${process.env.MANTLE_RPC_URL || 'NOT SET'}`);
+        this.logger.error(`[ContractsService] ConfigService PRIVATE_KEY: ${this.configService.get<string>('PRIVATE_KEY') ? 'SET (hidden)' : 'NOT SET'}`);
+        this.logger.error(`[ContractsService] process.env PRIVATE_KEY: ${process.env.PRIVATE_KEY ? 'SET (hidden)' : 'NOT SET'}`);
         return;
       }
 
