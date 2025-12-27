@@ -1,11 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
-import * as PropertyNFTABI from './abis/PropertyNFT.json';
-import * as GameTokenABI from './abis/GameToken.json';
-import * as YieldDistributorABI from './abis/YieldDistributor.json';
-import * as MarketplaceABI from './abis/Marketplace.json';
-import * as QuestSystemABI from './abis/QuestSystem.json';
+import PropertyNFTABI from './abis/PropertyNFT.json';
+import GameTokenABI from './abis/GameToken.json';
+import YieldDistributorABI from './abis/YieldDistributor.json';
+import MarketplaceABI from './abis/Marketplace.json';
+import QuestSystemABI from './abis/QuestSystem.json';
 
 @Injectable()
 export class ContractsService implements OnModuleInit {
