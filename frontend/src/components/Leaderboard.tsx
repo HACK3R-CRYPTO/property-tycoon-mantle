@@ -11,8 +11,8 @@ interface LeaderboardEntry {
   rank: number;
   walletAddress: string;
   username?: string;
-  totalPortfolioValue: bigint;
-  totalYieldEarned: bigint;
+  totalPortfolioValue: string | bigint; // Backend returns string (NUMERIC), frontend may use bigint
+  totalYieldEarned: string | bigint;
   propertiesOwned: number;
   questsCompleted: number;
 }
@@ -32,21 +32,37 @@ export function Leaderboard() {
     setIsLoading(true);
     try {
       if (activeTab === 'global') {
-        const data = await api.get('/leaderboard?limit=100');
-        setLeaderboard(data);
+        try {
+          const data = await api.get('/leaderboard?limit=100');
+          setLeaderboard(data);
+        } catch (error) {
+          console.warn('Backend leaderboard unavailable, showing empty leaderboard:', error);
+          // Backend unavailable - show empty state
+          setLeaderboard([]);
+        }
       } else {
-        const data = await api.get('/guilds/leaderboard?limit=20');
-        setGuildLeaderboard(data);
+        try {
+          const data = await api.get('/guilds/leaderboard?limit=20');
+          setGuildLeaderboard(data);
+        } catch (error) {
+          console.warn('Backend guild leaderboard unavailable:', error);
+          setGuildLeaderboard([]);
+        }
       }
     } catch (error) {
       console.error('Failed to load leaderboard:', error);
+      setLeaderboard([]);
+      setGuildLeaderboard([]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const formatValue = (value: bigint) => {
-    const tycoonAmount = Number(value) / 1e18;
+  const formatValue = (value: string | bigint) => {
+    // Handle both string (from backend NUMERIC) and bigint
+    const valueStr = typeof value === 'string' ? value : value.toString();
+    // Value is already in wei (smallest unit), convert to TYCOON
+    const tycoonAmount = Number(valueStr) / 1e18;
     if (tycoonAmount < 1) {
       return tycoonAmount.toFixed(2);
     }
@@ -165,7 +181,7 @@ export function Leaderboard() {
 
       {visitingPortfolio && (
         <VisitPortfolio
-          walletAddress={visitingPortfolio.address}
+          address={visitingPortfolio.address}
           username={visitingPortfolio.username}
           onClose={() => setVisitingPortfolio(null)}
         />
@@ -173,4 +189,3 @@ export function Leaderboard() {
     </Card>
   );
 }
-

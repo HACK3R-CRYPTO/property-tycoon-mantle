@@ -49,4 +49,3 @@ function ContextProvider({ children, cookies }: { children: ReactNode; cookies: 
 }
 
 export default ContextProvider
-

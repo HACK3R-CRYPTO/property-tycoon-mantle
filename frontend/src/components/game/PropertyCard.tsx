@@ -13,6 +13,7 @@ interface PropertyCardProps {
     yieldRate: number;
     totalYieldEarned: bigint;
   };
+  claimableYield?: bigint; // Claimable yield for this specific property (from contract)
   onClaimYield?: () => void | Promise<void>;
   onViewDetails?: () => void;
   isClaiming?: boolean;
@@ -25,7 +26,7 @@ const PROPERTY_COLORS = {
   Luxury: 'bg-pink-500',
 };
 
-export function PropertyCard({ property, onClaimYield, onViewDetails, isClaiming = false }: PropertyCardProps) {
+export function PropertyCard({ property, claimableYield, onClaimYield, onViewDetails, isClaiming = false }: PropertyCardProps) {
   const formatValue = (value: bigint) => {
     return (Number(value) / 1e18).toFixed(2);
   };
@@ -70,10 +71,11 @@ export function PropertyCard({ property, onClaimYield, onViewDetails, isClaiming
           {onClaimYield && (
             <Button 
               onClick={onClaimYield} 
-              disabled={isClaiming}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+              disabled={isClaiming || !claimableYield || claimableYield === BigInt(0)}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={!claimableYield || claimableYield === BigInt(0) ? 'No yield available yet. Requires 24 hours after property creation.' : 'Claim your yield'}
             >
-              {isClaiming ? 'Claiming...' : 'Claim Yield'}
+              {isClaiming ? 'Claiming...' : claimableYield && claimableYield > BigInt(0) ? 'Claim Yield' : 'No Yield Yet'}
             </Button>
           )}
           {onViewDetails && (
@@ -86,4 +88,3 @@ export function PropertyCard({ property, onClaimYield, onViewDetails, isClaiming
     </Card>
   );
 }
-

@@ -15,6 +15,7 @@ interface PropertyDetailsProps {
     rwaContract?: string;
     rwaTokenId?: number;
   };
+  claimableYield?: bigint; // Claimable yield for this property (from contract)
   isOpen: boolean;
   onClose: () => void;
   onClaimYield?: () => void | Promise<void>;
@@ -25,6 +26,7 @@ interface PropertyDetailsProps {
 
 export function PropertyDetails({
   property,
+  claimableYield,
   isOpen,
   onClose,
   onClaimYield,
@@ -107,10 +109,11 @@ export function PropertyDetails({
                   {onClaimYield && (
                     <Button 
                       onClick={onClaimYield} 
-                      disabled={isClaiming}
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                      disabled={isClaiming || !claimableYield || claimableYield === BigInt(0)}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={!claimableYield || claimableYield === BigInt(0) ? 'No yield available yet. Requires 24 hours after property creation.' : 'Claim your yield'}
                     >
-                      {isClaiming ? 'Claiming...' : 'Claim Yield'}
+                      {isClaiming ? 'Claiming...' : claimableYield && claimableYield > BigInt(0) ? 'Claim Yield' : 'No Yield Yet'}
                     </Button>
                   )}
                   {onSellProperty && (
@@ -135,4 +138,3 @@ export function PropertyDetails({
     </>
   );
 }
-

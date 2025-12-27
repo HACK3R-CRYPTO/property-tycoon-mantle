@@ -15,13 +15,22 @@ export class LeaderboardService {
   ) {}
 
   async syncAllUsersFromChain() {
+    // NOTE: Property syncing is OPTIONAL - frontend works 100% from blockchain
+    // This is only needed for leaderboard calculations
+    // If you want to disable it, set ENABLE_PROPERTY_SYNC=false in .env
+    
+    if (process.env.ENABLE_PROPERTY_SYNC === 'false') {
+      this.logger.log('Property syncing is disabled (frontend works from blockchain)');
+      return;
+    }
+
     // Check if contract is initialized
     if (!this.contractsService.propertyNFT) {
       this.logger.warn('PropertyNFT contract not initialized, cannot sync');
       return;
     }
 
-    this.logger.log('Syncing all users\' properties from blockchain...');
+    this.logger.log('Syncing all users\' properties from blockchain (for leaderboard only)...');
     
     try {
       if (!this.contractsService.propertyNFT) {
@@ -105,10 +114,7 @@ export class LeaderboardService {
   }
 
   async getGlobalLeaderboard(limit: number = 100) {
-    // Note: Sync should be called before this method via syncAllUsersFromChain()
-    // This method just fetches and returns the leaderboard data
-
-    // Now fetch the updated leaderboard (always return, even if sync failed)
+    // Try to get leaderboard from database first
     try {
       const rankings = await this.db
         .select({
@@ -125,16 +131,192 @@ export class LeaderboardService {
         .orderBy(desc(schema.leaderboard.totalPortfolioValue))
         .limit(limit);
 
-      return rankings.map((r, index) => ({
-        ...r,
-        rank: index + 1,
-        // Convert BigInt values to strings for JSON serialization
-        totalPortfolioValue: r.totalPortfolioValue ? r.totalPortfolioValue.toString() : '0',
-        totalYieldEarned: r.totalYieldEarned ? r.totalYieldEarned.toString() : '0',
-      }));
+      // Check if leaderboard has valid data (non-zero values)
+      const hasValidData = rankings.some(r => 
+        (r.totalPortfolioValue && r.totalPortfolioValue !== '0' && r.totalPortfolioValue !== '0.0') ||
+        (r.propertiesOwned && r.propertiesOwned > 0)
+      );
+
+      // If we have rankings with valid data, return them
+      if (rankings.length > 0 && hasValidData) {
+        return rankings.map((r, index) => ({
+          ...r,
+          rank: index + 1,
+          // Convert string values (NUMERIC) to strings for JSON serialization
+          totalPortfolioValue: r.totalPortfolioValue ? String(r.totalPortfolioValue) : '0',
+          totalYieldEarned: r.totalYieldEarned ? String(r.totalYieldEarned) : '0',
+        }));
+      }
+
+      // If leaderboard exists but has no valid data, return it anyway (don't block on update)
+      // Updates should happen via event indexer or manual sync, not on every request
+      if (rankings.length > 0 && !hasValidData) {
+        this.logger.warn('Leaderboard has entries but values are zero. Run sync to update.');
+        // Return the data anyway (fast response)
+        return rankings.map((r, index) => ({
+          ...r,
+          rank: index + 1,
+          totalPortfolioValue: r.totalPortfolioValue ? String(r.totalPortfolioValue) : '0',
+          totalYieldEarned: r.totalYieldEarned ? String(r.totalYieldEarned) : '0',
+        }));
+      }
     } catch (error) {
-      this.logger.error(`Error fetching leaderboard: ${error.message}`, error.stack);
-      // Return empty array if query fails
+      this.logger.warn(`Error fetching leaderboard from database: ${error.message}`);
+    }
+
+    // If database is empty or failed, calculate from blockchain directly
+    this.logger.log('Database leaderboard empty or invalid, calculating from blockchain...');
+    return await this.calculateLeaderboardFromBlockchain(limit);
+  }
+
+  private async calculateLeaderboardFromBlockchain(limit: number = 100) {
+    if (!this.contractsService.propertyNFT) {
+      this.logger.warn('PropertyNFT contract not initialized, cannot calculate leaderboard from blockchain');
+      return [];
+    }
+
+    try {
+      // First, discover property owners from blockchain events (chunk queries to avoid RPC limit)
+      const discoveredOwners = new Set<string>();
+      try {
+        this.logger.log('Discovering property owners from blockchain events...');
+        const currentBlock = await this.contractsService.getProvider().getBlockNumber();
+        const fromBlock = 0;
+        const chunkSize = 10000; // RPC limit
+        
+        for (let i = fromBlock; i <= currentBlock; i += chunkSize) {
+          const toBlock = Math.min(i + chunkSize - 1, currentBlock);
+          if (i > toBlock) break;
+          
+          try {
+            const propertyCreatedFilter = this.contractsService.propertyNFT.filters.PropertyCreated();
+            const events = await this.contractsService.propertyNFT.queryFilter(propertyCreatedFilter, i, toBlock);
+            
+            for (const event of events) {
+              if (event.args && event.args.owner) {
+                discoveredOwners.add(event.args.owner.toLowerCase());
+              }
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to query events from block ${i} to ${toBlock}: ${error.message}`);
+          }
+        }
+        this.logger.log(`Found ${discoveredOwners.size} unique property owners from events`);
+      } catch (error) {
+        this.logger.warn(`Failed to discover owners from events: ${error.message}`);
+      }
+
+      // Get all users from database
+      const dbUsers = await this.db
+        .select({
+          id: schema.users.id,
+          walletAddress: schema.users.walletAddress,
+          username: schema.users.username,
+        })
+        .from(schema.users)
+        .limit(100);
+
+      // Combine database users with discovered owners
+      const allAddresses = new Set<string>();
+      dbUsers.forEach(u => allAddresses.add(u.walletAddress.toLowerCase()));
+      discoveredOwners.forEach(addr => allAddresses.add(addr));
+
+      // Create users for discovered owners who aren't in database
+      for (const address of discoveredOwners) {
+        if (!dbUsers.find(u => u.walletAddress.toLowerCase() === address)) {
+          try {
+            const [newUser] = await this.db
+              .insert(schema.users)
+              .values({
+                walletAddress: address,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .returning();
+            dbUsers.push({
+              id: newUser.id,
+              walletAddress: newUser.walletAddress,
+              username: newUser.username,
+            });
+            this.logger.log(`Created user for discovered owner: ${address}`);
+          } catch (error) {
+            this.logger.warn(`Failed to create user for ${address}: ${error.message}`);
+          }
+        }
+      }
+
+      this.logger.log(`Calculating leaderboard from blockchain for ${dbUsers.length} users...`);
+
+      const leaderboardEntries = await Promise.all(
+        dbUsers.map(async (user) => {
+          try {
+            // Get properties from blockchain
+            const tokenIds = await this.contractsService.getOwnerProperties(user.walletAddress);
+            if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
+              this.logger.debug(`No properties found for ${user.walletAddress}`);
+              return null; // No properties
+            }
+
+            this.logger.log(`Found ${tokenIds.length} properties for ${user.walletAddress}`);
+
+            // Calculate portfolio value from blockchain
+            let totalPortfolioValue = BigInt(0);
+            let totalYieldEarned = BigInt(0);
+
+            for (const tokenId of tokenIds) {
+              try {
+                const propData = await this.contractsService.getProperty(BigInt(Number(tokenId)));
+                // Value is now stored as string (numeric), convert to BigInt for calculation
+                totalPortfolioValue += BigInt(propData.value.toString());
+                totalYieldEarned += BigInt(propData.totalYieldEarned?.toString() || '0');
+              } catch (error) {
+                this.logger.warn(`Failed to get property ${tokenId} for leaderboard: ${error.message}`);
+              }
+            }
+
+            return {
+              userId: user.id,
+              walletAddress: user.walletAddress,
+              username: user.username,
+              totalPortfolioValue: totalPortfolioValue.toString(),
+              totalYieldEarned: totalYieldEarned.toString(),
+              propertiesOwned: tokenIds.length,
+              questsCompleted: 0, // Quests are in database, skip for now
+            };
+          } catch (error) {
+            this.logger.warn(`Failed to calculate stats for ${user.walletAddress}: ${error.message}`);
+            return null;
+          }
+        })
+      );
+
+      // Filter out nulls and sort by portfolio value
+      const validEntries = leaderboardEntries
+        .filter((e): e is NonNullable<typeof e> => e !== null)
+        .sort((a, b) => {
+          const aValue = BigInt(a.totalPortfolioValue);
+          const bValue = BigInt(b.totalPortfolioValue);
+          return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+        })
+        .slice(0, limit)
+        .map((entry, index) => ({
+          ...entry,
+          rank: index + 1,
+        }));
+
+      this.logger.log(`Calculated leaderboard from blockchain: ${validEntries.length} entries`);
+      
+      if (validEntries.length === 0) {
+        this.logger.warn('No leaderboard entries found. Possible reasons:');
+        this.logger.warn(`- No users in database: ${dbUsers.length}`);
+        this.logger.warn(`- No property owners discovered from events: ${discoveredOwners.size}`);
+        this.logger.warn('- Users in database might not have properties on-chain');
+        this.logger.warn('- Check backend logs for property fetching errors');
+      }
+      
+      return validEntries;
+    } catch (error) {
+      this.logger.error(`Error calculating leaderboard from blockchain: ${error.message}`, error.stack);
       return [];
     }
   }
@@ -151,14 +333,15 @@ export class LeaderboardService {
       return;
     }
 
-    // Sync properties from blockchain first to ensure we have all properties
-    // We'll sync directly here to avoid circular dependency
-    try {
-      this.logger.log(`Syncing properties from blockchain for user ${user.walletAddress} before leaderboard update`);
-      await this.syncUserPropertiesFromChain(user.walletAddress);
-    } catch (error) {
-      this.logger.error(`Failed to sync properties for leaderboard update: ${error.message}`, error.stack);
-      // Continue with database properties even if sync fails
+    // Sync properties from blockchain first (only if enabled)
+    if (process.env.ENABLE_PROPERTY_SYNC !== 'false') {
+      try {
+        this.logger.log(`Syncing properties from blockchain for user ${user.walletAddress} before leaderboard update`);
+        await this.syncUserPropertiesFromChain(user.walletAddress);
+      } catch (error) {
+        this.logger.error(`Failed to sync properties for leaderboard update: ${error.message}`, error.stack);
+        // Continue with database properties even if sync fails
+      }
     }
 
     // Get user's properties (now synced from blockchain)
@@ -183,8 +366,9 @@ export class LeaderboardService {
     }
 
     // Calculate total portfolio value
+    // Property value is stored as string (numeric), convert to BigInt for calculation
     const totalPortfolioValue = properties.reduce((sum, prop) => {
-      return sum + BigInt(prop.value || '0');
+      return sum + BigInt(prop.value?.toString() || '0');
     }, BigInt(0));
 
     // Get completed quests
@@ -219,22 +403,42 @@ export class LeaderboardService {
       .where(eq(schema.leaderboard.userId, userId))
       .limit(1);
 
-    const leaderboardData = {
+    // Convert BigInt to string for numeric columns
+    // Ensure values are properly formatted as strings for NUMERIC type
+    const totalPortfolioValueStr = totalPortfolioValue.toString();
+    const totalYieldEarnedStr = totalYieldEarned.toString();
+    
+    const leaderboardData: any = {
       userId,
-      totalPortfolioValue: totalPortfolioValue,
-      totalYieldEarned: totalYieldEarned,
+      totalPortfolioValue: totalPortfolioValueStr, // String for NUMERIC column
+      totalYieldEarned: totalYieldEarnedStr, // String for NUMERIC column
       propertiesOwned: properties.length,
       questsCompleted: completedQuests.length,
       updatedAt: new Date(),
     };
 
-    if (existing) {
-      await this.db
-        .update(schema.leaderboard)
-        .set(leaderboardData)
-        .where(eq(schema.leaderboard.userId, userId));
-    } else {
-      await this.db.insert(schema.leaderboard).values(leaderboardData);
+    try {
+      if (existing) {
+        await this.db
+          .update(schema.leaderboard)
+          .set(leaderboardData)
+          .where(eq(schema.leaderboard.userId, userId));
+      } else {
+        await this.db.insert(schema.leaderboard).values(leaderboardData);
+      }
+    } catch (dbError: any) {
+      // Log detailed error for debugging
+      this.logger.error(`Database error updating leaderboard: ${dbError.message}`);
+      if (dbError.cause) {
+        this.logger.error(`PostgreSQL error: ${JSON.stringify(dbError.cause)}`);
+      }
+      if (dbError.code) {
+        this.logger.error(`Error code: ${dbError.code}`);
+      }
+      if (dbError.detail) {
+        this.logger.error(`Error detail: ${dbError.detail}`);
+      }
+      throw dbError;
     }
 
     const portfolioValueStr = (Number(totalPortfolioValue) / 1e18).toFixed(2);
@@ -312,97 +516,78 @@ export class LeaderboardService {
             yieldRateValue = yieldRateValue * 100;
           }
 
-          // Handle rwaTokenId - don't insert if it's 0
-          const rwaTokenIdValue = propData.rwaTokenId 
+          // Handle rwaTokenId - don't insert if it's 0 (BigInt(0) is truthy, so check explicitly)
+          const rwaTokenIdNum = propData.rwaTokenId 
             ? Number(propData.rwaTokenId.toString()) 
+            : 0;
+          const rwaTokenIdValue = (rwaTokenIdNum && rwaTokenIdNum > 0) ? rwaTokenIdNum : null;
+          
+          // Convert value to string for numeric column (handles very large numbers)
+          const valueStr = typeof propData.value === 'bigint' 
+            ? propData.value.toString()
+            : propData.value.toString();
+          
+          const rwaContractValue = propData.rwaContract && propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+            ? propData.rwaContract 
             : undefined;
           
-          // Try to insert, if it fails due to unique constraint, update instead
+          const propertyTypeStr = propertyTypeMap[propertyTypeNum] || 'Residential';
+          
+          // Use Drizzle ORM for proper type handling (same as PropertiesService)
           try {
-            // First try to insert
-            try {
-              await this.db
-                .insert(schema.properties)
-                .values({
-                  tokenId: tokenIdNum,
-                  ownerId: user.id,
-                  propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
-                  value: BigInt(propData.value.toString()),
-                  yieldRate: yieldRateValue,
-                  rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-                    ? propData.rwaContract 
-                    : undefined,
-                  rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
-                  createdAt: new Date(),
-                  updatedAt: new Date(),
-                });
-              
-              this.logger.log(`Inserted property ${tokenIdNum} for ${normalizedAddress}`);
-            } catch (insertError: any) {
-              // Log the error message without trying to serialize BigInt values
-              const errorMsg = insertError.message || String(insertError);
-              
-              // If insert fails due to unique constraint, update instead
-              // Check multiple ways the error might be represented
-              const isUniqueError = 
-                errorMsg.includes('unique') || 
-                errorMsg.includes('duplicate') ||
-                errorMsg.includes('violates unique constraint') ||
-                errorMsg.includes('23505') || // PostgreSQL unique violation error code
-                insertError.code === '23505' ||
-                (insertError as any).code === '23505';
-              
-              if (isUniqueError) {
-                // Property already exists, update it
-                try {
-                  // Ensure value is properly converted to BigInt for database
-                  const valueBigInt = typeof propData.value === 'bigint' 
-                    ? propData.value 
-                    : BigInt(propData.value.toString());
-                  
-                  await this.db
-                    .update(schema.properties)
-                    .set({
-                      ownerId: user.id,
-                      propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
-                      value: valueBigInt,
-                      yieldRate: yieldRateValue,
-                      rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-                        ? propData.rwaContract 
-                        : undefined,
-                      rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
-                      updatedAt: new Date(),
-                    })
-                    .where(eq(schema.properties.tokenId, tokenIdNum));
-                  
-                  this.logger.log(`Updated property ${tokenIdNum} for ${normalizedAddress} (was duplicate)`);
-                } catch (updateError: any) {
-                  this.logger.error(`Failed to update property ${tokenIdNum} after duplicate insert: ${updateError.message}`);
-                  // Continue anyway
-                }
-              } else {
-                // Log the actual error for debugging (without BigInt serialization)
-                this.logger.error(`Insert failed for property ${tokenIdNum}, not a unique constraint: ${errorMsg}`);
-                // Re-throw if it's not a unique constraint error
-                throw insertError;
-              }
+            // Check if property exists
+            const [existing] = await this.db
+              .select()
+              .from(schema.properties)
+              .where(eq(schema.properties.tokenId, tokenIdNum))
+              .limit(1);
+
+            // Build update/insert object conditionally
+            const propertyData: any = {
+              ownerId: user.id,
+              propertyType: propertyTypeStr,
+              value: valueStr, // Use string for numeric column
+              yieldRate: yieldRateValue,
+              updatedAt: new Date(),
+            };
+
+            // Only include rwaContract if it has a value
+            if (rwaContractValue) {
+              propertyData.rwaContract = rwaContractValue;
+            } else {
+              propertyData.rwaContract = null;
             }
+
+            // Only include rwaTokenId if it has a value
+            if (rwaTokenIdValue !== null && rwaTokenIdValue !== undefined) {
+              propertyData.rwaTokenId = rwaTokenIdValue;
+            } else {
+              propertyData.rwaTokenId = null;
+            }
+
+            if (existing) {
+              // Update existing property
+              await this.db
+                .update(schema.properties)
+                .set(propertyData)
+                .where(eq(schema.properties.tokenId, tokenIdNum));
+            } else {
+              // Insert new property
+              await this.db.insert(schema.properties).values({
+                ...propertyData,
+                tokenId: tokenIdNum,
+                createdAt: new Date(),
+              });
+            }
+            
+            this.logger.log(`Upserted property ${tokenIdNum} for ${normalizedAddress}`);
           } catch (dbError: any) {
             const errorMsg = dbError.message || String(dbError);
-            this.logger.error(`Database error syncing property ${tokenIdNum}: ${errorMsg}`);
-            // Log error details without BigInt serialization issues
-            try {
-              const errorDetails = {
-                message: dbError.message,
-                code: dbError.code,
-                name: dbError.name,
-                stack: dbError.stack?.substring(0, 500), // Limit stack trace
-              };
-              this.logger.error(`Error details: ${JSON.stringify(errorDetails, null, 2)}`);
-            } catch (e) {
-              this.logger.error(`Error details: ${errorMsg}`);
+            this.logger.error(`Failed to upsert property ${tokenIdNum}: ${errorMsg}`);
+            if (dbError.stack) {
+              this.logger.error(`Stack: ${dbError.stack.substring(0, 500)}`);
             }
-            // Continue with next property even if this one fails
+            // Continue with next property
           }
         } catch (error) {
           this.logger.error(`Error syncing property ${tokenId}: ${error.message}`);
@@ -418,8 +603,10 @@ export class LeaderboardService {
   async syncAndUpdateLeaderboard(walletAddress: string) {
     const normalizedAddress = walletAddress.toLowerCase();
     
-    // Sync properties from chain first
-    await this.syncUserPropertiesFromChain(walletAddress);
+    // Sync properties from chain first (only if enabled)
+    if (process.env.ENABLE_PROPERTY_SYNC !== 'false') {
+      await this.syncUserPropertiesFromChain(walletAddress);
+    }
     
     // Find user
     const [user] = await this.db

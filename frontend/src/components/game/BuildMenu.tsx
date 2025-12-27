@@ -100,4 +100,3 @@ export function BuildMenu({ onBuildProperty, tokenBalance, isMinting = false }: 
     </Card>
   );
 }
-

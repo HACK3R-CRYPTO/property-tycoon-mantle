@@ -52,10 +52,12 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
     
     function claimYield(uint256 propertyId) public nonReentrant {
         require(propertyNFT.ownerOf(propertyId) == msg.sender, "Not owner");
-        uint256 amount = pendingYield[propertyId];
+        uint256 amount = calculateYield(propertyId); // Use calculateYield to get actual claimable amount (includes time check)
         require(amount > 0, "No yield to claim");
         
+        // Clear pendingYield and update lastYieldUpdate
         pendingYield[propertyId] = 0;
+        lastYieldUpdate[propertyId] = block.timestamp;
         totalYieldClaimed[msg.sender] += amount;
         
         gameToken.transfer(msg.sender, amount);
@@ -69,9 +71,10 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
         
         for (uint256 i = 0; i < propertyIds.length; i++) {
             require(propertyNFT.ownerOf(propertyIds[i]) == msg.sender, "Not owner");
-            uint256 amount = pendingYield[propertyIds[i]];
+            uint256 amount = calculateYield(propertyIds[i]); // Use calculateYield to get actual claimable amount (includes time check)
             if (amount > 0) {
                 pendingYield[propertyIds[i]] = 0;
+                lastYieldUpdate[propertyIds[i]] = block.timestamp;
                 totalAmount += amount;
             }
         }

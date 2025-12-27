@@ -2,7 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { DATABASE_CONNECTION } from '../database/database.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../database/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { ContractsService } from '../contracts/contracts.service';
 
 @Injectable()
@@ -47,11 +47,19 @@ export class PropertiesService {
       .from(schema.properties)
       .where(eq(schema.properties.id, id))
       .limit(1);
-    return property;
+    
+    if (!property) return null;
+    
+    // Convert BigInt values to strings for JSON serialization
+    return {
+      ...property,
+      value: property.value?.toString() || property.value,
+      totalYieldEarned: property.totalYieldEarned?.toString() || property.totalYieldEarned,
+    };
   }
 
   async findByOwner(ownerId: string) {
-    return this.db
+    const properties = await this.db
       .select({
         id: schema.properties.id,
         tokenId: schema.properties.tokenId,
@@ -70,6 +78,13 @@ export class PropertiesService {
       })
       .from(schema.properties)
       .where(eq(schema.properties.ownerId, ownerId));
+    
+    // Convert BigInt values to strings for JSON serialization
+    return properties.map(prop => ({
+      ...prop,
+      value: prop.value?.toString() || prop.value,
+      totalYieldEarned: prop.totalYieldEarned?.toString() || prop.totalYieldEarned,
+    }));
   }
 
   async findByWalletAddress(walletAddress: string) {
@@ -83,6 +98,19 @@ export class PropertiesService {
       .from(schema.users)
       .where(eq(schema.users.walletAddress, normalizedAddress))
       .limit(1);
+
+    // NOTE: Frontend loads properties directly from blockchain
+    // This endpoint is only for optional features (coordinates, etc.)
+    // If property syncing is disabled, skip sync and return database properties only
+    if (process.env.ENABLE_PROPERTY_SYNC === 'false') {
+      if (!user) {
+        this.logger.log(`Property syncing disabled - returning empty array for ${normalizedAddress}`);
+        return [];
+      }
+      const properties = await this.findByOwner(user.id);
+      this.logger.log(`Property syncing disabled - returning ${properties.length} properties from database for ${normalizedAddress}`);
+      return properties;
+    }
 
     // If user doesn't exist, try to sync from chain first
     if (!user) {
@@ -131,14 +159,19 @@ export class PropertiesService {
       }
     }
 
-    return properties;
+    // Convert BigInt values to strings for JSON serialization
+    return properties.map(prop => ({
+      ...prop,
+      value: prop.value?.toString() || prop.value,
+      totalYieldEarned: prop.totalYieldEarned?.toString() || prop.totalYieldEarned,
+    }));
   }
 
   async create(propertyData: {
     tokenId: number;
     ownerId: string;
     propertyType: string;
-    value: bigint;
+    value: string; // Changed to string for numeric column
     yieldRate: number;
     rwaContract?: string;
     rwaTokenId?: number;
@@ -155,6 +188,11 @@ export class PropertiesService {
   }
 
   async syncFromChain(walletAddress: string) {
+    // Skip syncing if disabled
+    if (process.env.ENABLE_PROPERTY_SYNC === 'false') {
+      this.logger.log(`Property syncing disabled - skipping sync for ${walletAddress}`);
+      return [];
+    }
     try {
       const normalizedAddress = walletAddress.toLowerCase();
       
@@ -213,6 +251,10 @@ export class PropertiesService {
           
           const propertyData = await this.contractsService.getProperty(BigInt(tokenIdNum));
           
+          // Get contract's createdAt timestamp (source of truth for yield calculation)
+          const contractCreatedAtTimestamp = Number(propertyData.createdAt);
+          const contractCreatedAt = new Date(contractCreatedAtTimestamp * 1000); // Convert seconds to milliseconds
+          
           const propertyTypeNum = typeof propertyData.propertyType === 'bigint' 
             ? Number(propertyData.propertyType) 
             : Number(propertyData.propertyType);
@@ -226,63 +268,128 @@ export class PropertiesService {
             yieldRateValue = yieldRateValue * 100;
           }
 
-          // Try to insert, if it fails due to unique constraint, update instead
+          // Convert value to string for numeric column (handles very large numbers)
+          // The schema uses numeric which expects a string representation
+          let valueStr: string;
+          if (typeof propertyData.value === 'bigint') {
+            valueStr = propertyData.value.toString();
+          } else if (typeof propertyData.value === 'string') {
+            valueStr = propertyData.value;
+          } else {
+            valueStr = propertyData.value.toString();
+          }
+          
+          // Handle rwaTokenId - set to undefined if not valid (will be NULL in database)
+          let rwaTokenIdValue: number | undefined;
+          if (propertyData.rwaTokenId) {
+            const rwaTokenIdNum = Number(propertyData.rwaTokenId.toString());
+            if (rwaTokenIdNum && rwaTokenIdNum > 0) {
+              rwaTokenIdValue = rwaTokenIdNum;
+            } else {
+              rwaTokenIdValue = undefined;
+            }
+          } else {
+            rwaTokenIdValue = undefined;
+          }
+          
+          // Handle rwaContract - check for valid address, set to undefined if invalid
+          let rwaContractValue: string | undefined;
+          if (propertyData.rwaContract && 
+              propertyData.rwaContract !== '0x0000000000000000000000000000000000000000' &&
+              propertyData.rwaContract.trim() !== '' &&
+              propertyData.rwaContract.length === 42) {
+            rwaContractValue = propertyData.rwaContract;
+          } else {
+            rwaContractValue = undefined; // Will be NULL in database
+          }
+          
+          const propertyTypeStr = this.mapPropertyType(propertyTypeNum);
+          
+          // Use Drizzle ORM for proper type handling
           try {
-            try {
-              await this.db
-                .insert(schema.properties)
-                .values({
-                  tokenId: tokenIdNum,
-                  ownerId: user.id,
-                  propertyType: this.mapPropertyType(propertyTypeNum),
-                  value: BigInt(propertyData.value.toString()),
-                  yieldRate: yieldRateValue,
-                  rwaContract: propertyData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-                    ? propertyData.rwaContract 
-                    : undefined,
-                  rwaTokenId: propertyData.rwaTokenId && Number(propertyData.rwaTokenId.toString()) > 0 
-                    ? Number(propertyData.rwaTokenId.toString()) 
-                    : undefined,
-                  createdAt: new Date(),
-                  updatedAt: new Date(),
-                });
+            // Check if property exists
+            const [existing] = await this.db
+              .select()
+              .from(schema.properties)
+              .where(eq(schema.properties.tokenId, tokenIdNum))
+              .limit(1);
+
+            // Build property data object - only include optional fields if they have values
+            // Use string for numeric column to handle very large values
+            const propertyDataObj: any = {
+              ownerId: user.id,
+              propertyType: propertyTypeStr,
+              value: valueStr, // Use string for numeric column (handles values > BIGINT max)
+              yieldRate: yieldRateValue,
+              updatedAt: new Date(),
+            };
+
+            // Only include rwaContract if it has a valid value
+            // If omitted, Drizzle will use NULL for optional fields
+            if (rwaContractValue && rwaContractValue !== '0x0000000000000000000000000000000000000000' && rwaContractValue !== '') {
+              propertyDataObj.rwaContract = rwaContractValue;
+            }
+            // Don't include if null/undefined - Drizzle will use NULL
+
+            // Only include rwaTokenId if it has a valid value
+            if (rwaTokenIdValue !== null && rwaTokenIdValue !== undefined && rwaTokenIdValue > 0) {
+              propertyDataObj.rwaTokenId = rwaTokenIdValue;
+            }
+            // Don't include if null/undefined - Drizzle will use NULL
+
+            if (existing) {
+              // Update existing property (preserve createdAt if it's already correct, or update if it was wrong)
+              // Only update createdAt if it's significantly different from contract (more than 1 hour difference)
+              const existingCreatedAt = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+              const contractCreatedAtMs = contractCreatedAt.getTime();
+              const timeDiff = Math.abs(existingCreatedAt - contractCreatedAtMs);
               
-              this.logger.log(`✓ Inserted property ${tokenIdNum} for ${normalizedAddress}`);
-            } catch (insertError: any) {
-              // If insert fails due to unique constraint, update instead
-              if (insertError.message && (
-                insertError.message.includes('unique') || 
-                insertError.message.includes('duplicate') ||
-                insertError.message.includes('violates unique constraint')
-              )) {
-                // Property already exists, update it
+              // If createdAt differs by more than 1 hour, update it to match contract
+              if (timeDiff > 3600000) { // 1 hour in milliseconds
+                this.logger.log(`Updating createdAt for property ${tokenIdNum} to match contract (diff: ${Math.floor(timeDiff / 1000 / 60)} minutes)`);
                 await this.db
                   .update(schema.properties)
                   .set({
-                    ownerId: user.id,
-                    propertyType: this.mapPropertyType(propertyTypeNum),
-                    value: BigInt(propertyData.value.toString()),
-                    yieldRate: yieldRateValue,
-                    rwaContract: propertyData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-                      ? propertyData.rwaContract 
-                      : undefined,
-                    rwaTokenId: propertyData.rwaTokenId && Number(propertyData.rwaTokenId.toString()) > 0 
-                      ? Number(propertyData.rwaTokenId.toString()) 
-                      : undefined,
-                    updatedAt: new Date(),
+                    ...propertyDataObj,
+                    createdAt: contractCreatedAt, // Update to contract's createdAt
                   })
                   .where(eq(schema.properties.tokenId, tokenIdNum));
-                
-                this.logger.log(`✓ Updated property ${tokenIdNum} for ${normalizedAddress} (was duplicate)`);
               } else {
-                // Re-throw if it's not a unique constraint error
-                throw insertError;
+                // Just update other fields, keep existing createdAt
+                await this.db
+                  .update(schema.properties)
+                  .set(propertyDataObj)
+                  .where(eq(schema.properties.tokenId, tokenIdNum));
               }
+            } else {
+              // Insert new property with contract's createdAt (source of truth)
+              await this.db.insert(schema.properties).values({
+                ...propertyDataObj,
+                tokenId: tokenIdNum,
+                createdAt: contractCreatedAt, // Use contract's createdAt, not current time
+              });
+              this.logger.log(`Inserted property ${tokenIdNum} with contract createdAt: ${contractCreatedAt.toISOString()}`);
             }
+            
+            this.logger.log(`✓ Upserted property ${tokenIdNum} for ${normalizedAddress}`);
             syncedCount++;
           } catch (dbError: any) {
             errorCount++;
-            this.logger.error(`Database error syncing property ${tokenIdNum}: ${dbError.message}`, dbError.stack);
+            const errorMsg = dbError.message || String(dbError);
+            this.logger.error(`Database error syncing property ${tokenIdNum}: ${errorMsg}`);
+            // Log the actual PostgreSQL error if available
+            if (dbError.cause) {
+              this.logger.error(`PostgreSQL error: ${JSON.stringify(dbError.cause)}`);
+            }
+            if (dbError.code) {
+              this.logger.error(`Error code: ${dbError.code}`);
+            }
+            if (dbError.detail) {
+              this.logger.error(`Error detail: ${dbError.detail}`);
+            }
+            if (dbError.stack) {
+              this.logger.error(`Stack: ${dbError.stack.substring(0, 500)}`);
+            }
           }
         } catch (error) {
           errorCount++;
@@ -293,7 +400,12 @@ export class PropertiesService {
       this.logger.log(`Sync complete: ${syncedCount} new properties synced, ${errorCount} errors for ${normalizedAddress}`);
       const finalProperties = await this.findByOwner(user.id);
       this.logger.log(`Total properties in database for ${normalizedAddress}: ${finalProperties.length}`);
-      return finalProperties;
+      // Convert BigInt values to strings for JSON serialization
+      return finalProperties.map(prop => ({
+        ...prop,
+        value: prop.value?.toString() || prop.value,
+        totalYieldEarned: prop.totalYieldEarned?.toString() || prop.totalYieldEarned,
+      }));
     } catch (error) {
       this.logger.error(`Error syncing properties from chain: ${error.message}`, error.stack);
       throw error;
@@ -316,5 +428,99 @@ export class PropertiesService {
   private mapPropertyType(type: number): string {
     const types = ['Residential', 'Commercial', 'Industrial', 'Luxury'];
     return types[type] || 'Residential';
+  }
+
+  /**
+   * Sync ALL existing properties from blockchain to database
+   * This is needed for properties created before the backend was running
+   * Queries all PropertyCreated events from contract deployment
+   */
+  async syncAllExistingPropertiesFromChain() {
+    // Skip syncing if disabled
+    if (process.env.ENABLE_PROPERTY_SYNC === 'false') {
+      this.logger.log('Property syncing disabled - skipping full sync');
+      return { synced: 0, owners: 0 };
+    }
+
+    if (!this.contractsService.propertyNFT) {
+      this.logger.error('PropertyNFT contract not initialized');
+      throw new Error('Contract not initialized');
+    }
+
+    try {
+      this.logger.log('🔄 Starting full sync of all existing properties from blockchain...');
+
+      // Get current block and contract deployment block
+      const provider = this.contractsService.getProvider();
+      const currentBlock = await provider.getBlockNumber();
+      
+      // Try to get contract deployment block, or start from a reasonable block
+      // For Mantle Sepolia, we'll query in chunks of 10,000 blocks (RPC limit)
+      const CHUNK_SIZE = 10000;
+      const filter = this.contractsService.propertyNFT.filters.PropertyCreated();
+      
+      // Start from block 0 or contract deployment (if known)
+      // For now, start from a recent block to avoid too many queries
+      // You can adjust this based on when your contract was deployed
+      const startBlock = Math.max(0, currentBlock - 50000); // Last 50k blocks
+      const allEvents: any[] = [];
+      
+      this.logger.log(`📡 Querying events from block ${startBlock} to ${currentBlock} in chunks of ${CHUNK_SIZE}...`);
+      
+      // Query in chunks to respect RPC limits
+      for (let fromBlock = startBlock; fromBlock < currentBlock; fromBlock += CHUNK_SIZE) {
+        const toBlock = Math.min(fromBlock + CHUNK_SIZE - 1, currentBlock);
+        try {
+          this.logger.log(`  Querying blocks ${fromBlock} to ${toBlock}...`);
+          const chunkEvents = await this.contractsService.propertyNFT.queryFilter(filter, fromBlock, toBlock);
+          allEvents.push(...chunkEvents);
+          this.logger.log(`  Found ${chunkEvents.length} events in this chunk`);
+        } catch (error: any) {
+          this.logger.warn(`  Failed to query blocks ${fromBlock}-${toBlock}: ${error.message}`);
+          // Continue with next chunk
+        }
+      }
+      
+      const events = allEvents;
+      this.logger.log(`📡 Found ${events.length} PropertyCreated events in blockchain history`);
+
+      // Get unique owners from events
+      const uniqueOwners = new Set<string>();
+      for (const event of events) {
+        if (event.args && event.args.owner) {
+          uniqueOwners.add(event.args.owner.toLowerCase());
+        }
+      }
+
+      this.logger.log(`👥 Found ${uniqueOwners.size} unique property owners`);
+
+      let totalSynced = 0;
+      const syncedOwners = new Set<string>();
+
+      // Sync properties for each owner
+      for (const ownerAddress of uniqueOwners) {
+        try {
+          this.logger.log(`🔄 Syncing properties for ${ownerAddress}...`);
+          const properties = await this.syncFromChain(ownerAddress);
+          if (properties.length > 0) {
+            totalSynced += properties.length;
+            syncedOwners.add(ownerAddress);
+            this.logger.log(`✅ Synced ${properties.length} properties for ${ownerAddress}`);
+          }
+        } catch (error) {
+          this.logger.error(`❌ Failed to sync properties for ${ownerAddress}: ${error.message}`);
+        }
+      }
+
+      this.logger.log(`✅ Full sync complete: ${totalSynced} properties synced for ${syncedOwners.size} owners`);
+      return {
+        synced: totalSynced,
+        owners: syncedOwners.size,
+        totalEvents: events.length,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to sync all existing properties: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 }

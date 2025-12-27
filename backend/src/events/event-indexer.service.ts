@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, Logger, Inject } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
 import { ContractsService } from '../contracts/contracts.service';
@@ -10,6 +10,8 @@ import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { MantleApiService } from '../mantle/mantle-api.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
 import { GuildsService } from '../guilds/guilds.service';
+import { PropertiesService } from '../properties/properties.service';
+import { YieldService } from '../yield/yield.service';
 
 @Injectable()
 export class EventIndexerService implements OnModuleInit {
@@ -26,6 +28,8 @@ export class EventIndexerService implements OnModuleInit {
     private mantleApiService: MantleApiService,
     private leaderboardService: LeaderboardService,
     private guildsService: GuildsService,
+    @Inject(forwardRef(() => PropertiesService)) private propertiesService: PropertiesService,
+    @Inject(forwardRef(() => YieldService)) private yieldService: YieldService,
   ) {}
 
   async onModuleInit() {
@@ -42,6 +46,23 @@ export class EventIndexerService implements OnModuleInit {
     
     // Start periodic sync for missed events
     this.startPeriodicSync();
+    
+    // Optionally sync all existing properties on startup
+    // This ensures properties created before backend was running are in database
+    if (process.env.SYNC_EXISTING_ON_STARTUP === 'true' && process.env.ENABLE_PROPERTY_SYNC !== 'false') {
+      this.logger.log('🔄 SYNC_EXISTING_ON_STARTUP=true - syncing all existing properties...');
+      // Run in background to not block startup
+      setTimeout(async () => {
+        try {
+          await this.propertiesService.syncAllExistingPropertiesFromChain();
+          this.logger.log('✅ Auto-sync of existing properties completed');
+        } catch (error) {
+          this.logger.warn('Could not auto-sync existing properties on startup:', error.message);
+        }
+      }, 5000); // Wait 5 seconds after startup
+    } else {
+      this.logger.log('💡 To sync existing properties, call POST /properties/sync-all or set SYNC_EXISTING_ON_STARTUP=true');
+    }
     
     this.logger.log('Event Indexer Service initialized');
   }
@@ -285,10 +306,15 @@ export class EventIndexerService implements OnModuleInit {
           .returning();
       }
 
-      // Get property data from contract
+      // Get property data from contract (includes createdAt timestamp)
       const propertyData = await this.contractsService.getProperty(BigInt(tokenId));
       
-      // Create property in database
+      // Use contract's createdAt timestamp (source of truth)
+      // Contract stores createdAt as Unix timestamp in seconds
+      const contractCreatedAtTimestamp = Number(propertyData.createdAt);
+      const contractCreatedAt = new Date(contractCreatedAtTimestamp * 1000); // Convert to milliseconds
+      
+      // Create property in database with contract's createdAt
       const propertyTypeMap = ['Residential', 'Commercial', 'Industrial', 'Luxury'];
       const [property] = await this.db
         .insert(schema.properties)
@@ -296,10 +322,10 @@ export class EventIndexerService implements OnModuleInit {
           tokenId: Number(tokenId),
           ownerId: user.id,
           propertyType: propertyTypeMap[propertyType] || 'Residential',
-          value: BigInt(value),
+          value: value.toString(), // Use string for numeric column
           yieldRate: Number(propertyData.yieldRate.toString()),
           isActive: true,
-          createdAt: new Date(),
+          createdAt: contractCreatedAt, // Use contract's createdAt (source of truth)
           updatedAt: new Date(),
         })
         .returning();
@@ -358,7 +384,7 @@ export class EventIndexerService implements OnModuleInit {
         .update(schema.properties)
         .set({
           propertyType: propertyTypeMap[newType] || 'Residential',
-          value: BigInt(newValue),
+          value: newValue.toString(), // Use string for numeric column
           updatedAt: new Date(),
         })
         .where(eq(schema.properties.tokenId, Number(tokenId)));
@@ -495,6 +521,18 @@ export class EventIndexerService implements OnModuleInit {
         owner: owner,
         amount: amount,
       });
+
+      // Emit yield time update after claim (lastYieldUpdate was reset in contract)
+      // This ensures frontend shows correct time remaining for next claim
+      const yieldTimeInfo = await this.yieldService.getYieldTimeInfo(owner);
+      if (yieldTimeInfo && 
+          yieldTimeInfo.properties.length > 0 &&
+          yieldTimeInfo.yieldUpdateIntervalSeconds !== undefined &&
+          yieldTimeInfo.currentBlockTimestamp !== undefined &&
+          yieldTimeInfo.totalClaimableYield !== undefined) {
+        this.websocketGateway.emitYieldTimeUpdate(yieldTimeInfo);
+        this.logger.log(`Sent yield time update after claim for ${owner}`);
+      }
 
       this.logger.log(`Yield claimed for property ${propertyId}: ${amount}`);
     } catch (error) {
@@ -710,17 +748,31 @@ export class EventIndexerService implements OnModuleInit {
         return; // No new blocks
       }
 
-      this.logger.log(`Syncing events from block ${fromBlock} to ${toBlock} using Mantle API`);
+      const blockRange = toBlock - fromBlock + 1;
+      this.logger.log(`Syncing events from block ${fromBlock} to ${toBlock} (${blockRange} blocks)`);
 
-      // Use Mantle's efficient block range query
-      try {
-        const blocks = await this.mantleApiService.getBlockRange(fromBlock, toBlock, false);
-        this.logger.log(`Retrieved ${blocks.length} blocks using Mantle eth_getBlockRange`);
-      } catch (error) {
-        this.logger.warn('Mantle API block range query failed, falling back to standard queries', error);
+      // Only use Mantle API for small block ranges (to avoid 413 Request Entity Too Large errors)
+      // Mantle API has a limit, so we skip it for large ranges and use standard event queries
+      const MAX_MANTLE_API_BLOCK_RANGE = 100; // Safe limit to avoid 413 errors
+      
+      if (blockRange <= MAX_MANTLE_API_BLOCK_RANGE) {
+        try {
+          const blocks = await this.mantleApiService.getBlockRange(fromBlock, toBlock, false);
+          this.logger.log(`Retrieved ${blocks.length} blocks using Mantle eth_getBlockRange`);
+        } catch (error: any) {
+          // If it's a 413 error, log it but continue with standard queries
+          if (error.message?.includes('413')) {
+            this.logger.warn(`Mantle API block range too large (${blockRange} blocks), using standard event queries`);
+          } else {
+            this.logger.warn('Mantle API block range query failed, falling back to standard queries', error);
+          }
+        }
+      } else {
+        this.logger.log(`Block range too large (${blockRange} blocks), skipping Mantle API and using standard event queries`);
       }
 
-      // Query events from contracts
+      // Query events from contracts (this is what actually matters)
+      // These use standard eth_getLogs which handles large ranges better
       await this.queryPropertyNFTEvents(fromBlock, toBlock);
       await this.queryYieldDistributorEvents(fromBlock, toBlock);
       await this.queryMarketplaceEvents(fromBlock, toBlock);

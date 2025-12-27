@@ -1,43 +1,64 @@
-import { Controller, Get, Post, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { GuildsService } from './guilds.service';
 
+@ApiTags('guilds')
 @Controller('guilds')
 export class GuildsController {
   constructor(private readonly guildsService: GuildsService) {}
 
-  @Post()
-  createGuild(@Body() body: { ownerId: string; name: string; description?: string; isPublic?: boolean }) {
-    return this.guildsService.createGuild(body.ownerId, body.name, body.description, body.isPublic ?? true);
+  @Get()
+  @ApiOperation({ summary: 'Get all guilds' })
+  @ApiResponse({ status: 200, description: 'List of guilds' })
+  async getAllGuilds(@Query('query') query?: string) {
+    return this.guildsService.searchGuilds(query || '', 20);
   }
 
   @Get('leaderboard')
-  getGuildLeaderboard(@Query('limit') limit?: string) {
-    return this.guildsService.getGuildLeaderboard(limit ? Number(limit) : 20);
+  @ApiOperation({ summary: 'Get guild leaderboard' })
+  @ApiResponse({ status: 200, description: 'Guild leaderboard' })
+  async getLeaderboard(@Query('limit') limit?: number) {
+    return this.guildsService.getGuildLeaderboard(limit || 20);
   }
 
-  @Get('search')
-  searchGuilds(@Query('q') query: string, @Query('limit') limit?: string) {
-    return this.guildsService.searchGuilds(query, limit ? Number(limit) : 20);
+  @Post()
+  @ApiOperation({ summary: 'Create a new guild' })
+  @ApiResponse({ status: 201, description: 'Guild created successfully' })
+  async createGuild(
+    @Body('ownerId') ownerId: string,
+    @Body('name') name: string,
+    @Body('description') description?: string,
+    @Body('isPublic') isPublic?: boolean,
+  ) {
+    return this.guildsService.createGuild(ownerId, name, description, isPublic);
   }
 
   @Get(':id')
-  getGuild(@Param('id') id: string) {
+  @ApiOperation({ summary: 'Get guild by ID' })
+  @ApiResponse({ status: 200, description: 'Guild details' })
+  async getGuildById(@Param('id') id: string) {
     return this.guildsService.getGuild(id);
   }
 
+  @Post(':id/join')
+  @ApiOperation({ summary: 'Join a guild' })
+  @ApiResponse({ status: 201, description: 'Joined guild successfully' })
+  async joinGuild(@Param('id') id: string, @Body('userId') userId: string) {
+    return this.guildsService.joinGuild(userId, id);
+  }
+
+  @Post(':id/leave')
+  @ApiOperation({ summary: 'Leave a guild' })
+  @ApiResponse({ status: 200, description: 'Left guild successfully' })
+  async leaveGuild(@Param('id') id: string, @Body('userId') userId: string) {
+    return this.guildsService.leaveGuild(userId, id);
+  }
+
   @Get('user/:userId')
-  getUserGuild(@Param('userId') userId: string) {
+  @ApiOperation({ summary: 'Get user guild' })
+  @ApiResponse({ status: 200, description: 'User guild' })
+  async getUserGuild(@Param('userId') userId: string) {
     return this.guildsService.getUserGuild(userId);
-  }
-
-  @Post(':guildId/join')
-  joinGuild(@Param('guildId') guildId: string, @Body() body: { userId: string }) {
-    return this.guildsService.joinGuild(body.userId, guildId);
-  }
-
-  @Delete(':guildId/leave')
-  leaveGuild(@Param('guildId') guildId: string, @Body() body: { userId: string }) {
-    return this.guildsService.leaveGuild(body.userId, guildId);
   }
 }
 

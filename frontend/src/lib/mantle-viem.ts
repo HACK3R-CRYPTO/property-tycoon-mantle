@@ -1,4 +1,4 @@
-import { createConfig, http } from 'wagmi';
+import { createConfig, http, fallback } from 'wagmi';
 import { mantle, mantleSepoliaTestnet } from '@mantleio/viem/chains';
 import { walletConnect } from 'wagmi/connectors';
 
@@ -10,6 +10,27 @@ const chain = process.env.NEXT_PUBLIC_MANTLE_NETWORK === 'testnet'
 // WalletConnect project ID (get from https://cloud.walletconnect.com)
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '';
 
+// RPC URLs with fallbacks (official RPC has rate limiting)
+const getRpcUrls = (chainId: number) => {
+  const customUrl = process.env.NEXT_PUBLIC_MANTLE_RPC_URL;
+  if (customUrl && chainId === 5003) return [customUrl];
+  
+  if (chainId === 5003) {
+    // Mantle Sepolia Testnet - use official + fallbacks
+    return [
+      'https://rpc.sepolia.mantle.xyz', // Official (may have rate limiting)
+      'https://mantle-sepolia.drpc.org', // DRPC fallback
+      'https://rpc.ankr.com/mantle_sepolia', // Ankr fallback
+    ];
+  } else {
+    // Mantle Mainnet (5000)
+    return [
+      'https://rpc.mantle.xyz', // Official
+      'https://mantle.drpc.org', // DRPC fallback
+    ];
+  }
+};
+
 // Create Wagmi config with Mantle Viem
 export const wagmiConfig = createConfig({
   chains: [chain],
@@ -18,7 +39,8 @@ export const wagmiConfig = createConfig({
     walletConnect({ projectId }),
   ],
   transports: {
-    [chain.id]: http(process.env.NEXT_PUBLIC_MANTLE_RPC_URL || 'https://rpc.mantle.xyz'),
+    [mantle.id]: fallback(getRpcUrls(mantle.id).map(url => http(url))),
+    [mantleSepoliaTestnet.id]: fallback(getRpcUrls(mantleSepoliaTestnet.id).map(url => http(url))),
   },
   ssr: true,
 });

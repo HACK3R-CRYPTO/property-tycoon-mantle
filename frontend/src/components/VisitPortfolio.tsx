@@ -1,168 +1,130 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import { ExternalLink, Building2, TrendingUp } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { PropertyCard } from '@/components/game/PropertyCard';
-import { api } from '@/lib/api';
+import { useState, useEffect } from 'react'
+import { X, Building2, TrendingUp, DollarSign } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { api } from '@/lib/api'
+import { formatAddress } from '@/lib/utils'
 
 interface Property {
-  id: string;
-  tokenId: number;
-  propertyType: 'Residential' | 'Commercial' | 'Industrial' | 'Luxury';
-  value: bigint;
-  yieldRate: number;
-  totalYieldEarned: bigint;
-  x: number;
-  y: number;
+  id: string
+  tokenId: number
+  propertyType: string
+  value: bigint
+  yieldRate: number
+  totalYieldEarned: bigint
 }
 
 interface VisitPortfolioProps {
-  walletAddress: string;
-  username?: string;
-  onClose: () => void;
+  address: string
+  username?: string
+  onClose: () => void
 }
 
-export function VisitPortfolio({ walletAddress, username, onClose }: VisitPortfolioProps) {
-  const [properties, setProperties] = useState<Property[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [userStats, setUserStats] = useState<{
-    totalPortfolioValue: bigint;
-    totalYieldEarned: bigint;
-    propertiesOwned: number;
-  } | null>(null);
+export function VisitPortfolio({ address, username, onClose }: VisitPortfolioProps) {
+  const [properties, setProperties] = useState<Property[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [totalValue, setTotalValue] = useState<bigint>(BigInt(0))
+  const [totalYield, setTotalYield] = useState<bigint>(BigInt(0))
 
   useEffect(() => {
-    loadPortfolio();
-  }, [walletAddress]);
+    loadPortfolio()
+  }, [address])
 
   const loadPortfolio = async () => {
-    setIsLoading(true);
+    setIsLoading(true)
     try {
-      const userProperties = await api.get(`/properties/owner/${walletAddress}`);
-      
-      const mappedProperties = await Promise.all(
-        userProperties.map(async (p: any) => {
-          return {
-            id: `prop-${p.tokenId}`,
-            tokenId: Number(p.tokenId),
-            propertyType: p.propertyType as Property['propertyType'],
-            value: BigInt(p.value?.toString() || '0'),
-            yieldRate: Number(p.yieldRate || 0),
-            totalYieldEarned: BigInt(p.totalYieldEarned?.toString() || '0'),
-            x: p.x || 0,
-            y: p.y || 0,
-          };
-        })
-      );
-
-      setProperties(mappedProperties);
-
-      // Calculate stats
-      const totalPortfolioValue = mappedProperties.reduce(
-        (sum, p) => sum + p.value,
-        BigInt(0)
-      );
-      const totalYieldEarned = mappedProperties.reduce(
-        (sum, p) => sum + p.totalYieldEarned,
-        BigInt(0)
-      );
-
-      setUserStats({
-        totalPortfolioValue,
-        totalYieldEarned,
-        propertiesOwned: mappedProperties.length,
-      });
+      const data = await api.get(`/properties/owner/${address}`)
+      setProperties(data.properties || [])
+      setTotalValue(data.totalValue || BigInt(0))
+      setTotalYield(data.totalYield || BigInt(0))
     } catch (error) {
-      console.error('Failed to load portfolio:', error);
+      console.error('Failed to load portfolio:', error)
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   const formatValue = (value: bigint) => {
-    const tycoonAmount = Number(value) / 1e18;
-    if (tycoonAmount < 1) {
-      return tycoonAmount.toFixed(2);
-    }
-    return tycoonAmount.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
-  };
+    const amount = Number(value) / 1e18
+    if (amount < 1) return amount.toFixed(4)
+    return amount.toFixed(2)
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto border-white/20 bg-gray-900">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-white flex items-center gap-2">
-                <ExternalLink className="w-5 h-5" />
-                {username || `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`}'s Portfolio
-              </CardTitle>
-              <p className="text-sm text-gray-400 mt-1">{walletAddress}</p>
-            </div>
-            <Button onClick={onClose} variant="ghost" size="sm">
-              ✕
-            </Button>
+      <Card className="bg-gray-900 border-white/20 w-full max-w-3xl max-h-[80vh] overflow-y-auto">
+        <CardHeader className="sticky top-0 bg-gray-900 border-b border-white/10 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-2xl font-bold text-white">
+              {username || formatAddress(address)}'s Portfolio
+            </CardTitle>
+            <p className="text-sm text-gray-400 mt-1">{formatAddress(address)}</p>
           </div>
+          <Button onClick={onClose} variant="ghost" size="sm" className="text-white">
+            <X className="w-5 h-5" />
+          </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="p-6">
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <Card className="bg-blue-500/10 border-blue-500/20">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Building2 className="w-5 h-5 text-blue-400" />
+                  <span className="text-sm text-gray-400">Total Value</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{formatValue(totalValue)} TYCOON</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-emerald-500/10 border-emerald-500/20">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp className="w-5 h-5 text-emerald-400" />
+                  <span className="text-sm text-gray-400">Total Yield</span>
+                </div>
+                <p className="text-2xl font-bold text-white">{formatValue(totalYield)} TYCOON</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <h3 className="text-lg font-semibold text-white mb-4">Properties ({properties.length})</h3>
+
           {isLoading ? (
             <div className="text-center py-8 text-gray-400">Loading portfolio...</div>
+          ) : properties.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">No properties found</div>
           ) : (
-            <>
-              {userStats && (
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div className="p-4 rounded-lg bg-white/5 border border-white/10">
-                    <p className="text-xs text-gray-400 mb-1">Portfolio Value</p>
-                    <p className="text-xl font-semibold text-emerald-400">
-                      {formatValue(userStats.totalPortfolioValue)} TYCOON
-                    </p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-white/5 border border-white/10">
-                    <p className="text-xs text-gray-400 mb-1">Total Yield</p>
-                    <p className="text-xl font-semibold text-blue-400">
-                      {formatValue(userStats.totalYieldEarned)} TYCOON
-                    </p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-white/5 border border-white/10">
-                    <p className="text-xs text-gray-400 mb-1">Properties</p>
-                    <p className="text-xl font-semibold text-white">
-                      {userStats.propertiesOwned}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {properties.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
-                  <Building2 className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p>No properties found</p>
-                </div>
-              ) : (
-                <div>
-                  <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4" />
-                    Properties ({properties.length})
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {properties.map((property) => (
-                      <PropertyCard
-                        key={property.id}
-                        property={property}
-                        onViewDetails={() => {}}
-                        isClaiming={false}
-                        onClaimYield={async () => {}}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
+            <div className="space-y-3">
+              {properties.map((property) => (
+                <Card key={property.id} className="bg-white/5 border-white/10">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-white font-semibold">{property.propertyType} Property</h4>
+                        <p className="text-sm text-gray-400">Token ID: {property.tokenId}</p>
+                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                          <span className="flex items-center gap-1">
+                            <DollarSign className="w-3 h-3" />
+                            {formatValue(property.value)} TYCOON
+                          </span>
+                          <span>{property.yieldRate}% APY</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-400">Yield Earned</p>
+                        <p className="text-emerald-400 font-semibold">{formatValue(property.totalYieldEarned)}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }
+
 

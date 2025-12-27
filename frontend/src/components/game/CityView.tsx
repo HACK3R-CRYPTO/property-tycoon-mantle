@@ -334,4 +334,3 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
     </div>
   );
 }
-

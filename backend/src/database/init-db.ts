@@ -22,8 +22,8 @@ async function initDatabase() {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         wallet_address VARCHAR(42) NOT NULL UNIQUE,
         username VARCHAR(100),
-        total_portfolio_value BIGINT DEFAULT 0,
-        total_yield_earned BIGINT DEFAULT 0,
+        total_portfolio_value NUMERIC DEFAULT 0,
+        total_yield_earned NUMERIC DEFAULT 0,
         properties_owned INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
@@ -34,7 +34,7 @@ async function initDatabase() {
         token_id BIGINT NOT NULL UNIQUE,
         owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         property_type VARCHAR(50) NOT NULL,
-        value BIGINT NOT NULL,
+        value NUMERIC NOT NULL,
         yield_rate INTEGER NOT NULL,
         rwa_contract VARCHAR(42),
         rwa_token_id BIGINT,
@@ -99,8 +99,8 @@ async function initDatabase() {
       CREATE TABLE IF NOT EXISTS leaderboard (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-        total_portfolio_value BIGINT DEFAULT 0,
-        total_yield_earned BIGINT DEFAULT 0,
+        total_portfolio_value NUMERIC DEFAULT 0,
+        total_yield_earned NUMERIC DEFAULT 0,
         properties_owned INTEGER DEFAULT 0,
         quests_completed INTEGER DEFAULT 0,
         rank INTEGER,
@@ -170,4 +170,3 @@ initDatabase()
     console.error('💥 Database initialization failed:', error);
     process.exit(1);
   });
-

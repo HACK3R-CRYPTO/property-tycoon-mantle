@@ -42,8 +42,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   @SubscribeMessage('subscribe:portfolio')
   handlePortfolioSubscribe(client: Socket, data: { address: string }) {
-    client.join(`portfolio:${data.address}`);
-    this.logger.log(`Client ${client.id} subscribed to portfolio: ${data.address}`);
+    const room = `portfolio:${data.address.toLowerCase()}`;
+    client.join(room);
+    this.logger.log(`Client ${client.id} subscribed to portfolio: ${room}`);
   }
 
   @SubscribeMessage('subscribe:chat')
@@ -82,5 +83,39 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   emitChatMessage(data: { id: string; walletAddress: string; username?: string; message: string; createdAt: Date }) {
     this.server.to('chat').emit('chat:new', data);
+  }
+
+  emitYieldTimeUpdate(data: {
+    walletAddress: string;
+    yieldUpdateIntervalSeconds: number;
+    currentBlockTimestamp: number;
+    shortestTimeRemaining: { hours: number; minutes: number } | null;
+    totalClaimableYield: string;
+    properties: Array<{
+      tokenId: number;
+      lastYieldUpdate: number;
+      createdAt: number;
+      timeElapsedSeconds: number;
+      timeElapsedHours: number;
+      hoursRemaining: number;
+      minutesRemaining: number;
+      isClaimable: boolean;
+      claimableYield: string;
+    }>;
+  }) {
+    // Ensure all values are JSON-serializable (no BigInt)
+    const serializableData = {
+      ...data,
+      totalClaimableYield: String(data.totalClaimableYield),
+      properties: data.properties.map(p => ({
+        ...p,
+        claimableYield: String(p.claimableYield),
+      })),
+    };
+    const room = `portfolio:${data.walletAddress.toLowerCase()}`;
+    const clientsInRoom = this.server.sockets.adapter.rooms.get(room);
+    const clientCount = clientsInRoom ? clientsInRoom.size : 0;
+    this.logger.log(`Emitting yield:time-update to ${room} (${data.properties.length} properties, ${clientCount} clients)`);
+    this.server.to(room).emit('yield:time-update', serializableData);
   }
 }

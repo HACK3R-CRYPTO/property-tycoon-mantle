@@ -261,17 +261,20 @@ export class GuildsService {
         .limit(1);
 
       if (user) {
-        totalPortfolioValue += BigInt(user.totalPortfolioValue || 0);
-        totalYieldEarned += BigInt(user.totalYieldEarned || 0);
+        // User values are stored as NUMERIC (string), convert to BigInt for calculation
+        const portfolioValueStr = user.totalPortfolioValue ? String(user.totalPortfolioValue) : '0';
+        const yieldEarnedStr = user.totalYieldEarned ? String(user.totalYieldEarned) : '0';
+        totalPortfolioValue += BigInt(portfolioValueStr);
+        totalYieldEarned += BigInt(yieldEarnedStr);
       }
     }
 
-    // Update guild stats
+    // Update guild stats - convert BigInt to string for NUMERIC columns
     await this.db
       .update(schema.guilds)
       .set({
-        totalPortfolioValue,
-        totalYieldEarned,
+        totalPortfolioValue: totalPortfolioValue.toString(), // String for NUMERIC column
+        totalYieldEarned: totalYieldEarned.toString(), // String for NUMERIC column
         updatedAt: new Date(),
       })
       .where(eq(schema.guilds.id, guildId));
@@ -300,4 +303,3 @@ export class GuildsService {
       .limit(limit);
   }
 }
-

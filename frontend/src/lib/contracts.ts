@@ -31,7 +31,7 @@ if (typeof window !== 'undefined') {
 export const CONTRACTS = {
   PropertyNFT: (process.env.NEXT_PUBLIC_PROPERTY_NFT_ADDRESS || '0x0AE7119c7187D88643fb7B409937B68828eE733D') as Address,
   GameToken: (process.env.NEXT_PUBLIC_GAME_TOKEN_ADDRESS || '0x32D9a9b9e241Da421f34786De0B39fD34D1EfeA8') as Address,
-  YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0x7549a25b9a5206569f6778c6be6a7620687f5A38') as Address,
+  YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0x8CaD66cd3CcF6038879fa7bEC68d4F808c92A3cd') as Address,
   Marketplace: (process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || '0x6389D7168029715DE118Baf51B6D32eE1EBEa46B') as Address,
   QuestSystem: (process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS || '0xb5a595A6cd30D1798387A2c781E0646FCA8c4AeD') as Address,
 } as const;
@@ -118,6 +118,20 @@ export const YIELD_DISTRIBUTOR_ABI = [
     stateMutability: 'view',
     type: 'function',
   },
+  {
+    inputs: [],
+    name: 'YIELD_UPDATE_INTERVAL',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'propertyId', type: 'uint256' }],
+    name: 'lastYieldUpdate',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
 ] as const;
 
 export const MARKETPLACE_ABI = [
@@ -200,15 +214,44 @@ export async function getProperty(tokenId: bigint) {
 }
 
 /**
- * Get owner's properties
+ * Get owner's properties with retry logic
  */
-export async function getOwnerProperties(owner: Address) {
-  return readContract(wagmiConfig, {
-    address: CONTRACTS.PropertyNFT,
-    abi: PROPERTY_NFT_ABI,
-    functionName: 'getOwnerProperties',
-    args: [owner],
-  });
+export async function getOwnerProperties(owner: Address): Promise<bigint[]> {
+  const maxRetries = 3;
+  let lastError: any = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`📡 Attempt ${attempt}/${maxRetries}: Fetching properties for ${owner}...`);
+      const result = await readContract(wagmiConfig, {
+        address: CONTRACTS.PropertyNFT,
+        abi: PROPERTY_NFT_ABI,
+        functionName: 'getOwnerProperties',
+        args: [owner],
+      }) as bigint[];
+      
+      console.log(`✅ Successfully fetched ${result.length} properties`);
+      return result;
+    } catch (error: any) {
+      lastError = error;
+      console.warn(`⚠️ Attempt ${attempt} failed:`, error.message || error);
+      
+      // If it's a network error, wait before retrying
+      if (attempt < maxRetries && (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('HTTP'))) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+        continue;
+      }
+      
+      // If it's not a network error, throw immediately
+      if (!error.message?.includes('fetch') && !error.message?.includes('network') && !error.message?.includes('HTTP')) {
+        throw error;
+      }
+    }
+  }
+  
+  // All retries failed
+  console.error('❌ All attempts failed to fetch properties:', lastError);
+  throw new Error(`Failed to fetch properties after ${maxRetries} attempts: ${lastError?.message || 'Unknown error'}`);
 }
 
 /**

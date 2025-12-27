@@ -153,6 +153,14 @@ export class ContractsService implements OnModuleInit {
     return this.yieldDistributor.getTotalPendingYield(ownerAddress);
   }
 
+  async getLastYieldUpdate(propertyId: bigint): Promise<bigint> {
+    return this.yieldDistributor.lastYieldUpdate(propertyId);
+  }
+
+  async getYieldUpdateInterval(): Promise<bigint> {
+    return this.yieldDistributor.YIELD_UPDATE_INTERVAL();
+  }
+
   async getListing(propertyId: bigint) {
     return this.marketplace.listings(propertyId);
   }

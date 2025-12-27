@@ -7,14 +7,9 @@ export class LeaderboardController {
 
   @Get()
   async getGlobalLeaderboard(@Query('limit') limit?: string) {
-    // Always sync from blockchain before returning leaderboard
-    // This ensures we have the latest on-chain data
-    try {
-      await this.leaderboardService.syncAllUsersFromChain();
-    } catch (error) {
-      // Log but don't fail - return leaderboard even if sync fails
-      console.error('Failed to sync users from chain:', error);
-    }
+    // Return leaderboard directly from database (fast)
+    // Sync should be done separately via /sync-all endpoint or event indexer
+    // This makes the leaderboard load instantly since data is already synced
     return this.leaderboardService.getGlobalLeaderboard(limit ? Number(limit) : 100);
   }
 

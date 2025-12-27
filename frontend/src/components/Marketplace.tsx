@@ -115,16 +115,27 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
   const loadListings = async () => {
     setIsLoading(true);
     try {
-      const data = await api.get('/marketplace/listings');
-      const activeListings = data.filter((l: Listing) => l.isActive);
-      setListings(activeListings.filter((l: Listing) => 
-        l.seller.walletAddress?.toLowerCase() !== address?.toLowerCase()
-      ));
-      setMyListings(activeListings.filter((l: Listing) => 
-        l.seller.walletAddress?.toLowerCase() === address?.toLowerCase()
-      ));
+      // Try to load from backend (optional - marketplace listings are on blockchain)
+      try {
+        const data = await api.get('/marketplace/listings');
+        const activeListings = data.filter((l: Listing) => l.isActive);
+        setListings(activeListings.filter((l: Listing) => 
+          l.seller.walletAddress?.toLowerCase() !== address?.toLowerCase()
+        ));
+        setMyListings(activeListings.filter((l: Listing) => 
+          l.seller.walletAddress?.toLowerCase() === address?.toLowerCase()
+        ));
+      } catch (error) {
+        console.warn('Backend marketplace unavailable, listings will be empty:', error);
+        // Backend unavailable - marketplace listings should come from blockchain contract
+        // For now, show empty state
+        setListings([]);
+        setMyListings([]);
+      }
     } catch (error) {
       console.error('Failed to load listings:', error);
+      setListings([]);
+      setMyListings([]);
     } finally {
       setIsLoading(false);
     }

@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, bigint, integer, boolean, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, bigint, integer, boolean, timestamp, numeric } from 'drizzle-orm/pg-core';
 import { users } from './users.schema';
 
 export const properties = pgTable('properties', {
@@ -8,7 +8,7 @@ export const properties = pgTable('properties', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   propertyType: varchar('property_type', { length: 50 }).notNull(), // Residential, Commercial, Industrial, Luxury
-  value: bigint('value', { mode: 'bigint' }).notNull(),
+  value: numeric('value').notNull(), // Use numeric to handle very large values (e.g., 100 * 10^18)
   yieldRate: integer('yield_rate').notNull(), // Basis points (e.g., 500 = 5%)
   rwaContract: varchar('rwa_contract', { length: 42 }),
   rwaTokenId: bigint('rwa_token_id', { mode: 'number' }),

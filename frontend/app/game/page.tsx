@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useConfig } from 'wagmi';
 import { parseEther } from 'viem';
 import { CityView } from '@/components/game/CityView';
 import { PropertyCard } from '@/components/game/PropertyCard';
@@ -18,8 +18,8 @@ import { Quests } from '@/components/Quests';
 import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getOwnerProperties, calculateYield, CONTRACTS, PROPERTY_NFT_ABI, YIELD_DISTRIBUTOR_ABI } from '@/lib/contracts';
-import { readContract } from 'wagmi/actions';
-import { wagmiConfig } from '@/lib/mantle-viem';
+import { readContract, getBlock, getPublicClient } from 'wagmi/actions';
+import { createPublicClient, http, parseAbiItem } from 'viem';
 import { api } from '@/lib/api';
 import { io, Socket } from 'socket.io-client';
 
@@ -30,6 +30,7 @@ interface Property {
   value: bigint;
   yieldRate: number;
   totalYieldEarned: bigint;
+  createdAt?: Date; // Property creation date from blockchain
   x: number;
   y: number;
   rwaContract?: string;
@@ -38,6 +39,7 @@ interface Property {
 
 export default function GamePage() {
   const { address, isConnected } = useAccount();
+  const config = useConfig();
   const [properties, setProperties] = useState<Property[]>([]);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [showBuildMenu, setShowBuildMenu] = useState(false);
@@ -49,25 +51,306 @@ export default function GamePage() {
   const [showQuests, setShowQuests] = useState(false);
   const [showSellProperty, setShowSellProperty] = useState(false);
   const [propertyToSell, setPropertyToSell] = useState<Property | null>(null);
-  const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0));
+  const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0)); // Real-time estimated yield
+  const [claimableYield, setClaimableYield] = useState<bigint>(BigInt(0)); // On-chain claimable yield (24-hour requirement)
+  const [propertyClaimableYields, setPropertyClaimableYields] = useState<Map<number, bigint>>(new Map()); // Claimable yield per property
   const [totalYieldEarned, setTotalYieldEarned] = useState<bigint>(BigInt(0));
+  const [yieldUpdateTimestamp, setYieldUpdateTimestamp] = useState<number>(Date.now()); // Force re-render when WebSocket updates
   const [isLoading, setIsLoading] = useState(true);
   const [isMinting, setIsMinting] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
   const [tokenBalanceValue, setTokenBalanceValue] = useState<bigint>(BigInt(0));
   const [otherPlayersProperties, setOtherPlayersProperties] = useState<Array<Property & { owner: string; isOwned: boolean }>>([]);
 
-  // Load properties function
+  // Load properties function - FROM BACKEND (synced from blockchain)
   const loadProperties = useCallback(async () => {
-    if (!address || !isConnected) return;
+    if (!address || !isConnected) {
+      console.log('Cannot load properties: address or connection missing', { address, isConnected });
+      return;
+    }
 
     try {
       setIsLoading(true);
+      console.log('🔄 Loading properties from backend for:', address);
       
-      // Get token IDs from contract
-      const tokenIds = await getOwnerProperties(address as `0x${string}`);
+      // Try to load from backend first (faster, already synced)
+      try {
+        const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+        const response = await fetch(`${BACKEND_URL}/properties/owner/${address}`, {
+          signal: AbortSignal.timeout(5000), // 5 second timeout
+        });
+        
+        if (response.ok) {
+          const backendProperties = await response.json();
+          console.log(`✅ Loaded ${backendProperties.length} properties from backend`);
+          
+          if (backendProperties.length > 0) {
+            // Convert backend properties to frontend format
+            const mappedProperties: Property[] = await Promise.all(
+              backendProperties.map(async (prop: any, index: number) => {
+                // Backend returns value as string (NUMERIC), convert to BigInt
+                const value = typeof prop.value === 'string' 
+                  ? BigInt(prop.value) 
+                  : BigInt(prop.value?.toString() || '0');
+                const totalYieldEarned = typeof prop.totalYieldEarned === 'string'
+                  ? BigInt(prop.totalYieldEarned)
+                  : BigInt(prop.totalYieldEarned?.toString() || '0');
+                
+                // ALWAYS fetch createdAt from contract (source of truth)
+                // Backend createdAt may be incorrect, so we trust the blockchain
+                let createdAt: Date | undefined = undefined;
+                try {
+                  const propData = await readContract(config, {
+                    address: CONTRACTS.PropertyNFT,
+                    abi: PROPERTY_NFT_ABI,
+                    functionName: 'getProperty',
+                    args: [BigInt(prop.tokenId)],
+                  }) as { createdAt: bigint };
+                  const createdAtTimestamp = Number(propData.createdAt);
+                  createdAt = new Date(createdAtTimestamp * 1000);
+                  
+                  // Calculate time remaining until yield becomes claimable (24 hours requirement)
+                  const YIELD_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+                  const timeElapsedMs = Date.now() - createdAt.getTime();
+                  const timeRemainingMs = YIELD_UPDATE_INTERVAL_MS - timeElapsedMs;
+                  const hoursRemaining = timeRemainingMs / (1000 * 60 * 60);
+                  const isClaimable = timeElapsedMs >= YIELD_UPDATE_INTERVAL_MS;
+                  
+                  console.log(`📅 Property #${prop.tokenId}: Contract createdAt (source of truth):`, {
+                    contractTimestamp: createdAtTimestamp,
+                    contractDate: createdAt.toISOString(),
+                    elapsedHours: (timeElapsedMs / (1000 * 60 * 60)).toFixed(2),
+                    elapsedDays: (timeElapsedMs / (1000 * 60 * 60 * 24)).toFixed(2),
+                    hoursUntilClaimable: isClaimable ? '0 (READY!)' : hoursRemaining.toFixed(2),
+                    isClaimable: isClaimable,
+                    note: 'Yield requires 24 hours (YIELD_UPDATE_INTERVAL) before becoming claimable',
+                  });
+                  
+                  if (prop.createdAt) {
+                    const backendDate = new Date(prop.createdAt);
+                    const backendDiff = Math.abs(createdAt.getTime() - backendDate.getTime());
+                    if (backendDiff > 60000) { // More than 1 minute difference
+                      console.warn(`⚠️ Property #${prop.tokenId}: Backend createdAt differs from contract!`, {
+                        backendDate: prop.createdAt,
+                        contractDate: createdAt.toISOString(),
+                        differenceHours: (backendDiff / (1000 * 60 * 60)).toFixed(2),
+                      });
+                    }
+                  }
+                } catch (error) {
+                  console.warn(`Failed to fetch createdAt from contract for property ${prop.tokenId}:`, error);
+                  // Fallback to backend if contract fetch fails
+                  if (prop.createdAt) {
+                    createdAt = new Date(prop.createdAt);
+                  }
+                }
+                
+                return {
+                  id: prop.id || `prop-${prop.tokenId}`,
+                  tokenId: prop.tokenId,
+                  propertyType: prop.propertyType as Property['propertyType'],
+                  value: value,
+                  yieldRate: prop.yieldRate || 500,
+                  totalYieldEarned: totalYieldEarned,
+                  createdAt: createdAt,
+                  x: prop.x ?? (index % 10),
+                  y: prop.y ?? Math.floor(index / 10),
+                  rwaContract: prop.rwaContract || undefined,
+                  rwaTokenId: prop.rwaTokenId || undefined,
+                  isOwned: true,
+                };
+              })
+            );
+            
+            setProperties(mappedProperties);
+            
+            // Calculate total yield earned
+            const totalYield = mappedProperties.reduce((sum, p) => sum + p.totalYieldEarned, BigInt(0));
+            setTotalYieldEarned(totalYield);
+            
+            // Calculate claimable yield and time remaining from contract (requires 24 hours) - PER PROPERTY
+            let totalClaimable = BigInt(0);
+            const claimableYieldsMap = new Map<number, bigint>();
+            const timeRemainingMap = new Map<number, { hours: number; minutes: number; isClaimable: boolean }>();
+            
+            // Get YIELD_UPDATE_INTERVAL from contract
+            let yieldUpdateInterval = BigInt(86400); // Default 1 day in seconds
+            try {
+              const interval = await readContract(config, {
+                address: CONTRACTS.YieldDistributor,
+                abi: YIELD_DISTRIBUTOR_ABI,
+                functionName: 'YIELD_UPDATE_INTERVAL',
+              }) as bigint;
+              yieldUpdateInterval = interval;
+              console.log(`⏰ YIELD_UPDATE_INTERVAL from contract: ${interval.toString()} seconds = ${Number(interval) / 3600} hours`);
+            } catch (error) {
+              console.warn('Failed to fetch YIELD_UPDATE_INTERVAL, using default 86400 seconds');
+            }
+            
+            // Get current block timestamp
+            let currentBlockTimestamp = Math.floor(Date.now() / 1000); // Fallback to current time
+            try {
+              const block = await getBlock(config, { blockTag: 'latest' });
+              currentBlockTimestamp = Number(block.timestamp);
+              console.log(`⏰ Current block timestamp: ${currentBlockTimestamp} (${new Date(currentBlockTimestamp * 1000).toISOString()})`);
+            } catch (error) {
+              console.warn('Failed to fetch block timestamp, using current time');
+            }
+            
+            const claimablePromises = mappedProperties.map(async (prop) => {
+              try {
+                // Get lastYieldUpdate from contract
+                let lastUpdate = BigInt(0);
+                try {
+                  lastUpdate = await readContract(config, {
+                    address: CONTRACTS.YieldDistributor,
+                    abi: YIELD_DISTRIBUTOR_ABI,
+                    functionName: 'lastYieldUpdate',
+                    args: [BigInt(prop.tokenId)],
+                  }) as bigint;
+                } catch (error) {
+                  console.warn(`Failed to fetch lastYieldUpdate for property ${prop.tokenId}`);
+                }
+                
+                // If lastYieldUpdate is 0, use createdAt from PropertyNFT
+                let startTimestamp = lastUpdate;
+                if (lastUpdate === BigInt(0) && prop.createdAt) {
+                  startTimestamp = BigInt(Math.floor(prop.createdAt.getTime() / 1000));
+                  console.log(`📅 Property #${prop.tokenId}: Using createdAt (lastYieldUpdate was 0)`);
+                } else if (lastUpdate > BigInt(0)) {
+                  console.log(`📅 Property #${prop.tokenId}: Using lastYieldUpdate from contract`);
+                }
+                
+                // Calculate time elapsed and remaining
+                const timeElapsed = BigInt(currentBlockTimestamp) - startTimestamp;
+                const timeElapsedSeconds = Number(timeElapsed);
+                const timeElapsedHours = timeElapsedSeconds / 3600;
+                const isClaimable = timeElapsed >= yieldUpdateInterval;
+                
+                let hoursRemaining = 0;
+                let minutesRemaining = 0;
+                if (!isClaimable) {
+                  const timeRemaining = yieldUpdateInterval - timeElapsed;
+                  const timeRemainingSeconds = Number(timeRemaining);
+                  hoursRemaining = Math.floor(timeRemainingSeconds / 3600);
+                  minutesRemaining = Math.floor((timeRemainingSeconds % 3600) / 60);
+                }
+                
+                timeRemainingMap.set(prop.tokenId, {
+                  hours: hoursRemaining,
+                  minutes: minutesRemaining,
+                  isClaimable,
+                });
+                
+                console.log(`⏱️ Property #${prop.tokenId} time status:`, {
+                  lastUpdate: lastUpdate.toString(),
+                  startTimestamp: startTimestamp.toString(),
+                  currentTimestamp: currentBlockTimestamp.toString(),
+                  timeElapsed: `${timeElapsedHours.toFixed(2)} hours`,
+                  hoursRemaining: isClaimable ? '0 (READY!)' : `${hoursRemaining}h ${minutesRemaining}m`,
+                  isClaimable,
+                });
+                
+                // Get claimable yield
+                const yieldPromise = calculateYield(BigInt(prop.tokenId));
+                const timeoutPromise = new Promise<bigint>((resolve) => {
+                  setTimeout(() => resolve(BigInt(0)), 2000); // 2 second timeout
+                });
+                const yieldAmount = await Promise.race([yieldPromise, timeoutPromise]);
+                const claimable = typeof yieldAmount === 'bigint' ? yieldAmount : BigInt(yieldAmount?.toString() || '0');
+                claimableYieldsMap.set(prop.tokenId, claimable);
+                console.log(`📊 Property #${prop.tokenId} claimable yield: ${claimable.toString()} wei (${Number(claimable) / 1e18} TYCOON)`);
+                return claimable;
+              } catch (error) {
+                claimableYieldsMap.set(prop.tokenId, BigInt(0));
+                timeRemainingMap.set(prop.tokenId, { hours: 0, minutes: 0, isClaimable: false });
+                return BigInt(0);
+              }
+            });
+            const claimableYields = await Promise.all(claimablePromises);
+            totalClaimable = claimableYields.reduce((sum, y) => sum + y, BigInt(0));
+            setClaimableYield(totalClaimable);
+            setPropertyClaimableYields(claimableYieldsMap);
+            
+            // Store time remaining map for display
+            (window as any).propertyTimeRemaining = timeRemainingMap;
+            
+            console.log(`💰 Total claimable yield: ${totalClaimable.toString()} wei (${Number(totalClaimable) / 1e18} TYCOON)`);
+            
+            // Calculate estimated yield from blockchain data (real-time) - WITH VERIFICATION
+            let totalPending = BigInt(0);
+            const now = Date.now();
+            
+            console.log('🔍 YIELD CALCULATION VERIFICATION:');
+            const YIELD_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours (from YieldDistributor.sol line 17)
+            
+            for (const prop of mappedProperties) {
+              if (prop.createdAt) {
+                const timeElapsedMs = now - prop.createdAt.getTime();
+                const timeElapsedSeconds = timeElapsedMs / 1000;
+                const timeElapsedHours = timeElapsedSeconds / 3600;
+                const timeElapsedDays = timeElapsedHours / 24;
+                const timeRemainingMs = YIELD_UPDATE_INTERVAL_MS - timeElapsedMs;
+                const hoursRemaining = timeRemainingMs / (1000 * 60 * 60);
+                const isClaimable = timeElapsedMs >= YIELD_UPDATE_INTERVAL_MS;
+                
+                if (timeElapsedSeconds > 0) {
+                  const yieldRateBigInt = BigInt(Math.floor(prop.yieldRate));
+                  // Daily yield formula: (value * yieldRate) / (365 * 10000)
+                  // yieldRate is in basis points (500 = 5% APY)
+                  const dailyYield = (prop.value * yieldRateBigInt) / BigInt(365 * 10000);
+                  const secondsPerDay = 86400;
+                  const yieldPerSecond = dailyYield / BigInt(secondsPerDay);
+                  const maxSeconds = 365 * secondsPerDay;
+                  const secondsToCalculate = Math.min(timeElapsedSeconds, maxSeconds);
+                  const propertyEstimatedYield = yieldPerSecond * BigInt(Math.floor(secondsToCalculate));
+                  totalPending += propertyEstimatedYield;
+                  
+                  // Verification logging
+                  console.log(`  Property #${prop.tokenId} (${prop.propertyType}):`, {
+                    value: `${Number(prop.value) / 1e18} TYCOON`,
+                    yieldRate: `${prop.yieldRate / 100}% APY`,
+                    createdAt: prop.createdAt.toISOString(),
+                    elapsed: `${timeElapsedDays.toFixed(2)} days (${timeElapsedHours.toFixed(2)} hours)`,
+                    hoursUntilClaimable: isClaimable ? '0 (READY!)' : `${hoursRemaining.toFixed(2)} hours`,
+                    isClaimable: isClaimable,
+                    dailyYield: `${Number(dailyYield) / 1e18} TYCOON/day`,
+                    estimatedYield: `${Number(propertyEstimatedYield) / 1e18} TYCOON`,
+                    formula: `(${Number(prop.value) / 1e18} × ${prop.yieldRate / 100}%) / 365 days × ${timeElapsedDays.toFixed(2)} days`,
+                    note: 'Contract requires 24 hours (YIELD_UPDATE_INTERVAL) before yield becomes claimable',
+                  });
+                }
+              }
+            }
+            
+            console.log(`✅ Total estimated yield: ${totalPending.toString()} wei (${Number(totalPending) / 1e18} TYCOON)`);
+            setTotalPendingYield(totalPending);
+            setIsLoading(false);
+            return; // Successfully loaded from backend
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Backend unavailable, falling back to blockchain:', error);
+      }
       
-      if (tokenIds.length === 0) {
+      // Fallback to blockchain if backend fails
+      console.log('🔄 Falling back to blockchain loading...');
+      
+      // Get token IDs directly from contract
+      let tokenIds: readonly bigint[] | bigint[] = [];
+      try {
+        const fetchedIds = await getOwnerProperties(address as `0x${string}`);
+        tokenIds = Array.isArray(fetchedIds) ? [...fetchedIds] : [];
+        
+        if (tokenIds.length === 0) {
+          setProperties([]);
+          setTotalPendingYield(BigInt(0));
+          setTotalYieldEarned(BigInt(0));
+          setIsLoading(false);
+          return;
+        }
+      } catch (error: any) {
+        console.error('❌ Failed to get owner properties from contract:', error);
         setProperties([]);
         setTotalPendingYield(BigInt(0));
         setTotalYieldEarned(BigInt(0));
@@ -75,106 +358,258 @@ export default function GamePage() {
         return;
       }
       
-      // Deduplicate tokenIds by converting to numbers and using Set
+      // Deduplicate tokenIds
       const uniqueTokenIds = Array.from(new Set(tokenIds.map(id => Number(id))));
       
-      // Get properties from backend to get coordinates
-      let backendProperties: any[] = [];
-      try {
-        backendProperties = await api.get(`/properties/owner/${address}`);
-      } catch (error) {
-        console.error('Failed to load properties from backend:', error);
-      }
-      
-      // Map properties with positions from backend or default
+      // Map properties from blockchain
       const mappedProperties: Property[] = await Promise.all(
         uniqueTokenIds.map(async (tokenId: number, index: number) => {
-          const propData = await readContract(wagmiConfig, {
-            address: CONTRACTS.PropertyNFT,
-            abi: PROPERTY_NFT_ABI,
-            functionName: 'getProperty',
-            args: [BigInt(tokenId)],
-          });
+          try {
+            const propData = await readContract(config, {
+              address: CONTRACTS.PropertyNFT,
+              abi: PROPERTY_NFT_ABI,
+              functionName: 'getProperty',
+              args: [BigInt(tokenId)],
+            }) as {
+              propertyType: bigint | number;
+              value: bigint;
+              yieldRate: bigint;
+              rwaContract: string;
+              rwaTokenId: bigint;
+              totalYieldEarned: bigint;
+              createdAt: bigint;
+              isActive: boolean;
+            };
 
-          // Find matching backend property for coordinates
-          const backendProp = backendProperties.find((p: any) => Number(p.tokenId) === tokenId);
+            // Convert yieldRate
+            const yieldRateRaw = propData.yieldRate;
+            const yieldRateBigInt = typeof yieldRateRaw === 'bigint' 
+              ? yieldRateRaw 
+              : BigInt(String(yieldRateRaw));
+            let yieldRateValue = Number(yieldRateBigInt);
+            
+            if (yieldRateValue < 100 && yieldRateValue > 0) {
+              yieldRateValue = yieldRateValue * 100;
+            } else if (yieldRateValue > 1e15) {
+              yieldRateValue = Number(yieldRateBigInt) / 1e18 * 100;
+            }
+            
+            if (yieldRateValue < 100) {
+              yieldRateValue = 500;
+            }
 
-          // Convert yieldRate from basis points (e.g., 500 = 5%)
-          // yieldRate is stored as basis points in the contract (500 = 5%)
-          // Convert BigInt to number properly
-          const yieldRateRaw = propData.yieldRate;
-          const yieldRateBigInt = typeof yieldRateRaw === 'bigint' 
-            ? yieldRateRaw 
-            : BigInt(String(yieldRateRaw));
-          let yieldRateValue = Number(yieldRateBigInt);
-          
-          // Debug: log the raw value to help diagnose issues
-          console.log(`Property ${tokenId} raw yieldRate:`, yieldRateValue);
-          
-          // Ensure it's in basis points format (if somehow stored incorrectly, fix it)
-          // If value is less than 100, it might be stored as percentage (5 instead of 500)
-          // If value is very large (> 1e15), it might be in wei format
-          if (yieldRateValue < 100 && yieldRateValue > 0) {
-            // Likely stored as percentage (5), convert to basis points (500)
-            yieldRateValue = yieldRateValue * 100;
-            console.log(`Converted ${yieldRateValue / 100}% to ${yieldRateValue} basis points`);
-          } else if (yieldRateValue > 1e15) {
-            // Likely stored in wei format, convert to basis points
-            yieldRateValue = Number(yieldRateBigInt) / 1e18 * 100;
-            console.log(`Converted from wei to ${yieldRateValue} basis points`);
+            // Convert createdAt from BigInt (seconds) to Date
+            // Contract stores block.timestamp (Unix timestamp in seconds)
+            const createdAtTimestamp = Number(propData.createdAt);
+            const createdAtDate = new Date(createdAtTimestamp * 1000); // Convert seconds to milliseconds
+            
+            // Verify timestamp is reasonable (not in the future, not too old)
+            const now = Date.now();
+            const createdAtMs = createdAtDate.getTime();
+            const timeDiff = now - createdAtMs;
+            
+            if (timeDiff < 0) {
+              console.warn(`⚠️ Property #${tokenId}: createdAt is in the future! Contract timestamp: ${createdAtTimestamp}, Date: ${createdAtDate.toISOString()}`);
+            } else if (timeDiff > 365 * 24 * 60 * 60 * 1000) {
+              console.warn(`⚠️ Property #${tokenId}: createdAt is more than 1 year old! Contract timestamp: ${createdAtTimestamp}, Date: ${createdAtDate.toISOString()}`);
+            }
+            
+            // Try to verify against blockchain event (optional, for verification)
+            let eventBlockTimestamp: number | null = null;
+            try {
+              const publicClient = getPublicClient(config);
+              if (publicClient) {
+                // Query PropertyCreated event for this tokenId
+                const events = await publicClient.getLogs({
+                  address: CONTRACTS.PropertyNFT,
+                  event: parseAbiItem('event PropertyCreated(uint256 indexed tokenId, address indexed owner, uint8 propertyType, uint256 value)'),
+                  args: {
+                    tokenId: BigInt(tokenId),
+                  },
+                  fromBlock: 0n,
+                });
+                
+                if (events.length > 0) {
+                  // Get the block timestamp from the event
+                  const block = await getBlock(config, { blockNumber: events[0].blockNumber });
+                  eventBlockTimestamp = Number(block.timestamp);
+                  console.log(`🔍 Property #${tokenId} event verification:`, {
+                    eventBlockNumber: events[0].blockNumber.toString(),
+                    eventBlockTimestamp: eventBlockTimestamp,
+                    eventBlockDate: new Date(eventBlockTimestamp * 1000).toISOString(),
+                    contractCreatedAt: createdAtTimestamp,
+                    contractCreatedAtDate: createdAtDate.toISOString(),
+                    match: eventBlockTimestamp === createdAtTimestamp ? '✅ MATCH' : '❌ MISMATCH',
+                    difference: eventBlockTimestamp !== createdAtTimestamp ? `${Math.abs(eventBlockTimestamp - createdAtTimestamp)} seconds` : '0 seconds',
+                  });
+                }
+              }
+            } catch (error) {
+              // Event query failed - that's okay, we'll use contract timestamp
+              console.log(`ℹ️ Property #${tokenId}: Could not verify via event (non-critical):`, error);
+            }
+            
+            console.log(`📅 Property #${tokenId} timestamp from contract:`, {
+              contractTimestamp: createdAtTimestamp,
+              contractTimestampHex: `0x${createdAtTimestamp.toString(16)}`,
+              convertedDate: createdAtDate.toISOString(),
+              currentTime: new Date().toISOString(),
+              elapsedHours: (timeDiff / (1000 * 60 * 60)).toFixed(2),
+              elapsedDays: (timeDiff / (1000 * 60 * 60 * 24)).toFixed(2),
+              note: 'This timestamp is set once during minting and is immutable (see PropertyNFT.sol line 51)',
+            });
+
+            const property = {
+              id: `prop-${tokenId}`,
+              tokenId: tokenId,
+              propertyType: ['Residential', 'Commercial', 'Industrial', 'Luxury'][Number(propData.propertyType)] as Property['propertyType'],
+              value: BigInt(propData.value.toString()),
+              yieldRate: yieldRateValue,
+              totalYieldEarned: BigInt(propData.totalYieldEarned.toString()),
+              createdAt: createdAtDate, // Store creation date for yield calculation
+              x: index % 10,
+              y: Math.floor(index / 10),
+              rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' ? propData.rwaContract : undefined,
+              rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId) : undefined,
+              isOwned: true,
+            };
+            
+            return property;
+          } catch (error) {
+            console.error(`❌ Failed to load property ${tokenId}:`, error);
+            return {
+              id: `prop-${tokenId}`,
+              tokenId: tokenId,
+              propertyType: 'Residential' as Property['propertyType'],
+              value: BigInt(0),
+              yieldRate: 500,
+              totalYieldEarned: BigInt(0),
+              x: index % 10,
+              y: Math.floor(index / 10),
+              isOwned: true,
+            };
           }
-          // Otherwise, assume it's already in basis points (500 = 5%)
-          
-          // Final validation: ensure yieldRate is reasonable (between 100 and 10000 basis points = 1% to 100%)
-          if (yieldRateValue < 100) {
-            console.warn(`Property ${tokenId} has suspiciously low yieldRate: ${yieldRateValue}. Defaulting to 500 (5%)`);
-            yieldRateValue = 500; // Default to 5% for Residential
-          }
-
-          // Use coordinates from backend if available, otherwise use index-based positioning
-          const x = backendProp?.x !== null && backendProp?.x !== undefined 
-            ? Number(backendProp.x) 
-            : index % 10;
-          const y = backendProp?.y !== null && backendProp?.y !== undefined 
-            ? Number(backendProp.y) 
-            : Math.floor(index / 10);
-
-          return {
-            id: `prop-${tokenId}`,
-            tokenId: tokenId,
-            propertyType: ['Residential', 'Commercial', 'Industrial', 'Luxury'][Number(propData.propertyType)] as Property['propertyType'],
-            value: BigInt(propData.value.toString()),
-            yieldRate: yieldRateValue, // Store as basis points (500 = 5%)
-            totalYieldEarned: BigInt(propData.totalYieldEarned.toString()),
-            x: x,
-            y: y,
-            rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' ? propData.rwaContract : undefined,
-            rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId) : undefined,
-            isOwned: true, // Mark as owned
-          };
         })
       );
 
-      setProperties(mappedProperties);
-
-      // Calculate total pending yield (use unique tokenIds)
-      let totalPending = BigInt(0);
-      for (const tokenId of uniqueTokenIds) {
+      // Filter out any failed properties (shouldn't happen, but just in case)
+      const validProperties = mappedProperties.filter(p => p !== null && p.value > 0);
+      console.log(`✅ Successfully loaded ${validProperties.length} properties from blockchain`);
+      
+      // Calculate claimable yield from contract (requires 24 hours) - PER PROPERTY
+      let totalClaimable = BigInt(0);
+      const claimableYieldsMap = new Map<number, bigint>();
+      const claimablePromises = validProperties.map(async (prop) => {
         try {
-          const yieldAmount = await calculateYield(BigInt(tokenId));
-          // Ensure we're working with bigint
-          const yieldBigInt = typeof yieldAmount === 'bigint' ? yieldAmount : BigInt(yieldAmount?.toString() || '0');
-          totalPending += yieldBigInt;
+          const yieldPromise = calculateYield(BigInt(prop.tokenId));
+          const timeoutPromise = new Promise<bigint>((resolve) => {
+            setTimeout(() => resolve(BigInt(0)), 2000);
+          });
+          const yieldAmount = await Promise.race([yieldPromise, timeoutPromise]);
+          const claimable = typeof yieldAmount === 'bigint' ? yieldAmount : BigInt(yieldAmount?.toString() || '0');
+          claimableYieldsMap.set(prop.tokenId, claimable);
+          return claimable;
         } catch (error) {
-          console.error(`Failed to calculate yield for property ${tokenId}:`, error);
-          // If calculation fails, yield is 0 for that property
+          claimableYieldsMap.set(prop.tokenId, BigInt(0));
+          return BigInt(0);
+        }
+      });
+      const claimableYields = await Promise.all(claimablePromises);
+      totalClaimable = claimableYields.reduce((sum, y) => sum + y, BigInt(0));
+      setClaimableYield(totalClaimable);
+      setPropertyClaimableYields(claimableYieldsMap);
+      console.log(`💰 Total claimable yield: ${totalClaimable.toString()} wei (${Number(totalClaimable) / 1e18} TYCOON)`);
+      
+      // Calculate estimated yield directly from blockchain data (real-time, works even if backend is down)
+      // This calculates yield based on time elapsed since property creation - WITH VERIFICATION
+      let totalPending = BigInt(0);
+      const now = Date.now();
+      
+      console.log('🔍 YIELD CALCULATION VERIFICATION (Blockchain Path):');
+      for (const prop of validProperties) {
+        if (prop.createdAt) {
+          const timeElapsedMs = now - prop.createdAt.getTime();
+          const timeElapsedSeconds = timeElapsedMs / 1000;
+          const timeElapsedHours = timeElapsedSeconds / 3600;
+          const timeElapsedDays = timeElapsedHours / 24;
+          
+          if (timeElapsedSeconds > 0) {
+            // Calculate daily yield: (value * yieldRate) / (365 * 10000)
+            // yieldRate is in basis points (500 = 5% APY)
+            const yieldRateBigInt = BigInt(Math.floor(prop.yieldRate));
+            const dailyYield = (prop.value * yieldRateBigInt) / BigInt(365 * 10000);
+            const secondsPerDay = 86400;
+            const yieldPerSecond = dailyYield / BigInt(secondsPerDay);
+            
+            // Calculate estimated yield for elapsed seconds (cap at 365 days)
+            const maxSeconds = 365 * secondsPerDay;
+            const secondsToCalculate = Math.min(timeElapsedSeconds, maxSeconds);
+            const propertyEstimatedYield = yieldPerSecond * BigInt(Math.floor(secondsToCalculate));
+            totalPending += propertyEstimatedYield;
+            
+            // Verification logging
+            const claimableForProp = claimableYieldsMap.get(prop.tokenId) || BigInt(0);
+            console.log(`  Property #${prop.tokenId} (${prop.propertyType}):`, {
+              value: `${Number(prop.value) / 1e18} TYCOON`,
+              yieldRate: `${prop.yieldRate / 100}% APY`,
+              createdAt: prop.createdAt.toISOString(),
+              elapsed: `${timeElapsedDays.toFixed(2)} days (${timeElapsedHours.toFixed(2)} hours)`,
+              dailyYield: `${Number(dailyYield) / 1e18} TYCOON/day`,
+              estimatedYield: `${Number(propertyEstimatedYield) / 1e18} TYCOON`,
+              claimableYield: `${Number(claimableForProp) / 1e18} TYCOON`,
+              formula: `(${Number(prop.value) / 1e18} × ${prop.yieldRate / 100}%) / 365 days × ${timeElapsedDays.toFixed(2)} days`,
+            });
+          }
         }
       }
+      
+      console.log(`✅ Total estimated yield: ${totalPending.toString()} wei (${Number(totalPending) / 1e18} TYCOON)`);
+      
+      // Try backend for additional data (optional, non-blocking)
+      try {
+        const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+        const yieldResponse = await fetch(`${BACKEND_URL}/yield/pending/${address}`, {
+          signal: AbortSignal.timeout(2000), // 2 second timeout (non-blocking)
+        });
+        
+        if (yieldResponse.ok) {
+          const yieldData = await yieldResponse.json();
+          const backendYield = BigInt(yieldData.totalPending || '0');
+          // Use backend value if it's higher (more accurate) or if our calculation is 0
+          if (backendYield > totalPending || totalPending === BigInt(0)) {
+            totalPending = backendYield;
+            console.log(`💰 Using backend yield: ${yieldData.formatted} TYCOON`);
+          }
+        }
+      } catch (error) {
+        // Backend unavailable - that's okay, we have blockchain calculation
+        console.log('ℹ️ Backend yield unavailable, using blockchain calculation');
+      }
+      
       setTotalPendingYield(totalPending);
+      
+      console.log(`📊 Properties breakdown:`, {
+        total: mappedProperties.length,
+        valid: validProperties.length,
+        invalid: mappedProperties.length - validProperties.length,
+        propertyDetails: validProperties.map(p => ({
+          tokenId: p.tokenId,
+          type: p.propertyType,
+          value: p.value.toString(),
+        })),
+      });
+
+      if (validProperties.length === 0 && mappedProperties.length > 0) {
+        console.warn('⚠️ All properties were filtered out! Check property values:', mappedProperties);
+      }
+
+      setProperties(validProperties);
 
       // Calculate total earned
-      const totalEarned = mappedProperties.reduce((sum, p) => sum + p.totalYieldEarned, BigInt(0));
+      const totalEarned = validProperties.reduce((sum, p) => sum + p.totalYieldEarned, BigInt(0));
       setTotalYieldEarned(totalEarned);
+      
+      console.log(`💰 Total pending yield: ${totalPending.toString()}, Total earned: ${totalEarned.toString()}`);
     } catch (error) {
       console.error('Failed to load properties:', error);
     } finally {
@@ -182,34 +617,60 @@ export default function GamePage() {
     }
   }, [address, isConnected]);
   
-  // Load token balance function
-  const loadTokenBalance = useCallback(async () => {
-    if (!address) {
-      setTokenBalanceValue(BigInt(0));
-      return;
+  // Load token balance using wagmi hook (reactive)
+  const { data: tokenBalance, refetch: refetchBalance } = useReadContract({
+    address: CONTRACTS.GameToken,
+    abi: [
+      {
+        inputs: [{ name: 'account', type: 'address' }],
+        name: 'balanceOf',
+        outputs: [{ name: '', type: 'uint256' }],
+        stateMutability: 'view',
+        type: 'function',
+      },
+    ],
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address,
+      refetchInterval: 10000, // Refetch every 10 seconds
+    },
+  });
+
+  // Update token balance value when data changes
+  useEffect(() => {
+    if (tokenBalance !== undefined) {
+      const balance = BigInt(tokenBalance.toString());
+      console.log('💰 Token balance updated:', balance.toString());
+      setTokenBalanceValue(balance);
+    } else if (address) {
+      // If address exists but balance is undefined, try manual fetch
+      const loadBalance = async () => {
+        try {
+          const balance = await readContract(config, {
+            address: CONTRACTS.GameToken,
+            abi: [
+              {
+                inputs: [{ name: 'account', type: 'address' }],
+                name: 'balanceOf',
+                outputs: [{ name: '', type: 'uint256' }],
+                stateMutability: 'view',
+                type: 'function',
+              },
+            ],
+            functionName: 'balanceOf',
+            args: [address],
+          }) as bigint;
+          console.log('💰 Manual balance fetch:', balance.toString());
+          setTokenBalanceValue(BigInt(balance.toString()));
+        } catch (error) {
+          console.error('❌ Failed to load token balance:', error);
+          setTokenBalanceValue(BigInt(0));
+        }
+      };
+      loadBalance();
     }
-    
-    try {
-      const balance = await readContract(wagmiConfig, {
-        address: CONTRACTS.GameToken,
-        abi: [
-          {
-            inputs: [{ name: 'account', type: 'address' }],
-            name: 'balanceOf',
-            outputs: [{ name: '', type: 'uint256' }],
-            stateMutability: 'view',
-            type: 'function',
-          },
-        ],
-        functionName: 'balanceOf',
-        args: [address],
-      });
-      setTokenBalanceValue(BigInt(balance.toString()));
-    } catch (error) {
-      console.error('Failed to load token balance:', error);
-      setTokenBalanceValue(BigInt(0));
-    }
-  }, [address]);
+  }, [tokenBalance, address]);
 
   // Mint property transaction
   const { writeContract: writeMint, data: mintHash, isPending: isMintPending } = useWriteContract();
@@ -244,37 +705,26 @@ export default function GamePage() {
             const latestTokenId = Number(tokenIds[tokenIds.length - 1]);
             
             // Find next available position on the map (simple grid placement)
-            // Get all existing properties to find occupied positions
-            const existingProps = await api.get(`/properties/owner/${address}`).catch(() => []);
-            const occupiedPositions = new Set(
-              existingProps.map((p: any) => `${p.x ?? -1},${p.y ?? -1}`)
-            );
+            // Use index-based positioning (NO BACKEND NEEDED)
+            const propertyCount = properties.length;
+            const x = propertyCount % 10;
+            const y = Math.floor(propertyCount / 10);
             
-            // Find first available position (left to right, top to bottom)
-            let foundPosition = false;
-            for (let y = 0; y < 15 && !foundPosition; y++) {
-              for (let x = 0; x < 20 && !foundPosition; x++) {
-                const posKey = `${x},${y}`;
-                if (!occupiedPositions.has(posKey)) {
-                  // Save coordinates to backend
-                  await api.put(`/properties/${latestTokenId}/coordinates`, {
-                    x,
-                    y,
-                  });
-                  console.log(`Auto-placed property ${latestTokenId} at (${x}, ${y})`);
-                  foundPosition = true;
-                }
-              }
-            }
+            console.log(`Auto-placed property ${latestTokenId} at (${x}, ${y})`);
+            
+            // Optionally save coordinates to backend (non-blocking)
+            api.put(`/properties/${latestTokenId}/coordinates`, { x, y }).catch(() => {
+              // Backend unavailable - that's okay, we use index-based positioning
+            });
           }
         } catch (error) {
           console.error('Failed to assign coordinates:', error);
         }
         
         // Refresh balance
-        await loadTokenBalance();
+        refetchBalance();
         await new Promise(resolve => setTimeout(resolve, 1000));
-        await loadTokenBalance();
+        refetchBalance();
         
         // Reload properties again to show the new position
         await loadProperties();
@@ -283,21 +733,31 @@ export default function GamePage() {
       refreshData();
       setIsMinting(false);
     }
-  }, [isMintSuccess, address, loadProperties, loadTokenBalance]);
+  }, [isMintSuccess, address, loadProperties, refetchBalance]);
 
   // Reload properties when claim succeeds
   useEffect(() => {
     if (isClaimSuccess) {
       loadProperties();
-      loadTokenBalance();
+      refetchBalance();
       setIsClaiming(false);
     }
-  }, [isClaimSuccess, loadProperties, loadTokenBalance]);
+  }, [isClaimSuccess, loadProperties, refetchBalance]);
   
-  // Load token balance on mount and when address changes
+  // Load properties on mount and when address changes
   useEffect(() => {
-    loadTokenBalance();
-  }, [loadTokenBalance]);
+    if (address && isConnected) {
+      console.log('Loading properties on mount/address change');
+      loadProperties();
+    }
+  }, [address, isConnected, loadProperties]);
+
+  // Refetch balance when address changes
+  useEffect(() => {
+    if (address) {
+      refetchBalance();
+    }
+  }, [address, refetchBalance]);
 
   // WebSocket for real-time updates (replaces periodic refresh)
   useEffect(() => {
@@ -316,6 +776,11 @@ export default function GamePage() {
       console.log('✅ Connected to WebSocket for real-time updates');
       // Subscribe to portfolio updates for this address
       socket.emit('subscribe:portfolio', { address });
+      console.log(`📡 Subscribed to portfolio: ${address}`);
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ WebSocket connection error:', error);
     });
 
     // Listen for property created events
@@ -323,7 +788,7 @@ export default function GamePage() {
       if (data.owner.toLowerCase() === address?.toLowerCase()) {
         console.log('📦 New property created, refreshing...');
         loadProperties();
-        loadTokenBalance();
+        refetchBalance();
       }
     });
 
@@ -332,7 +797,86 @@ export default function GamePage() {
       if (data.owner.toLowerCase() === address?.toLowerCase()) {
         console.log('💰 Yield claimed, refreshing...');
         loadProperties();
-        loadTokenBalance();
+        refetchBalance();
+      }
+    });
+
+    // Listen for yield time updates (real-time countdown from backend)
+    socket.on('yield:time-update', (data: {
+      walletAddress: string;
+      yieldUpdateIntervalSeconds: number;
+      currentBlockTimestamp: number;
+      shortestTimeRemaining: { hours: number; minutes: number } | null;
+      totalClaimableYield: string;
+      properties: Array<{
+        tokenId: number;
+        lastYieldUpdate: number;
+        createdAt: number;
+        timeElapsedSeconds: number;
+        timeElapsedHours: number;
+        hoursRemaining: number;
+        minutesRemaining: number;
+        isClaimable: boolean;
+        claimableYield: string;
+      }>;
+    }) => {
+      console.log('📨 Received yield:time-update event:', {
+        receivedAddress: data.walletAddress,
+        currentAddress: address,
+        match: data.walletAddress.toLowerCase() === address?.toLowerCase(),
+        propertiesCount: data.properties.length,
+      });
+      
+      if (data.walletAddress.toLowerCase() === address?.toLowerCase()) {
+        console.log('⏰ Yield time update received from backend:', data);
+        
+        // Update claimable yield from backend (more reliable than blockchain calls)
+        const claimable = BigInt(data.totalClaimableYield || '0');
+        setClaimableYield(claimable);
+        
+        // Update property claimable yields map
+        const newClaimableYieldsMap = new Map<number, bigint>();
+        const newTimeRemainingMap = new Map<number, { hours: number; minutes: number; isClaimable: boolean }>();
+        
+        data.properties.forEach((prop) => {
+          newClaimableYieldsMap.set(prop.tokenId, BigInt(prop.claimableYield || '0'));
+          newTimeRemainingMap.set(prop.tokenId, {
+            hours: prop.hoursRemaining,
+            minutes: prop.minutesRemaining,
+            isClaimable: prop.isClaimable,
+          });
+        });
+        
+        setPropertyClaimableYields(newClaimableYieldsMap);
+        (window as any).propertyTimeRemaining = newTimeRemainingMap;
+        
+        // Force re-render of YieldDisplay by updating timestamp
+        setYieldUpdateTimestamp(Date.now());
+        
+        // Update estimated yield (calculate from backend data)
+        // Use current properties state to calculate estimated yield
+        setProperties((currentProperties) => {
+          let totalEstimated = BigInt(0);
+          currentProperties.forEach((prop) => {
+            const propData = data.properties.find((p) => p.tokenId === prop.tokenId);
+            if (propData && prop.createdAt) {
+              // Calculate estimated yield: dailyYield × (timeElapsedHours / 24)
+              const dailyYield = (prop.value * BigInt(prop.yieldRate)) / BigInt(365 * 10000);
+              const hoursElapsed = propData.timeElapsedHours;
+              const daysElapsed = hoursElapsed / 24;
+              const estimatedYield = (dailyYield * BigInt(Math.floor(daysElapsed * 100))) / BigInt(100);
+              totalEstimated += estimatedYield;
+            }
+          });
+          setTotalPendingYield(totalEstimated);
+          return currentProperties; // Return unchanged properties
+        });
+        
+        console.log('✅ Updated yield data from backend WebSocket:', {
+          claimable: claimable.toString(),
+          shortestTimeRemaining: data.shortestTimeRemaining,
+          propertiesCount: data.properties.length,
+        });
       }
     });
 
@@ -340,7 +884,7 @@ export default function GamePage() {
     socket.on('portfolio:updated', () => {
       console.log('📊 Portfolio updated, refreshing...');
       loadProperties();
-      loadTokenBalance();
+      refetchBalance();
     });
 
     socket.on('disconnect', () => {
@@ -350,18 +894,26 @@ export default function GamePage() {
     return () => {
       socket.disconnect();
     };
-  }, [address, isConnected, loadProperties, loadTokenBalance]);
+  }, [address, isConnected, loadProperties, refetchBalance]);
 
   // No periodic refresh - only refresh on:
   // 1. User actions (mint, claim)
   // 2. WebSocket events (real-time updates)
   // This prevents constant loading and improves UX
 
-  // Load other players' properties for multiplayer view
+  // Load other players' properties for multiplayer view (OPTIONAL - backend only)
+  // Note: This is for viewing other players' properties on the map
+  // Since we're blockchain-first, this is optional and only works if backend has data
   const loadOtherPlayersProperties = useCallback(async () => {
     if (!address) return;
     try {
-      const allProperties = await api.get('/properties');
+      // Try to get other players' properties from backend (optional)
+      const allProperties = await api.get('/properties').catch(() => []);
+      if (allProperties.length === 0) {
+        // Backend unavailable or no data - that's okay, we'll just show user's properties
+        return;
+      }
+      
       const otherProps = allProperties
         .filter((p: any) => {
           const ownerAddr = p.owner?.walletAddress || p.owner?.wallet_address;
@@ -483,7 +1035,9 @@ export default function GamePage() {
           {/* Left Sidebar */}
           <div className="lg:col-span-1 space-y-6">
             <YieldDisplay
+              key={yieldUpdateTimestamp} // Force re-render when WebSocket updates
               totalPendingYield={totalPendingYield}
+              claimableYield={claimableYield}
               totalYieldEarned={totalYieldEarned}
               isClaiming={isClaiming || isClaimPending || isClaimConfirming}
               onClaimAll={async () => {
@@ -607,6 +1161,7 @@ export default function GamePage() {
                   <PropertyCard
                     key={property.id}
                     property={property}
+                    claimableYield={propertyClaimableYields.get(property.tokenId)}
                     onViewDetails={() => setSelectedProperty(property)}
                     isClaiming={isClaiming || isClaimPending || isClaimConfirming}
                     onClaimYield={async () => {
@@ -635,6 +1190,7 @@ export default function GamePage() {
       {selectedProperty && (
         <PropertyDetails
           property={selectedProperty}
+          claimableYield={propertyClaimableYields.get(selectedProperty.tokenId)}
           isOpen={!!selectedProperty}
           onClose={() => setSelectedProperty(null)}
           isClaiming={isClaiming || isClaimPending || isClaimConfirming}

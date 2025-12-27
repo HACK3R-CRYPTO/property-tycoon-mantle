@@ -1,21 +1,14 @@
-import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
-import { cookieStorage, createStorage } from "wagmi";
+'use client'
+
+import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import { mantle, mantleSepoliaTestnet } from '@reown/appkit/networks'
 
-export const projectId = process.env.NEXT_PUBLIC_PROJECT_ID;
+// Get project ID from environment variable
+export const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || ''
 
-export const networks = [mantle, mantleSepoliaTestnet]
-
-if (!projectId) throw new Error("Project ID is not defined");
-
+// Create Reown AppKit Wagmi adapter
 export const wagmiAdapter = new WagmiAdapter({
-  storage: createStorage({
-    storage: cookieStorage
-  }),
-  ssr: true,
-  networks,
-  projectId
+  networks: [mantle, mantleSepoliaTestnet],
+  projectId,
 })
-
-export const config = wagmiAdapter.wagmiConfig
 
