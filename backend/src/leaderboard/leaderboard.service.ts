@@ -14,45 +14,49 @@ export class LeaderboardService {
     private contractsService: ContractsService,
   ) {}
 
-  async getGlobalLeaderboard(limit: number = 100) {
-    // Try to sync properties, but don't fail if sync doesn't work
-    // This ensures leaderboard still loads even if blockchain calls fail
-    try {
-      // Check if contract is initialized
-      if (this.contractsService.propertyNFT) {
-        this.logger.log('Syncing users\' properties from blockchain before fetching leaderboard...');
-        
-        // Get all users (limit to avoid timeout)
-        const allUsers = await this.db
-          .select({
-            id: schema.users.id,
-            walletAddress: schema.users.walletAddress,
-          })
-          .from(schema.users)
-          .limit(20); // Limit to first 20 users to avoid timeout
-
-        this.logger.log(`Found ${allUsers.length} users to sync`);
-
-        // Sync properties for each user
-        for (const user of allUsers) {
-          try {
-            await this.syncUserPropertiesFromChain(user.walletAddress);
-            // Update leaderboard for this user
-            await this.updateLeaderboard(user.id);
-          } catch (error) {
-            this.logger.error(`Failed to sync properties for user ${user.walletAddress}: ${error.message}`);
-            // Continue with other users even if one fails
-          }
-        }
-        
-        this.logger.log(`Synced properties for ${allUsers.length} users`);
-      } else {
-        this.logger.warn('PropertyNFT contract not initialized, skipping sync');
-      }
-    } catch (error) {
-      this.logger.error(`Error syncing properties before leaderboard fetch: ${error.message}`, error.stack);
-      // Continue to return leaderboard even if sync fails
+  async syncAllUsersFromChain() {
+    // Check if contract is initialized
+    if (!this.contractsService.propertyNFT) {
+      this.logger.warn('PropertyNFT contract not initialized, cannot sync');
+      return;
     }
+
+    this.logger.log('Syncing all users\' properties from blockchain...');
+    
+    try {
+      // Get all users (limit to avoid timeout)
+      const allUsers = await this.db
+        .select({
+          id: schema.users.id,
+          walletAddress: schema.users.walletAddress,
+        })
+        .from(schema.users)
+        .limit(50); // Limit to first 50 users to avoid timeout
+
+      this.logger.log(`Found ${allUsers.length} users to sync`);
+
+      // Sync properties for each user
+      for (const user of allUsers) {
+        try {
+          await this.syncUserPropertiesFromChain(user.walletAddress);
+          // Update leaderboard for this user
+          await this.updateLeaderboard(user.id);
+        } catch (error) {
+          this.logger.error(`Failed to sync properties for user ${user.walletAddress}: ${error.message}`);
+          // Continue with other users even if one fails
+        }
+      }
+      
+      this.logger.log(`Synced properties for ${allUsers.length} users`);
+    } catch (error) {
+      this.logger.error(`Error syncing users from chain: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  async getGlobalLeaderboard(limit: number = 100) {
+    // Note: Sync should be called before this method via syncAllUsersFromChain()
+    // This method just fetches and returns the leaderboard data
 
     // Now fetch the updated leaderboard (always return, even if sync failed)
     try {
