@@ -56,7 +56,7 @@ Global leaderboard shows all players. Ranked by portfolio value. Ranked by total
 
 Guilds create communities. Join existing guilds. Create your own guild. See guild members properties. Share guild benefits. Compete in guild leaderboards. Guild stats update automatically when members properties change. Combined portfolio value and yield tracking.
 
-Marketplace connects players. Browse properties for sale. See seller information. View property details. Buy from other players. Sell your properties. Set your prices. Trade with community. No need to always mint new. Buy from others. Fixed price and auction listings supported.
+Marketplace connects players. Browse properties for sale. See seller information. View property details. Buy from other players. Sell your properties. Click "Sell Property" button in property details or "List Property" in marketplace. Set your prices. Choose fixed price or auction. Approve marketplace to transfer your NFT. List property for sale. Cancel listings anytime. Trade with community. No need to always mint new. Buy from others. Fixed price and auction listings supported.
 
 Quest system rewards players. Complete investment challenges. Diversify your portfolio. Optimize your yield. Earn bonus rewards. Unlock achievements. Track progress in real time. Claim rewards when completed.
 

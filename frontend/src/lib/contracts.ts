@@ -46,6 +46,26 @@ export const PROPERTY_NFT_ABI = [
     type: 'function',
   },
   {
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'tokenId', type: 'uint256' },
+    ],
+    name: 'approve',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'operator', type: 'address' },
+      { name: 'approved', type: 'bool' },
+    ],
+    name: 'setApprovalForAll',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
     inputs: [{ name: 'tokenId', type: 'uint256' }],
     name: 'getProperty',
     outputs: [
@@ -105,7 +125,35 @@ export const MARKETPLACE_ABI = [
     inputs: [{ name: 'propertyId', type: 'uint256' }],
     name: 'buyProperty',
     outputs: [],
-    stateMutability: 'payable',
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'propertyId', type: 'uint256' },
+      { name: 'price', type: 'uint256' },
+    ],
+    name: 'listProperty',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'propertyId', type: 'uint256' }],
+    name: 'cancelListing',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'propertyId', type: 'uint256' },
+      { name: 'startingPrice', type: 'uint256' },
+      { name: 'duration', type: 'uint256' },
+    ],
+    name: 'createAuction',
+    outputs: [],
+    stateMutability: 'nonpayable',
     type: 'function',
   },
 ] as const;

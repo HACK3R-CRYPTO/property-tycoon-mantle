@@ -1,6 +1,6 @@
 'use client';
 
-import { X, Building2, DollarSign, TrendingUp, Link as LinkIcon } from 'lucide-react';
+import { X, Building2, DollarSign, TrendingUp, Link as LinkIcon, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -19,6 +19,7 @@ interface PropertyDetailsProps {
   onClose: () => void;
   onClaimYield?: () => void | Promise<void>;
   onLinkRWA?: () => void;
+  onSellProperty?: () => void;
   isClaiming?: boolean;
 }
 
@@ -28,6 +29,7 @@ export function PropertyDetails({
   onClose,
   onClaimYield,
   onLinkRWA,
+  onSellProperty,
   isClaiming = false,
 }: PropertyDetailsProps) {
   if (!isOpen) return null;
@@ -100,17 +102,29 @@ export function PropertyDetails({
                 </div>
               )}
 
-              <div className="flex gap-2 pt-2">
-                {onClaimYield && (
-                  <Button 
-                    onClick={onClaimYield} 
-                    disabled={isClaiming}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {isClaiming ? 'Claiming...' : 'Claim Yield'}
-                  </Button>
-                )}
-                <Button onClick={onClose} variant="outline" className="flex-1">
+              <div className="flex flex-col gap-2 pt-2">
+                <div className="flex gap-2">
+                  {onClaimYield && (
+                    <Button 
+                      onClick={onClaimYield} 
+                      disabled={isClaiming}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {isClaiming ? 'Claiming...' : 'Claim Yield'}
+                    </Button>
+                  )}
+                  {onSellProperty && (
+                    <Button 
+                      onClick={onSellProperty} 
+                      variant="outline"
+                      className="flex-1 border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+                    >
+                      <Tag className="w-4 h-4 mr-2" />
+                      Sell Property
+                    </Button>
+                  )}
+                </div>
+                <Button onClick={onClose} variant="outline" className="w-full">
                   Close
                 </Button>
               </div>

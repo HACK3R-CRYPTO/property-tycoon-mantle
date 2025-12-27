@@ -47,6 +47,8 @@ export default function GamePage() {
   const [showGuilds, setShowGuilds] = useState(false);
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [showQuests, setShowQuests] = useState(false);
+  const [showSellProperty, setShowSellProperty] = useState(false);
+  const [propertyToSell, setPropertyToSell] = useState<Property | null>(null);
   const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0));
   const [totalYieldEarned, setTotalYieldEarned] = useState<bigint>(BigInt(0));
   const [isLoading, setIsLoading] = useState(true);
@@ -656,6 +658,11 @@ export default function GamePage() {
             // TODO: Implement RWA linking
             console.log('Link to RWA');
           }}
+          onSellProperty={() => {
+            setPropertyToSell(selectedProperty);
+            setShowSellProperty(true);
+            setSelectedProperty(null);
+          }}
         />
       )}
 
@@ -728,6 +735,36 @@ export default function GamePage() {
             </div>
             <div className="p-4">
               <Quests />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sell Property Modal */}
+      {showSellProperty && propertyToSell && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-lg border border-white/20 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gray-900 border-b border-white/10 p-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Sell Property</h2>
+              <Button onClick={() => {
+                setShowSellProperty(false);
+                setPropertyToSell(null);
+              }} variant="ghost" size="sm">
+                ✕
+              </Button>
+            </div>
+            <div className="p-4">
+              <Marketplace 
+                preselectedProperty={{
+                  tokenId: propertyToSell.tokenId,
+                  propertyType: propertyToSell.propertyType,
+                  value: propertyToSell.value,
+                }}
+                onListed={() => {
+                  setShowSellProperty(false);
+                  setPropertyToSell(null);
+                }}
+              />
             </div>
           </div>
         </div>
