@@ -24,20 +24,29 @@ export class LeaderboardService {
     this.logger.log('Syncing all users\' properties from blockchain...');
     
     try {
-      // Get all users (limit to avoid timeout)
+      if (!this.contractsService.propertyNFT) {
+        this.logger.warn('PropertyNFT contract not initialized, skipping sync');
+        return;
+      }
+
+      // Strategy: Get all unique owners from properties in database first
+      // Then also check blockchain events for any owners we might have missed
       const allUsers = await this.db
         .select({
           id: schema.users.id,
           walletAddress: schema.users.walletAddress,
         })
         .from(schema.users)
-        .limit(50); // Limit to first 50 users to avoid timeout
+        .limit(100); // Increase limit
 
-      this.logger.log(`Found ${allUsers.length} users to sync`);
+      this.logger.log(`Found ${allUsers.length} users in database to sync`);
 
-      // Sync properties for each user
+      // Sync properties for each user in database
+      const syncedAddresses = new Set<string>();
       for (const user of allUsers) {
         try {
+          const normalized = user.walletAddress.toLowerCase();
+          syncedAddresses.add(normalized);
           await this.syncUserPropertiesFromChain(user.walletAddress);
           // Update leaderboard for this user
           await this.updateLeaderboard(user.id);
@@ -46,8 +55,49 @@ export class LeaderboardService {
           // Continue with other users even if one fails
         }
       }
+
+      // Also discover new owners from blockchain by checking PropertyCreated events
+      try {
+        this.logger.log('Discovering new property owners from blockchain events...');
+        const propertyCreatedFilter = this.contractsService.propertyNFT.filters.PropertyCreated();
+        const events = await this.contractsService.propertyNFT.queryFilter(propertyCreatedFilter);
+        
+        const uniqueOwners = new Set<string>();
+        for (const event of events) {
+          if (event.args && event.args.owner) {
+            const owner = event.args.owner.toLowerCase();
+            if (!syncedAddresses.has(owner)) {
+              uniqueOwners.add(owner);
+            }
+          }
+        }
+
+        this.logger.log(`Found ${uniqueOwners.size} new owners from blockchain events`);
+
+        // Sync properties for newly discovered owners
+        for (const ownerAddress of uniqueOwners) {
+          try {
+            await this.syncUserPropertiesFromChain(ownerAddress);
+            // Get the user ID after sync (user should be created)
+            const [user] = await this.db
+              .select()
+              .from(schema.users)
+              .where(eq(schema.users.walletAddress, ownerAddress))
+              .limit(1);
+            
+            if (user) {
+              await this.updateLeaderboard(user.id);
+            }
+          } catch (error) {
+            this.logger.error(`Failed to sync newly discovered owner ${ownerAddress}: ${error.message}`);
+          }
+        }
+      } catch (error) {
+        this.logger.error(`Error discovering owners from events: ${error.message}`);
+        // Continue even if event query fails
+      }
       
-      this.logger.log(`Synced properties for ${allUsers.length} users`);
+      this.logger.log(`Sync complete: ${allUsers.length} existing users synced`);
     } catch (error) {
       this.logger.error(`Error syncing users from chain: ${error.message}`, error.stack);
       throw error;
