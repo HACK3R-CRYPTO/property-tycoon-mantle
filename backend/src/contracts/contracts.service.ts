@@ -20,7 +20,10 @@ export class ContractsService {
   public questSystem: ethers.Contract;
 
   constructor(private configService: ConfigService) {
-    this.initializeContracts();
+    // Delay initialization slightly to ensure ConfigModule has loaded env vars
+    setTimeout(() => {
+      this.initializeContracts();
+    }, 100);
   }
 
   private initializeContracts() {
@@ -40,11 +43,11 @@ export class ContractsService {
       this.provider = new ethers.providers.JsonRpcProvider(rpcUrl);
       this.wallet = new ethers.Wallet(privateKey, this.provider);
 
-      const propertyNFTAddress = this.configService.get<string>('PROPERTY_NFT_ADDRESS');
-      const gameTokenAddress = this.configService.get<string>('GAME_TOKEN_ADDRESS');
-      const yieldDistributorAddress = this.configService.get<string>('YIELD_DISTRIBUTOR_ADDRESS');
-      const marketplaceAddress = this.configService.get<string>('MARKETPLACE_ADDRESS');
-      const questSystemAddress = this.configService.get<string>('QUEST_SYSTEM_ADDRESS');
+      const propertyNFTAddress = this.configService.get<string>('PROPERTY_NFT_ADDRESS') || process.env.PROPERTY_NFT_ADDRESS;
+      const gameTokenAddress = this.configService.get<string>('GAME_TOKEN_ADDRESS') || process.env.GAME_TOKEN_ADDRESS;
+      const yieldDistributorAddress = this.configService.get<string>('YIELD_DISTRIBUTOR_ADDRESS') || process.env.YIELD_DISTRIBUTOR_ADDRESS;
+      const marketplaceAddress = this.configService.get<string>('MARKETPLACE_ADDRESS') || process.env.MARKETPLACE_ADDRESS;
+      const questSystemAddress = this.configService.get<string>('QUEST_SYSTEM_ADDRESS') || process.env.QUEST_SYSTEM_ADDRESS;
 
       this.logger.log(`PropertyNFT Address: ${propertyNFTAddress || 'NOT SET'}`);
 
