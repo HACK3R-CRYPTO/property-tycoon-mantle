@@ -213,32 +213,59 @@ export class PropertiesService {
           
           const propertyData = await this.contractsService.getProperty(BigInt(tokenIdNum));
           
-          const existing = await this.db
-            .select()
-            .from(schema.properties)
-            .where(eq(schema.properties.tokenId, tokenIdNum))
-            .limit(1);
+          const propertyTypeNum = typeof propertyData.propertyType === 'bigint' 
+            ? Number(propertyData.propertyType) 
+            : Number(propertyData.propertyType);
+          
+          // Convert yieldRate to basis points
+          let yieldRateValue = Number(propertyData.yieldRate.toString());
+          if (yieldRateValue > 1e15) {
+            yieldRateValue = Number(propertyData.yieldRate.toString()) / 1e18 * 100;
+          }
+          if (yieldRateValue < 100 && yieldRateValue > 0) {
+            yieldRateValue = yieldRateValue * 100;
+          }
 
-          if (existing.length === 0) {
-            const propertyTypeNum = typeof propertyData.propertyType === 'bigint' 
-              ? Number(propertyData.propertyType) 
-              : Number(propertyData.propertyType);
-            
-            await this.create({
-              tokenId: tokenIdNum,
-              ownerId: user.id,
-              propertyType: this.mapPropertyType(propertyTypeNum),
-              value: BigInt(propertyData.value.toString()),
-              yieldRate: Number(propertyData.yieldRate.toString()),
-              rwaContract: propertyData.rwaContract !== '0x0000000000000000000000000000000000000000' 
-                ? propertyData.rwaContract 
-                : undefined,
-              rwaTokenId: propertyData.rwaTokenId ? Number(propertyData.rwaTokenId.toString()) : undefined,
-            });
+          // Use upsert to handle duplicates gracefully
+          try {
+            await this.db
+              .insert(schema.properties)
+              .values({
+                tokenId: tokenIdNum,
+                ownerId: user.id,
+                propertyType: this.mapPropertyType(propertyTypeNum),
+                value: BigInt(propertyData.value.toString()),
+                yieldRate: yieldRateValue,
+                rwaContract: propertyData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+                  ? propertyData.rwaContract 
+                  : undefined,
+                rwaTokenId: propertyData.rwaTokenId && Number(propertyData.rwaTokenId.toString()) > 0 
+                  ? Number(propertyData.rwaTokenId.toString()) 
+                  : undefined,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .onConflictDoUpdate({
+                target: schema.properties.tokenId,
+                set: {
+                  ownerId: user.id,
+                  propertyType: this.mapPropertyType(propertyTypeNum),
+                  value: BigInt(propertyData.value.toString()),
+                  yieldRate: yieldRateValue,
+                  rwaContract: propertyData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+                    ? propertyData.rwaContract 
+                    : undefined,
+                  rwaTokenId: propertyData.rwaTokenId && Number(propertyData.rwaTokenId.toString()) > 0 
+                    ? Number(propertyData.rwaTokenId.toString()) 
+                    : undefined,
+                  updatedAt: new Date(),
+                },
+              });
             syncedCount++;
             this.logger.log(`✓ Synced property ${tokenIdNum} for ${normalizedAddress}`);
-          } else {
-            this.logger.log(`Property ${tokenIdNum} already exists in database`);
+          } catch (dbError: any) {
+            errorCount++;
+            this.logger.error(`Database error syncing property ${tokenIdNum}: ${dbError.message}`);
           }
         } catch (error) {
           errorCount++;
