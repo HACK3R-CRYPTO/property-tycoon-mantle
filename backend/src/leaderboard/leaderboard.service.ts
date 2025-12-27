@@ -3,7 +3,6 @@ import { DATABASE_CONNECTION } from '../database/database.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../database/schema';
 import { desc, sql, eq, and } from 'drizzle-orm';
-import { PropertiesService } from '../properties/properties.service';
 import { ContractsService } from '../contracts/contracts.service';
 
 @Injectable()
@@ -12,7 +11,6 @@ export class LeaderboardService {
 
   constructor(
     @Inject(DATABASE_CONNECTION) private db: PostgresJsDatabase<typeof schema>,
-    @Inject(forwardRef(() => PropertiesService)) private propertiesService: PropertiesService,
     private contractsService: ContractsService,
   ) {}
 
@@ -51,9 +49,10 @@ export class LeaderboardService {
     }
 
     // Sync properties from blockchain first to ensure we have all properties
+    // We'll sync directly here to avoid circular dependency
     try {
       this.logger.log(`Syncing properties from blockchain for user ${user.walletAddress} before leaderboard update`);
-      await this.propertiesService.syncFromChain(user.walletAddress);
+      await this.syncUserPropertiesFromChain(user.walletAddress);
     } catch (error) {
       this.logger.error(`Failed to sync properties for leaderboard update: ${error.message}`, error.stack);
       // Continue with database properties even if sync fails
@@ -124,10 +123,15 @@ export class LeaderboardService {
     this.logger.log(`Updated leaderboard for user ${userId}: ${properties.length} properties, ${portfolioValueStr} TYCOON portfolio`);
   }
 
-  async syncAndUpdateLeaderboard(walletAddress: string) {
+  private async syncUserPropertiesFromChain(walletAddress: string) {
+    if (!this.contractsService.propertyNFT) {
+      this.logger.error('PropertyNFT contract not initialized');
+      return;
+    }
+
     const normalizedAddress = walletAddress.toLowerCase();
     
-    // Find or create user
+    // Get or create user
     let [user] = await this.db
       .select()
       .from(schema.users)
@@ -135,25 +139,89 @@ export class LeaderboardService {
       .limit(1);
 
     if (!user) {
-      // Try to sync properties first, which will create the user
+      this.logger.log(`Creating user for ${normalizedAddress}`);
+      [user] = await this.db
+        .insert(schema.users)
+        .values({
+          walletAddress: normalizedAddress,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning();
+    }
+
+    // Get properties from blockchain
+    const tokenIds = await this.contractsService.getOwnerProperties(walletAddress);
+    
+    if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
+      this.logger.log(`No properties found on-chain for ${normalizedAddress}`);
+      return;
+    }
+
+    // Sync each property
+    for (const tokenId of tokenIds) {
       try {
-        await this.propertiesService.syncFromChain(walletAddress);
-        [user] = await this.db
+        const tokenIdNum = typeof tokenId === 'bigint' ? Number(tokenId) : Number(tokenId);
+        const propData = await this.contractsService.getProperty(BigInt(tokenIdNum));
+        
+        const existing = await this.db
           .select()
-          .from(schema.users)
-          .where(eq(schema.users.walletAddress, normalizedAddress))
+          .from(schema.properties)
+          .where(eq(schema.properties.tokenId, tokenIdNum))
           .limit(1);
+
+        if (existing.length === 0) {
+          const propertyTypeNum = typeof propData.propertyType === 'bigint' 
+            ? Number(propData.propertyType) 
+            : Number(propData.propertyType);
+          
+          const propertyTypeMap: Record<number, string> = {
+            0: 'Residential',
+            1: 'Commercial',
+            2: 'Industrial',
+            3: 'Luxury',
+          };
+
+          await this.db.insert(schema.properties).values({
+            tokenId: tokenIdNum,
+            ownerId: user.id,
+            propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
+            value: BigInt(propData.value.toString()),
+            yieldRate: Number(propData.yieldRate.toString()),
+            rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
+              ? propData.rwaContract 
+              : undefined,
+            rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId.toString()) : undefined,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+          
+          this.logger.log(`Synced property ${tokenIdNum} for ${normalizedAddress}`);
+        }
       } catch (error) {
-        this.logger.error(`Failed to sync user ${walletAddress}: ${error.message}`);
-        throw error;
+        this.logger.error(`Error syncing property ${tokenId}: ${error.message}`);
       }
     }
+  }
+
+  async syncAndUpdateLeaderboard(walletAddress: string) {
+    const normalizedAddress = walletAddress.toLowerCase();
+    
+    // Sync properties from chain first
+    await this.syncUserPropertiesFromChain(walletAddress);
+    
+    // Find user
+    const [user] = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.walletAddress, normalizedAddress))
+      .limit(1);
 
     if (!user) {
-      throw new Error(`User not found and could not be created for ${walletAddress}`);
+      throw new Error(`User not found for ${walletAddress}`);
     }
 
-    // Sync properties and update leaderboard
+    // Update leaderboard
     await this.updateLeaderboard(user.id);
   }
 }
