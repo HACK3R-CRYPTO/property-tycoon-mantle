@@ -461,11 +461,34 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
                   <>
                     {myProperties.length === 0 ? (
                       <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
-                        <p className="text-sm text-gray-400">Loading your properties...</p>
+                        <p className="text-sm text-gray-400 mb-2">No properties found in database.</p>
                         {address && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            If no properties appear, make sure you own properties and they're synced.
-                          </p>
+                          <>
+                            <p className="text-xs text-gray-500 mb-3">
+                              Click "Sync from Chain" to fetch your properties from the blockchain.
+                            </p>
+                            <Button
+                              onClick={async () => {
+                                try {
+                                  setIsLoading(true);
+                                  console.log('Manually syncing properties from chain...');
+                                  await api.post(`/properties/sync/${address}`);
+                                  // Reload properties after sync
+                                  await loadMyProperties();
+                                } catch (error) {
+                                  console.error('Failed to sync properties:', error);
+                                  alert('Failed to sync properties. Please try again.');
+                                } finally {
+                                  setIsLoading(false);
+                                }
+                              }}
+                              disabled={isLoading}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                              size="sm"
+                            >
+                              {isLoading ? 'Syncing...' : 'Sync from Chain'}
+                            </Button>
+                          </>
                         )}
                       </div>
                     ) : (
