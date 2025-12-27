@@ -231,34 +231,62 @@ export class LeaderboardService {
             .where(eq(schema.properties.tokenId, tokenIdNum))
             .limit(1);
 
-          if (existing.length === 0) {
-            const propertyTypeNum = typeof propData.propertyType === 'bigint' 
-              ? Number(propData.propertyType) 
-              : Number(propData.propertyType);
-            
-            const propertyTypeMap: Record<number, string> = {
-              0: 'Residential',
-              1: 'Commercial',
-              2: 'Industrial',
-              3: 'Luxury',
-            };
+        if (existing.length === 0) {
+          const propertyTypeNum = typeof propData.propertyType === 'bigint' 
+            ? Number(propData.propertyType) 
+            : Number(propData.propertyType);
+          
+          const propertyTypeMap: Record<number, string> = {
+            0: 'Residential',
+            1: 'Commercial',
+            2: 'Industrial',
+            3: 'Luxury',
+          };
 
+          // Convert yieldRate - it might be in wei format, convert to basis points
+          let yieldRateValue = Number(propData.yieldRate.toString());
+          // If yieldRate is very large (> 1e15), it's likely in wei format, convert to basis points
+          if (yieldRateValue > 1e15) {
+            yieldRateValue = Number(propData.yieldRate.toString()) / 1e18 * 100;
+          }
+          // Ensure it's in basis points (500 = 5%)
+          if (yieldRateValue < 100 && yieldRateValue > 0) {
+            yieldRateValue = yieldRateValue * 100;
+          }
+
+          // Handle rwaTokenId - don't insert if it's 0
+          const rwaTokenIdValue = propData.rwaTokenId 
+            ? Number(propData.rwaTokenId.toString()) 
+            : undefined;
+          
+          try {
             await this.db.insert(schema.properties).values({
               tokenId: tokenIdNum,
               ownerId: user.id,
               propertyType: propertyTypeMap[propertyTypeNum] || 'Residential',
               value: BigInt(propData.value.toString()),
-              yieldRate: Number(propData.yieldRate.toString()),
+              yieldRate: yieldRateValue,
               rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' 
                 ? propData.rwaContract 
                 : undefined,
-              rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId.toString()) : undefined,
+              rwaTokenId: rwaTokenIdValue && rwaTokenIdValue > 0 ? rwaTokenIdValue : undefined,
               createdAt: new Date(),
               updatedAt: new Date(),
             });
             
             this.logger.log(`Synced property ${tokenIdNum} for ${normalizedAddress}`);
+          } catch (dbError: any) {
+            // Check if it's a unique constraint violation (property already exists)
+            if (dbError.message && dbError.message.includes('unique') || dbError.message && dbError.message.includes('duplicate')) {
+              this.logger.log(`Property ${tokenIdNum} already exists in database, skipping`);
+            } else {
+              this.logger.error(`Database error inserting property ${tokenIdNum}: ${dbError.message}`);
+              throw dbError;
+            }
           }
+        } else {
+          this.logger.log(`Property ${tokenIdNum} already exists in database`);
+        }
         } catch (error) {
           this.logger.error(`Error syncing property ${tokenId}: ${error.message}`);
           // Continue with next property
