@@ -8,7 +8,10 @@ import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { parseEther } from 'viem';
-import { CONTRACTS, MARKETPLACE_ABI, PROPERTY_NFT_ABI } from '@/lib/contracts';
+import { readContract } from 'wagmi/actions';
+import { wagmiConfig } from '@/lib/mantle-viem';
+import { CONTRACTS, MARKETPLACE_ABI, PROPERTY_NFT_ABI, PROPERTY_NFT_ABI as PropertyNFTABI } from '@/lib/contracts';
+import { getOwnerProperties } from '@/lib/contracts';
 
 interface Listing {
   id: string;
