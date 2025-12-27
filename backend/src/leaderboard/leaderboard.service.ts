@@ -339,9 +339,8 @@ export class LeaderboardService {
               
               this.logger.log(`Inserted property ${tokenIdNum} for ${normalizedAddress}`);
             } catch (insertError: any) {
-              // Log the full error to understand what's happening
+              // Log the error message without trying to serialize BigInt values
               const errorMsg = insertError.message || String(insertError);
-              const errorStr = JSON.stringify(insertError, null, 2);
               
               // If insert fails due to unique constraint, update instead
               // Check multiple ways the error might be represented
@@ -382,9 +381,8 @@ export class LeaderboardService {
                   // Continue anyway
                 }
               } else {
-                // Log the actual error for debugging
+                // Log the actual error for debugging (without BigInt serialization)
                 this.logger.error(`Insert failed for property ${tokenIdNum}, not a unique constraint: ${errorMsg}`);
-                this.logger.error(`Full error: ${errorStr}`);
                 // Re-throw if it's not a unique constraint error
                 throw insertError;
               }
