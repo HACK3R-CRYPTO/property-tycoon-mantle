@@ -225,13 +225,17 @@ export class LeaderboardService {
           const tokenIdNum = typeof tokenId === 'bigint' ? Number(tokenId) : Number(tokenId);
           const propData = await this.contractsService.getProperty(BigInt(tokenIdNum));
           
+          // Check if property already exists (using BigInt for comparison since tokenId is stored as bigint)
           const existing = await this.db
             .select()
             .from(schema.properties)
             .where(eq(schema.properties.tokenId, tokenIdNum))
             .limit(1);
 
-        if (existing.length === 0) {
+          if (existing.length > 0) {
+            this.logger.log(`Property ${tokenIdNum} already exists in database, skipping insert`);
+            continue;
+          }
           const propertyTypeNum = typeof propData.propertyType === 'bigint' 
             ? Number(propData.propertyType) 
             : Number(propData.propertyType);
