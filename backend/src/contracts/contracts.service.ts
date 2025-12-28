@@ -102,6 +102,9 @@ export class ContractsService implements OnModuleInit {
           throw new Error('Marketplace ABI is not an array');
         }
         this.marketplace = new ethers.Contract(marketplaceAddress, marketplaceAbi, this.wallet);
+        this.logger.log(`Marketplace contract initialized at ${marketplaceAddress}`);
+      } else {
+        this.logger.warn('MARKETPLACE_ADDRESS not set in environment variables - marketplace events will not be listened to');
       }
       if (questSystemAddress) {
         let questSystemAbi: any = QuestSystemABI;
@@ -137,7 +140,7 @@ export class ContractsService implements OnModuleInit {
     return this.propertyNFT.getProperty(tokenId);
   }
 
-  async getMarketplaceListing(propertyId: number) {
+  async getMarketplaceListing(propertyId: number): Promise<{ propertyId: number; seller: string; price: string; isActive: boolean; createdAt: number } | null> {
     try {
       if (!this.marketplace) {
         this.logger.warn('Marketplace contract not initialized');

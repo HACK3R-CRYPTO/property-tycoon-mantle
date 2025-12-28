@@ -195,7 +195,13 @@ export class EventIndexerService implements OnModuleInit {
 
   private listenToMarketplaceEvents() {
     const contract = this.contractsService.marketplace;
-    if (!contract) return;
+    if (!contract) {
+      this.logger.warn('Marketplace contract not initialized - marketplace events will not be listened to');
+      this.logger.warn('Make sure MARKETPLACE_ADDRESS is set in backend/.env');
+      return;
+    }
+    
+    this.logger.log('Starting marketplace event listeners...');
 
     // PropertyListed event
     contract.on('PropertyListed', async (propertyId, seller, price, event) => {
