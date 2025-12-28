@@ -56,6 +56,21 @@ export class GuildsService {
     return guild;
   }
 
+  async createGuildByWallet(walletAddress: string, name: string, description?: string, isPublic: boolean = true) {
+    // Get user by wallet address
+    const [user] = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.walletAddress, walletAddress))
+      .limit(1);
+
+    if (!user) {
+      throw new BadRequestException('User not found. Please ensure you have created a property first.');
+    }
+
+    return this.createGuild(user.id, name, description, isPublic);
+  }
+
   async joinGuild(userId: string, guildId: string) {
     // Check if user is already in a guild
     const existingMembership = await this.db
@@ -98,6 +113,21 @@ export class GuildsService {
 
     this.logger.log(`User ${userId} joined guild ${guildId}`);
     return { success: true };
+  }
+
+  async joinGuildByWallet(walletAddress: string, guildId: string) {
+    // Get user by wallet address
+    const [user] = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.walletAddress, walletAddress))
+      .limit(1);
+
+    if (!user) {
+      throw new BadRequestException('User not found. Please ensure you have created a property first.');
+    }
+
+    return this.joinGuild(user.id, guildId);
   }
 
   async leaveGuild(userId: string, guildId: string) {
@@ -216,6 +246,21 @@ export class GuildsService {
     }
 
     return this.getGuild(membership.guildId);
+  }
+
+  async getUserGuildByWallet(walletAddress: string) {
+    // First get user by wallet address
+    const [user] = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.walletAddress, walletAddress))
+      .limit(1);
+
+    if (!user) {
+      return null;
+    }
+
+    return this.getUserGuild(user.id);
   }
 
   async getGuildLeaderboard(limit: number = 20) {

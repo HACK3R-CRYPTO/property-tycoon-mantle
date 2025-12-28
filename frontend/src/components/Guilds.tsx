@@ -50,12 +50,9 @@ export function Guilds() {
   const loadMyGuild = async () => {
     if (!address) return
     try {
-      // Get userId from wallet address
-      const userResponse = await api.get(`/users/wallet/${address.toLowerCase()}`)
-      if (userResponse?.id) {
-        const guildResponse = await api.get(`/guilds/user/${userResponse.id}`)
-        setMyGuild(guildResponse)
-      }
+      // Get guild by wallet address directly
+      const guildResponse = await api.get(`/guilds/wallet/${address.toLowerCase()}`)
+      setMyGuild(guildResponse)
     } catch (error) {
       // User might not be in a guild yet
       setMyGuild(null)
@@ -65,15 +62,8 @@ export function Guilds() {
   const createGuild = async () => {
     if (!guildName.trim() || !address) return
     try {
-      // Get userId from wallet address
-      const userResponse = await api.get(`/users/wallet/${address.toLowerCase()}`)
-      if (!userResponse?.id) {
-        console.error('User not found')
-        return
-      }
-      
       await api.post('/guilds', {
-        ownerId: userResponse.id,
+        walletAddress: address.toLowerCase(),
         name: guildName,
         description: guildDescription,
       })
@@ -96,15 +86,8 @@ export function Guilds() {
     
     setJoiningGuildId(guildId)
     try {
-      // Get userId from wallet address
-      const userResponse = await api.get(`/users/wallet/${address.toLowerCase()}`)
-      if (!userResponse?.id) {
-        console.error('User not found')
-        return
-      }
-      
       await api.post(`/guilds/${guildId}/join`, {
-        userId: userResponse.id,
+        walletAddress: address.toLowerCase(),
       })
       loadGuilds()
       loadMyGuild()

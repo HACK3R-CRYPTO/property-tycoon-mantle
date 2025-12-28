@@ -25,11 +25,16 @@ export class GuildsController {
   @ApiOperation({ summary: 'Create a new guild' })
   @ApiResponse({ status: 201, description: 'Guild created successfully' })
   async createGuild(
+    @Body('walletAddress') walletAddress: string,
     @Body('ownerId') ownerId: string,
     @Body('name') name: string,
     @Body('description') description?: string,
     @Body('isPublic') isPublic?: boolean,
   ) {
+    // Support both walletAddress and ownerId for backward compatibility
+    if (walletAddress) {
+      return this.guildsService.createGuildByWallet(walletAddress.toLowerCase(), name, description, isPublic);
+    }
     return this.guildsService.createGuild(ownerId, name, description, isPublic);
   }
 
@@ -43,8 +48,19 @@ export class GuildsController {
   @Post(':id/join')
   @ApiOperation({ summary: 'Join a guild' })
   @ApiResponse({ status: 201, description: 'Joined guild successfully' })
-  async joinGuild(@Param('id') id: string, @Body('userId') userId: string) {
-    return this.guildsService.joinGuild(userId, id);
+  async joinGuild(
+    @Param('id') id: string, 
+    @Body('walletAddress') walletAddress: string,
+    @Body('userId') userId?: string,
+  ) {
+    // Support both walletAddress and userId for backward compatibility
+    if (walletAddress) {
+      return this.guildsService.joinGuildByWallet(walletAddress.toLowerCase(), id);
+    }
+    if (userId) {
+      return this.guildsService.joinGuild(userId, id);
+    }
+    throw new Error('Either walletAddress or userId is required');
   }
 
   @Post(':id/leave')
@@ -59,6 +75,13 @@ export class GuildsController {
   @ApiResponse({ status: 200, description: 'User guild' })
   async getUserGuild(@Param('userId') userId: string) {
     return this.guildsService.getUserGuild(userId);
+  }
+
+  @Get('wallet/:walletAddress')
+  @ApiOperation({ summary: 'Get user guild by wallet address' })
+  @ApiResponse({ status: 200, description: 'User guild' })
+  async getUserGuildByWallet(@Param('walletAddress') walletAddress: string) {
+    return this.guildsService.getUserGuildByWallet(walletAddress.toLowerCase());
   }
 }
 
