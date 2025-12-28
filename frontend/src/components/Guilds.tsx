@@ -84,17 +84,28 @@ export function Guilds() {
       return
     }
     
+    // Check if already in a guild
+    if (myGuild) {
+      alert(`You are already a member of ${myGuild.name}. Leave it first to join another guild.`)
+      return
+    }
+    
     setJoiningGuildId(guildId)
     try {
       await api.post(`/guilds/${guildId}/join`, {
         walletAddress: address.toLowerCase(),
       })
-      loadGuilds()
-      loadMyGuild()
+      // Reload both guilds list and my guild to update UI
+      await Promise.all([loadGuilds(), loadMyGuild()])
       alert('Successfully joined guild!')
     } catch (error: any) {
       console.error('Failed to join guild:', error)
-      alert(error.response?.data?.message || 'Failed to join guild')
+      const errorMessage = error.response?.data?.message || 'Failed to join guild'
+      alert(errorMessage)
+      // Reload my guild in case the join actually succeeded but returned an error
+      if (errorMessage.includes('already a member')) {
+        await loadMyGuild()
+      }
     } finally {
       setJoiningGuildId(null)
     }
