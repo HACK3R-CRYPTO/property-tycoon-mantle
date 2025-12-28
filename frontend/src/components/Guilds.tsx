@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useAccount } from 'wagmi'
 import { Users, Plus, Crown, TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,15 +19,21 @@ interface Guild {
 }
 
 export function Guilds() {
+  const { address, isConnected } = useAccount()
   const [guilds, setGuilds] = useState<Guild[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [guildName, setGuildName] = useState('')
   const [guildDescription, setGuildDescription] = useState('')
+  const [myGuild, setMyGuild] = useState<any>(null)
+  const [joiningGuildId, setJoiningGuildId] = useState<string | null>(null)
 
   useEffect(() => {
     loadGuilds()
-  }, [])
+    if (address) {
+      loadMyGuild()
+    }
+  }, [address])
 
   const loadGuilds = async () => {
     setIsLoading(true)
@@ -40,10 +47,33 @@ export function Guilds() {
     }
   }
 
-  const createGuild = async () => {
-    if (!guildName.trim()) return
+  const loadMyGuild = async () => {
+    if (!address) return
     try {
+      // Get userId from wallet address
+      const userResponse = await api.get(`/users/wallet/${address.toLowerCase()}`)
+      if (userResponse?.id) {
+        const guildResponse = await api.get(`/guilds/user/${userResponse.id}`)
+        setMyGuild(guildResponse)
+      }
+    } catch (error) {
+      // User might not be in a guild yet
+      setMyGuild(null)
+    }
+  }
+
+  const createGuild = async () => {
+    if (!guildName.trim() || !address) return
+    try {
+      // Get userId from wallet address
+      const userResponse = await api.get(`/users/wallet/${address.toLowerCase()}`)
+      if (!userResponse?.id) {
+        console.error('User not found')
+        return
+      }
+      
       await api.post('/guilds', {
+        ownerId: userResponse.id,
         name: guildName,
         description: guildDescription,
       })
@@ -51,8 +81,39 @@ export function Guilds() {
       setGuildDescription('')
       setShowCreateForm(false)
       loadGuilds()
-    } catch (error) {
+      loadMyGuild()
+    } catch (error: any) {
       console.error('Failed to create guild:', error)
+      alert(error.response?.data?.message || 'Failed to create guild')
+    }
+  }
+
+  const joinGuild = async (guildId: string) => {
+    if (!address || !isConnected) {
+      alert('Please connect your wallet first')
+      return
+    }
+    
+    setJoiningGuildId(guildId)
+    try {
+      // Get userId from wallet address
+      const userResponse = await api.get(`/users/wallet/${address.toLowerCase()}`)
+      if (!userResponse?.id) {
+        console.error('User not found')
+        return
+      }
+      
+      await api.post(`/guilds/${guildId}/join`, {
+        userId: userResponse.id,
+      })
+      loadGuilds()
+      loadMyGuild()
+      alert('Successfully joined guild!')
+    } catch (error: any) {
+      console.error('Failed to join guild:', error)
+      alert(error.response?.data?.message || 'Failed to join guild')
+    } finally {
+      setJoiningGuildId(null)
     }
   }
 
@@ -111,6 +172,27 @@ export function Guilds() {
         </Card>
       )}
 
+      {myGuild && (
+        <Card className="bg-green-500/10 border-green-500/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-yellow-400" />
+                  <h3 className="text-white font-semibold">My Guild: {myGuild.name}</h3>
+                </div>
+                {myGuild.description && (
+                  <p className="text-sm text-gray-400 mt-1">{myGuild.description}</p>
+                )}
+                <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                  <span>{myGuild.totalMembers || myGuild.members?.length || 0} members</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {isLoading ? (
         <div className="text-center py-8 text-gray-400">Loading guilds...</div>
       ) : guilds.length === 0 ? (
@@ -144,8 +226,14 @@ export function Guilds() {
                       </div>
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="border-green-500/50 text-green-400 hover:bg-green-500/10">
-                    Join
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="border-green-500/50 text-green-400 hover:bg-green-500/10"
+                    onClick={() => joinGuild(guild.id)}
+                    disabled={joiningGuildId === guild.id || myGuild?.id === guild.id || !isConnected}
+                  >
+                    {joiningGuildId === guild.id ? 'Joining...' : myGuild?.id === guild.id ? 'Joined' : 'Join'}
                   </Button>
                 </div>
               </CardContent>
