@@ -296,6 +296,22 @@ export class GuildsService {
   }
 
   async getGuildLeaderboard(limit: number = 20) {
+    // First, get all guild IDs
+    const allGuilds = await this.db
+      .select({ id: schema.guilds.id })
+      .from(schema.guilds);
+
+    // Update stats for all guilds before returning leaderboard
+    this.logger.log(`Updating stats for ${allGuilds.length} guilds before returning leaderboard...`);
+    for (const guild of allGuilds) {
+      try {
+        await this.updateGuildStats(guild.id);
+      } catch (error) {
+        this.logger.warn(`Failed to update stats for guild ${guild.id}: ${error.message}`);
+      }
+    }
+
+    // Now fetch the updated rankings
     const rankings = await this.db
       .select({
         id: schema.guilds.id,
@@ -358,18 +374,25 @@ export class GuildsService {
         }
       } else {
         // Fetch directly from blockchain
+        this.logger.log(`Fetching guild stats from blockchain for ${members.length} members...`);
         for (const member of members) {
-          if (!member.walletAddress) continue;
+          if (!member.walletAddress) {
+            this.logger.warn(`Member ${member.userId} has no wallet address, skipping`);
+            continue;
+          }
           
           try {
+            this.logger.log(`Getting properties for member ${member.walletAddress}...`);
             // Get all properties owned by this member from blockchain
             const tokenIds = await this.contractsService.getOwnerProperties(member.walletAddress);
             if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
+              this.logger.log(`No properties found for ${member.walletAddress}`);
               continue;
             }
 
             // Deduplicate tokenIds
             const uniqueTokenIds = Array.from(new Set(tokenIds.map(id => Number(id))));
+            this.logger.log(`Found ${uniqueTokenIds.length} unique properties for ${member.walletAddress}`);
 
             // Calculate portfolio value and yield for each property
             for (const tokenId of uniqueTokenIds) {
@@ -378,11 +401,15 @@ export class GuildsService {
                 if (propertyData) {
                   // Add property value to portfolio
                   const value = propertyData.value?.toString() || '0';
-                  totalPortfolioValue += BigInt(value);
+                  const valueBigInt = BigInt(value);
+                  totalPortfolioValue += valueBigInt;
 
                   // Get total yield earned from property
                   const yieldEarned = propertyData.totalYieldEarned?.toString() || '0';
-                  totalYieldEarned += BigInt(yieldEarned);
+                  const yieldBigInt = BigInt(yieldEarned);
+                  totalYieldEarned += yieldBigInt;
+                  
+                  this.logger.log(`Property ${tokenId}: value=${valueBigInt.toString()}, yield=${yieldBigInt.toString()}`);
                 }
               } catch (error) {
                 this.logger.warn(`Failed to get property ${tokenId} for guild stats: ${error.message}`);
@@ -405,6 +432,7 @@ export class GuildsService {
               const yieldEarnedStr = leaderboardEntry.totalYieldEarned ? String(leaderboardEntry.totalYieldEarned) : '0';
               totalPortfolioValue += BigInt(portfolioValueStr);
               totalYieldEarned += BigInt(yieldEarnedStr);
+              this.logger.log(`Using database fallback for ${member.walletAddress}: portfolio=${portfolioValueStr}, yield=${yieldEarnedStr}`);
             }
           }
         }
