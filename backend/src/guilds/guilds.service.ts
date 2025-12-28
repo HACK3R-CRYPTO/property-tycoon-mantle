@@ -122,6 +122,9 @@ export class GuildsService {
       .set({ totalMembers: guild.totalMembers + 1 })
       .where(eq(schema.guilds.id, guildId));
 
+    // Update guild stats after member joins
+    await this.updateGuildStats(guildId);
+
     this.logger.log(`User ${userId} joined guild ${guildId}`);
     return { success: true };
   }
@@ -205,6 +208,9 @@ export class GuildsService {
         .set({ totalMembers: guild.totalMembers - 1 })
         .where(eq(schema.guilds.id, guildId));
     }
+
+    // Update guild stats after member leaves
+    await this.updateGuildStats(guildId);
 
     this.logger.log(`User ${userId} left guild ${guildId}`);
     return { success: true };
@@ -317,20 +323,25 @@ export class GuildsService {
       .where(eq(schema.guildMembers.guildId, guildId));
 
     // Calculate total portfolio value and yield from all members
+    // Read from leaderboard table (source of truth) instead of users table
     let totalPortfolioValue = BigInt(0);
     let totalYieldEarned = BigInt(0);
 
     for (const member of members) {
-      const [user] = await this.db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.id, member.userId))
+      // Get leaderboard entry for this user (has the most up-to-date stats)
+      const [leaderboardEntry] = await this.db
+        .select({
+          totalPortfolioValue: schema.leaderboard.totalPortfolioValue,
+          totalYieldEarned: schema.leaderboard.totalYieldEarned,
+        })
+        .from(schema.leaderboard)
+        .where(eq(schema.leaderboard.userId, member.userId))
         .limit(1);
 
-      if (user) {
-        // User values are stored as NUMERIC (string), convert to BigInt for calculation
-        const portfolioValueStr = user.totalPortfolioValue ? String(user.totalPortfolioValue) : '0';
-        const yieldEarnedStr = user.totalYieldEarned ? String(user.totalYieldEarned) : '0';
+      if (leaderboardEntry) {
+        // Leaderboard values are stored as NUMERIC (string), convert to BigInt for calculation
+        const portfolioValueStr = leaderboardEntry.totalPortfolioValue ? String(leaderboardEntry.totalPortfolioValue) : '0';
+        const yieldEarnedStr = leaderboardEntry.totalYieldEarned ? String(leaderboardEntry.totalYieldEarned) : '0';
         totalPortfolioValue += BigInt(portfolioValueStr);
         totalYieldEarned += BigInt(yieldEarnedStr);
       }
@@ -346,7 +357,7 @@ export class GuildsService {
       })
       .where(eq(schema.guilds.id, guildId));
 
-    this.logger.log(`Updated stats for guild ${guildId}`);
+    this.logger.log(`Updated stats for guild ${guildId}: ${totalPortfolioValue.toString()} portfolio, ${totalYieldEarned.toString()} yield`);
   }
 
   async searchGuilds(query: string, limit: number = 20) {

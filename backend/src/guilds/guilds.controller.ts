@@ -83,5 +83,13 @@ export class GuildsController {
   async getUserGuildByWallet(@Param('walletAddress') walletAddress: string) {
     return this.guildsService.getUserGuildByWallet(walletAddress.toLowerCase());
   }
+
+  @Post(':id/update-stats')
+  @ApiOperation({ summary: 'Manually update guild stats' })
+  @ApiResponse({ status: 200, description: 'Guild stats updated' })
+  async updateGuildStats(@Param('id') id: string) {
+    await this.guildsService.updateGuildStats(id);
+    return { success: true, message: 'Guild stats updated' };
+  }
 }
 
