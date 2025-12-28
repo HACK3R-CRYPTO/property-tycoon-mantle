@@ -169,8 +169,8 @@ export class LeaderboardService {
         return !contractAddresses.includes(address);
       }).slice(0, limit);
 
-      // Check if leaderboard has valid data (non-zero values)
-      const hasValidData = rankings.some(r => 
+      // Check if leaderboard has valid data (non-zero values) - use filtered rankings
+      const hasValidData = filteredRankings.some(r => 
         (r.totalPortfolioValue && r.totalPortfolioValue !== '0' && r.totalPortfolioValue !== '0.0') ||
         (r.propertiesOwned && r.propertiesOwned > 0)
       );
@@ -687,5 +687,42 @@ export class LeaderboardService {
 
     // Update leaderboard
     await this.updateLeaderboard(user.id);
+  }
+
+  async cleanupContractAddresses() {
+    const contractAddresses = this.getContractAddresses();
+    this.logger.log(`Cleaning up leaderboard entries for ${contractAddresses.length} contract addresses...`);
+    
+    let deletedCount = 0;
+    
+    for (const contractAddr of contractAddresses) {
+      try {
+        // Find users with this contract address
+        const contractUsers = await this.db
+          .select({ id: schema.users.id })
+          .from(schema.users)
+          .where(eq(schema.users.walletAddress, contractAddr));
+        
+        for (const user of contractUsers) {
+          // Delete leaderboard entries
+          await this.db
+            .delete(schema.leaderboard)
+            .where(eq(schema.leaderboard.userId, user.id));
+          
+          deletedCount++;
+          this.logger.log(`Deleted leaderboard entry for contract ${contractAddr}`);
+        }
+      } catch (error: any) {
+        this.logger.error(`Error cleaning up contract ${contractAddr}: ${error.message}`);
+      }
+    }
+    
+    this.logger.log(`Cleanup complete: Deleted ${deletedCount} leaderboard entries for contract addresses`);
+    return { 
+      success: true, 
+      deletedCount,
+      contractAddresses: contractAddresses.length,
+      message: `Cleaned up ${deletedCount} leaderboard entries for contract addresses` 
+    };
   }
 }

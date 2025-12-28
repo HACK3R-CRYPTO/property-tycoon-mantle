@@ -415,6 +415,36 @@ export class EventIndexerService implements OnModuleInit {
     }
   }
 
+  private isContractAddress(address: string): boolean {
+    const normalized = address.toLowerCase();
+    const contractAddresses: string[] = [];
+    
+    // Get all contract addresses
+    if (this.contractsService.marketplace?.address) {
+      contractAddresses.push(this.contractsService.marketplace.address.toLowerCase());
+    }
+    if (this.contractsService.yieldDistributor?.address) {
+      contractAddresses.push(this.contractsService.yieldDistributor.address.toLowerCase());
+    }
+    if (this.contractsService.questSystem?.address) {
+      contractAddresses.push(this.contractsService.questSystem.address.toLowerCase());
+    }
+    if (this.contractsService.propertyNFT?.address) {
+      contractAddresses.push(this.contractsService.propertyNFT.address.toLowerCase());
+    }
+    if (this.contractsService.gameToken?.address) {
+      contractAddresses.push(this.contractsService.gameToken.address.toLowerCase());
+    }
+    
+    // Check old marketplace
+    const oldMarketplace = process.env.OLD_MARKETPLACE_ADDRESS;
+    if (oldMarketplace) {
+      contractAddresses.push(oldMarketplace.toLowerCase());
+    }
+    
+    return contractAddresses.includes(normalized);
+  }
+
   private async handlePropertyTransfer(
     tokenId: string,
     from: string,
@@ -423,6 +453,12 @@ export class EventIndexerService implements OnModuleInit {
     try {
       // Skip minting transfers (from zero address)
       if (from === '0x0000000000000000000000000000000000000000') {
+        return;
+      }
+
+      // Skip if transferring to a contract address (e.g., marketplace)
+      if (this.isContractAddress(to)) {
+        this.logger.log(`Skipping transfer to contract address: ${to}`);
         return;
       }
 
