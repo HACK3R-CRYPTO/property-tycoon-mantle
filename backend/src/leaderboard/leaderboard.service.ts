@@ -392,6 +392,13 @@ export class LeaderboardService {
       return;
     }
 
+    // Skip if this is a contract address
+    const contractAddresses = this.getContractAddresses();
+    if (contractAddresses.includes(user.walletAddress.toLowerCase())) {
+      this.logger.log(`Skipping leaderboard update for contract address: ${user.walletAddress}`);
+      return;
+    }
+
     // Sync properties from blockchain first (only if enabled)
     if (process.env.ENABLE_PROPERTY_SYNC !== 'false') {
       try {
