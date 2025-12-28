@@ -57,15 +57,26 @@ export class GuildsService {
   }
 
   async createGuildByWallet(walletAddress: string, name: string, description?: string, isPublic: boolean = true) {
-    // Get user by wallet address
-    const [user] = await this.db
+    // Get or create user by wallet address
+    let [user] = await this.db
       .select()
       .from(schema.users)
       .where(eq(schema.users.walletAddress, walletAddress))
       .limit(1);
 
     if (!user) {
-      throw new BadRequestException('User not found. Please ensure you have created a property first.');
+      // Auto-create user if they don't exist
+      this.logger.log(`User not found for wallet ${walletAddress}, creating new user...`);
+      [user] = await this.db
+        .insert(schema.users)
+        .values({
+          walletAddress: walletAddress,
+          totalPortfolioValue: '0',
+          totalYieldEarned: '0',
+          propertiesOwned: 0,
+        })
+        .returning();
+      this.logger.log(`Created new user ${user.id} for wallet ${walletAddress}`);
     }
 
     return this.createGuild(user.id, name, description, isPublic);
@@ -116,15 +127,26 @@ export class GuildsService {
   }
 
   async joinGuildByWallet(walletAddress: string, guildId: string) {
-    // Get user by wallet address
-    const [user] = await this.db
+    // Get or create user by wallet address
+    let [user] = await this.db
       .select()
       .from(schema.users)
       .where(eq(schema.users.walletAddress, walletAddress))
       .limit(1);
 
     if (!user) {
-      throw new BadRequestException('User not found. Please ensure you have created a property first.');
+      // Auto-create user if they don't exist
+      this.logger.log(`User not found for wallet ${walletAddress}, creating new user...`);
+      [user] = await this.db
+        .insert(schema.users)
+        .values({
+          walletAddress: walletAddress,
+          totalPortfolioValue: '0',
+          totalYieldEarned: '0',
+          propertiesOwned: 0,
+        })
+        .returning();
+      this.logger.log(`Created new user ${user.id} for wallet ${walletAddress}`);
     }
 
     return this.joinGuild(user.id, guildId);
@@ -249,7 +271,7 @@ export class GuildsService {
   }
 
   async getUserGuildByWallet(walletAddress: string) {
-    // First get user by wallet address
+    // Get user by wallet address (don't auto-create for read operations)
     const [user] = await this.db
       .select()
       .from(schema.users)
@@ -257,7 +279,7 @@ export class GuildsService {
       .limit(1);
 
     if (!user) {
-      return null;
+      return null; // User doesn't exist, so no guild
     }
 
     return this.getUserGuild(user.id);
