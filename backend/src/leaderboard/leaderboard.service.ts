@@ -113,7 +113,38 @@ export class LeaderboardService {
     }
   }
 
+  private getContractAddresses(): string[] {
+    // Get all contract addresses to exclude from leaderboard
+    const addresses: string[] = [];
+    
+    if (this.contractsService.marketplace?.address) {
+      addresses.push(this.contractsService.marketplace.address.toLowerCase());
+    }
+    if (this.contractsService.yieldDistributor?.address) {
+      addresses.push(this.contractsService.yieldDistributor.address.toLowerCase());
+    }
+    if (this.contractsService.questSystem?.address) {
+      addresses.push(this.contractsService.questSystem.address.toLowerCase());
+    }
+    if (this.contractsService.propertyNFT?.address) {
+      addresses.push(this.contractsService.propertyNFT.address.toLowerCase());
+    }
+    if (this.contractsService.gameToken?.address) {
+      addresses.push(this.contractsService.gameToken.address.toLowerCase());
+    }
+    
+    // Also exclude old marketplace if set
+    const oldMarketplace = process.env.OLD_MARKETPLACE_ADDRESS;
+    if (oldMarketplace) {
+      addresses.push(oldMarketplace.toLowerCase());
+    }
+    
+    return addresses;
+  }
+
   async getGlobalLeaderboard(limit: number = 100) {
+    const contractAddresses = this.getContractAddresses();
+    
     // Try to get leaderboard from database first
     try {
       const rankings = await this.db
@@ -129,7 +160,14 @@ export class LeaderboardService {
         .from(schema.leaderboard)
         .leftJoin(schema.users, eq(schema.leaderboard.userId, schema.users.id))
         .orderBy(desc(schema.leaderboard.totalPortfolioValue))
-        .limit(limit);
+        .limit(limit * 2); // Get more to filter out contracts
+      
+      // Filter out contract addresses
+      const filteredRankings = rankings.filter(r => {
+        if (!r.walletAddress) return false;
+        const address = r.walletAddress.toLowerCase();
+        return !contractAddresses.includes(address);
+      }).slice(0, limit);
 
       // Check if leaderboard has valid data (non-zero values)
       const hasValidData = rankings.some(r => 
@@ -138,8 +176,8 @@ export class LeaderboardService {
       );
 
       // If we have rankings with valid data, return them
-      if (rankings.length > 0 && hasValidData) {
-        return rankings.map((r, index) => ({
+      if (filteredRankings.length > 0 && hasValidData) {
+        return filteredRankings.map((r, index) => ({
           ...r,
           rank: index + 1,
           // Convert string values (NUMERIC) to strings for JSON serialization
@@ -150,10 +188,10 @@ export class LeaderboardService {
 
       // If leaderboard exists but has no valid data, return it anyway (don't block on update)
       // Updates should happen via event indexer or manual sync, not on every request
-      if (rankings.length > 0 && !hasValidData) {
+      if (filteredRankings.length > 0 && !hasValidData) {
         this.logger.warn('Leaderboard has entries but values are zero. Run sync to update.');
         // Return the data anyway (fast response)
-        return rankings.map((r, index) => ({
+        return filteredRankings.map((r, index) => ({
           ...r,
           rank: index + 1,
           totalPortfolioValue: r.totalPortfolioValue ? String(r.totalPortfolioValue) : '0',
@@ -216,13 +254,28 @@ export class LeaderboardService {
         .from(schema.users)
         .limit(100);
 
-      // Combine database users with discovered owners
+      // Get contract addresses to exclude
+      const contractAddresses = this.getContractAddresses();
+      
+      // Combine database users with discovered owners (exclude contracts)
       const allAddresses = new Set<string>();
-      dbUsers.forEach(u => allAddresses.add(u.walletAddress.toLowerCase()));
-      discoveredOwners.forEach(addr => allAddresses.add(addr));
+      dbUsers.forEach(u => {
+        const addr = u.walletAddress.toLowerCase();
+        if (!contractAddresses.includes(addr)) {
+          allAddresses.add(addr);
+        }
+      });
+      discoveredOwners.forEach(addr => {
+        if (!contractAddresses.includes(addr)) {
+          allAddresses.add(addr);
+        }
+      });
 
-      // Create users for discovered owners who aren't in database
+      // Create users for discovered owners who aren't in database (exclude contracts)
       for (const address of discoveredOwners) {
+        if (contractAddresses.includes(address)) {
+          continue; // Skip contract addresses
+        }
         if (!dbUsers.find(u => u.walletAddress.toLowerCase() === address)) {
           try {
             const [newUser] = await this.db
@@ -247,8 +300,14 @@ export class LeaderboardService {
 
       this.logger.log(`Calculating leaderboard from blockchain for ${dbUsers.length} users...`);
 
+      // Filter out contract addresses from dbUsers
+      const userAddresses = dbUsers.filter(u => {
+        const addr = u.walletAddress.toLowerCase();
+        return !contractAddresses.includes(addr);
+      });
+
       const leaderboardEntries = await Promise.all(
-        dbUsers.map(async (user) => {
+        userAddresses.map(async (user) => {
           try {
             // Get properties from blockchain
             const tokenIds = await this.contractsService.getOwnerProperties(user.walletAddress);
