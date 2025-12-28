@@ -230,8 +230,10 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
   };
 
   const loadListingsFromBlockchain = async () => {
+    // FALLBACK ONLY: This should rarely be called since backend is primary
+    // Only used when backend is completely unavailable
     try {
-      console.log('📡 Loading listings from blockchain...');
+      console.log('📡 FALLBACK: Loading listings directly from blockchain (backend unavailable)...');
       console.log('📍 Marketplace address:', CONTRACTS.Marketplace);
       
       // METHOD 1: Use the new getActiveListings() function (most efficient)
