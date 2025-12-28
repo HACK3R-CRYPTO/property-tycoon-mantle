@@ -139,6 +139,9 @@ export class LeaderboardService {
       addresses.push(oldMarketplace.toLowerCase());
     }
     
+    // Hardcode known old marketplace address (from README)
+    addresses.push('0x6389d7168029715de118baf51b6d32ee1ebea46b'.toLowerCase());
+    
     return addresses;
   }
 
