@@ -101,11 +101,15 @@ export function Guilds() {
     } catch (error: any) {
       console.error('Failed to join guild:', error)
       const errorMessage = error.response?.data?.message || 'Failed to join guild'
-      alert(errorMessage)
-      // Reload my guild in case the join actually succeeded but returned an error
+      
+      // If error says "already a member", reload myGuild to update UI
       if (errorMessage.includes('already a member')) {
         await loadMyGuild()
+        // Don't show error alert if user is already in the guild
+        return
       }
+      
+      alert(errorMessage)
     } finally {
       setJoiningGuildId(null)
     }
@@ -225,9 +229,15 @@ export function Guilds() {
                     size="sm" 
                     className="border-green-500/50 text-green-400 hover:bg-green-500/10"
                     onClick={() => joinGuild(guild.id)}
-                    disabled={joiningGuildId === guild.id || myGuild?.id === guild.id || !isConnected}
+                    disabled={joiningGuildId === guild.id || (myGuild && myGuild.id === guild.id) || !isConnected}
                   >
-                    {joiningGuildId === guild.id ? 'Joining...' : myGuild?.id === guild.id ? 'Joined' : 'Join'}
+                    {joiningGuildId === guild.id 
+                      ? 'Joining...' 
+                      : (myGuild && myGuild.id === guild.id) 
+                        ? 'Joined' 
+                        : myGuild 
+                          ? 'In Another Guild'
+                          : 'Join'}
                   </Button>
                 </div>
               </CardContent>
