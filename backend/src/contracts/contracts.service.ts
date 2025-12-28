@@ -137,6 +137,29 @@ export class ContractsService implements OnModuleInit {
     return this.propertyNFT.getProperty(tokenId);
   }
 
+  async getMarketplaceListing(propertyId: number) {
+    try {
+      if (!this.marketplace) {
+        this.logger.warn('Marketplace contract not initialized');
+        return null;
+      }
+      
+      const listing = await this.marketplace.listings(BigInt(propertyId));
+      
+      // listings mapping returns: (propertyId, seller, price, isActive, createdAt)
+      return {
+        propertyId: Number(listing[0]),
+        seller: listing[1],
+        price: listing[2].toString(),
+        isActive: listing[3],
+        createdAt: Number(listing[4]),
+      };
+    } catch (error) {
+      this.logger.error(`Error getting marketplace listing for property ${propertyId}: ${error.message}`);
+      return null;
+    }
+  }
+
   async getOwnerProperties(ownerAddress: string) {
     return this.propertyNFT.getOwnerProperties(ownerAddress);
   }
@@ -145,8 +168,128 @@ export class ContractsService implements OnModuleInit {
     return this.propertyNFT.getOwnerPropertyCount(ownerAddress);
   }
 
-  async calculateYield(propertyId: bigint) {
-    return this.yieldDistributor.calculateYield(propertyId);
+  async calculateYield(propertyId: bigint): Promise<bigint> {
+    try {
+      const result = await this.yieldDistributor.calculateYield(propertyId);
+      
+      // Debug: Log the actual result type and structure
+      this.logger.debug(`calculateYield result for property ${propertyId}:`, {
+        type: typeof result,
+        isBigInt: typeof result === 'bigint',
+        hasHex: result && typeof result === 'object' && '_hex' in result,
+        hasIsBigNumber: result && typeof result === 'object' && '_isBigNumber' in result,
+        keys: result && typeof result === 'object' ? Object.keys(result) : 'N/A',
+      });
+      
+      // Handle different return types from ethers.js
+      let resultBigInt: bigint;
+      
+      if (typeof result === 'bigint') {
+        resultBigInt = result;
+      } else if (result && typeof result === 'object') {
+        // Handle ethers.js BigNumber - ALWAYS prefer _hex (most reliable, avoids toString() bugs)
+        // Check _hex FIRST before anything else
+        if ('_hex' in result) {
+          // BigNumber with _hex property - this is the most reliable way
+          const hexValue = result._hex;
+          if (typeof hexValue === 'string' && hexValue.startsWith('0x')) {
+            resultBigInt = BigInt(hexValue);
+            const resultStr = resultBigInt.toString();
+            
+            // Validate immediately after conversion - check for corrupted values
+            // Normal yield should be < 1000 TYCOON = 1e21 wei = ~21 decimal digits
+            if (resultStr.length > 25) {
+              this.logger.error(`Property ${propertyId}: Hex value converts to corrupted number (${resultStr.length} digits). Hex: ${hexValue}. Contract state appears corrupted. Returning 0.`);
+              return BigInt(0);
+            }
+            
+            this.logger.debug(`Property ${propertyId}: Using _hex value: ${hexValue} = ${resultStr} wei`);
+          } else {
+            this.logger.error(`Invalid _hex value for property ${propertyId}: ${hexValue}`);
+            return BigInt(0);
+          }
+        } else if ('_isBigNumber' in result && result._isBigNumber) {
+          // ethers v5 BigNumber - try to get hex value
+          try {
+            const hexValue = (result as any).toHexString();
+            if (hexValue && typeof hexValue === 'string' && hexValue.startsWith('0x')) {
+              resultBigInt = BigInt(hexValue);
+            } else {
+              throw new Error('Invalid hex from toHexString()');
+            }
+          } catch (hexError) {
+            this.logger.warn(`Failed to get hex from BigNumber for property ${propertyId}, trying toString()...`);
+            // Fallback to toString() but validate carefully
+            const resultStr = result.toString();
+            if (resultStr.length > 25) {
+              this.logger.error(`Suspiciously long yield string for property ${propertyId}: ${resultStr.length} chars. Value likely corrupted.`);
+              return BigInt(0);
+            }
+            if (!/^\d+$/.test(resultStr)) {
+              this.logger.error(`Invalid calculateYield result (non-numeric) for property ${propertyId}: ${resultStr}`);
+              return BigInt(0);
+            }
+            resultBigInt = BigInt(resultStr);
+          }
+        } else if ('toString' in result) {
+          // Last resort: toString() - but validate carefully
+          const resultStr = result.toString();
+          
+          // Check for suspicious patterns (repeated digits, too long, etc.)
+          if (resultStr.length > 25) {
+            this.logger.error(`Suspiciously long yield string for property ${propertyId}: ${resultStr.length} chars. Value likely corrupted. Returning 0.`);
+            return BigInt(0);
+          }
+          
+          // Validate it's a valid number string
+          if (!/^\d+$/.test(resultStr)) {
+            this.logger.error(`Invalid calculateYield result (non-numeric) for property ${propertyId}: ${resultStr}`);
+            return BigInt(0);
+          }
+          resultBigInt = BigInt(resultStr);
+        } else {
+          this.logger.error(`Unknown result type for property ${propertyId}:`, typeof result, Object.keys(result));
+          return BigInt(0);
+        }
+      } else {
+        // Handle string or number
+        const resultStr = String(result);
+        if (!/^\d+$/.test(resultStr)) {
+          this.logger.error(`Invalid calculateYield result (non-numeric) for property ${propertyId}: ${resultStr}`);
+          return BigInt(0);
+        }
+        resultBigInt = BigInt(resultStr);
+      }
+      
+      // Sanity check: yield should be reasonable (< 1000 TYCOON = 1e21 wei)
+      // If larger, it's likely corrupted (string concatenation bug)
+      const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000'); // 1000 TYCOON
+      if (resultBigInt > MAX_REASONABLE_YIELD) {
+        this.logger.error(`Corrupted yield value for property ${propertyId}: ${resultBigInt.toString()} wei. Returning 0.`);
+        // Try to get the value directly using _hex if available
+        try {
+          const directResult = await this.yieldDistributor.calculateYield(propertyId);
+          if (directResult && typeof directResult === 'object' && '_hex' in directResult) {
+            const hexValue = directResult._hex;
+            if (typeof hexValue === 'string' && hexValue.startsWith('0x')) {
+              const correctedValue = BigInt(hexValue);
+              if (correctedValue <= MAX_REASONABLE_YIELD) {
+                this.logger.log(`Corrected yield for property ${propertyId} using _hex: ${correctedValue.toString()} wei`);
+                return correctedValue;
+              }
+            }
+          }
+        } catch (retryError) {
+          this.logger.warn(`Failed to retry with _hex for property ${propertyId}: ${retryError.message}`);
+        }
+        return BigInt(0);
+      }
+      
+      return resultBigInt;
+    } catch (error) {
+      this.logger.error(`Error calling calculateYield for property ${propertyId}: ${error.message}`);
+      return BigInt(0);
+    }
   }
 
   async getTotalPendingYield(ownerAddress: string) {

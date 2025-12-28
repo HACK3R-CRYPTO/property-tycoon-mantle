@@ -73,8 +73,18 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     this.server.to(`portfolio:${data.owner}`).emit('portfolio:updated', data);
   }
 
+  emitMarketplaceListing(data: { propertyId: number; seller: string; price: string }) {
+    this.server.emit('marketplace:listing', data);
+    this.logger.log(`Emitted marketplace:listing for property ${data.propertyId}`);
+  }
+
   emitMarketplaceTrade(data: { listingId: number; seller: string; buyer: string; price: string }) {
     this.server.emit('marketplace:trade', data);
+  }
+
+  emitMarketplaceCancelled(data: { propertyId: number; seller: string }) {
+    this.server.emit('marketplace:cancelled', data);
+    this.logger.log(`Emitted marketplace:cancelled for property ${data.propertyId}`);
   }
 
   emitLeaderboardUpdate(data: { rankings: any[] }) {

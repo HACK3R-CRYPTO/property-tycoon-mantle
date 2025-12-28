@@ -36,6 +36,7 @@ interface Property {
   y: number;
   rwaContract?: string;
   rwaTokenId?: number;
+  isListed?: boolean; // Whether property is listed in marketplace
 }
 
 export default function GamePage() {

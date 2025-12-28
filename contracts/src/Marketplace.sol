@@ -166,5 +166,63 @@ contract Marketplace is ReentrancyGuard, Ownable {
             listProperty(propertyIds[i], prices[i]);
         }
     }
+    
+    /**
+     * @notice Get all active listings
+     * @return propertyIds Array of property IDs that are actively listed
+     * @return sellers Array of seller addresses corresponding to each property
+     * @return prices Array of prices corresponding to each property
+     */
+    function getActiveListings() public view returns (
+        uint256[] memory propertyIds,
+        address[] memory sellers,
+        uint256[] memory prices
+    ) {
+        // Get all properties owned by this marketplace contract
+        uint256[] memory ownedProperties = propertyNFT.getOwnerProperties(address(this));
+        
+        // Count active listings first
+        uint256 activeCount = 0;
+        for (uint256 i = 0; i < ownedProperties.length; i++) {
+            if (listings[ownedProperties[i]].isActive) {
+                activeCount++;
+            }
+        }
+        
+        // Allocate arrays
+        propertyIds = new uint256[](activeCount);
+        sellers = new address[](activeCount);
+        prices = new uint256[](activeCount);
+        
+        // Fill arrays with active listings
+        uint256 index = 0;
+        for (uint256 i = 0; i < ownedProperties.length; i++) {
+            uint256 propertyId = ownedProperties[i];
+            Listing storage listing = listings[propertyId];
+            if (listing.isActive) {
+                propertyIds[index] = propertyId;
+                sellers[index] = listing.seller;
+                prices[index] = listing.price;
+                index++;
+            }
+        }
+        
+        return (propertyIds, sellers, prices);
+    }
+    
+    /**
+     * @notice Get active listings count
+     * @return count Number of active listings
+     */
+    function getActiveListingsCount() public view returns (uint256) {
+        uint256[] memory ownedProperties = propertyNFT.getOwnerProperties(address(this));
+        uint256 count = 0;
+        for (uint256 i = 0; i < ownedProperties.length; i++) {
+            if (listings[ownedProperties[i]].isActive) {
+                count++;
+            }
+        }
+        return count;
+    }
 }
 

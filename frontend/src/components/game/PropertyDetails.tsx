@@ -32,6 +32,8 @@ export function PropertyDetails({
   onClaimYield,
   onLinkRWA,
   onSellProperty,
+  onCancelListing,
+  isListed = false,
   isClaiming = false,
 }: PropertyDetailsProps) {
   if (!isOpen) return null;
@@ -116,15 +118,28 @@ export function PropertyDetails({
                       {isClaiming ? 'Claiming...' : claimableYield && claimableYield > BigInt(0) ? 'Claim Yield' : 'No Yield Yet'}
                     </Button>
                   )}
-                  {onSellProperty && (
-                    <Button 
-                      onClick={onSellProperty} 
-                      variant="outline"
-                      className="flex-1 border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
-                    >
-                      <Tag className="w-4 h-4 mr-2" />
-                      Sell Property
-                    </Button>
+                  {isListed ? (
+                    onCancelListing && (
+                      <Button 
+                        onClick={onCancelListing} 
+                        variant="outline"
+                        className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
+                      >
+                        <Tag className="w-4 h-4 mr-2" />
+                        Cancel Listing
+                      </Button>
+                    )
+                  ) : (
+                    onSellProperty && (
+                      <Button 
+                        onClick={onSellProperty} 
+                        variant="outline"
+                        className="flex-1 border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+                      >
+                        <Tag className="w-4 h-4 mr-2" />
+                        Sell Property
+                      </Button>
+                    )
                   )}
                 </div>
                 <Button onClick={onClose} variant="outline" className="w-full">

@@ -16,17 +16,18 @@ const getRpcUrls = (chainId: number) => {
   if (customUrl && chainId === 5003) return [customUrl];
   
   if (chainId === 5003) {
-    // Mantle Sepolia Testnet - use official + fallbacks
+    // Mantle Sepolia Testnet - use fallbacks first (more reliable)
     return [
-      'https://rpc.sepolia.mantle.xyz', // Official (may have rate limiting)
-      'https://mantle-sepolia.drpc.org', // DRPC fallback
+      'https://mantle-sepolia.drpc.org', // DRPC fallback (most reliable)
       'https://rpc.ankr.com/mantle_sepolia', // Ankr fallback
+      'https://rpc.sepolia.mantle.xyz', // Official (may have rate limiting)
+      'https://mantle-sepolia-rpc.publicnode.com', // PublicNode fallback
     ];
   } else {
     // Mantle Mainnet (5000)
     return [
-      'https://rpc.mantle.xyz', // Official
       'https://mantle.drpc.org', // DRPC fallback
+      'https://rpc.mantle.xyz', // Official
     ];
   }
 };
@@ -39,8 +40,16 @@ export const wagmiConfig = createConfig({
     walletConnect({ projectId }),
   ],
   transports: {
-    [mantle.id]: fallback(getRpcUrls(mantle.id).map(url => http(url))),
-    [mantleSepoliaTestnet.id]: fallback(getRpcUrls(mantleSepoliaTestnet.id).map(url => http(url))),
+    [mantle.id]: fallback(
+      getRpcUrls(mantle.id).map(url => http(url, { 
+        timeout: 10000, // 10 second timeout per request
+      }))
+    ),
+    [mantleSepoliaTestnet.id]: fallback(
+      getRpcUrls(mantleSepoliaTestnet.id).map(url => http(url, { 
+        timeout: 10000, // 10 second timeout per request
+      }))
+    ),
   },
   ssr: true,
 });

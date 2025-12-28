@@ -32,7 +32,7 @@ export const CONTRACTS = {
   PropertyNFT: (process.env.NEXT_PUBLIC_PROPERTY_NFT_ADDRESS || '0x0AE7119c7187D88643fb7B409937B68828eE733D') as Address,
   GameToken: (process.env.NEXT_PUBLIC_GAME_TOKEN_ADDRESS || '0x32D9a9b9e241Da421f34786De0B39fD34D1EfeA8') as Address,
   YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0x8CaD66cd3CcF6038879fa7bEC68d4F808c92A3cd') as Address,
-  Marketplace: (process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || '0x6389D7168029715DE118Baf51B6D32eE1EBEa46B') as Address,
+  Marketplace: (process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || '0xe9E855ff6EB78055AaE90631468BfC948A1446Bb') as Address,
   QuestSystem: (process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS || '0xb5a595A6cd30D1798387A2c781E0646FCA8c4AeD') as Address,
 } as const;
 
@@ -91,6 +91,23 @@ export const PROPERTY_NFT_ABI = [
     inputs: [{ name: 'owner', type: 'address' }],
     name: 'getOwnerProperties',
     outputs: [{ name: '', type: 'uint256[]' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'operator', type: 'address' },
+    ],
+    name: 'isApprovedForAll',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    name: 'ownerOf',
+    outputs: [{ name: '', type: 'address' }],
     stateMutability: 'view',
     type: 'function',
   },
@@ -168,6 +185,37 @@ export const MARKETPLACE_ABI = [
     name: 'createAuction',
     outputs: [],
     stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'propertyId', type: 'uint256' }],
+    name: 'listings',
+    outputs: [
+      { name: 'propertyId', type: 'uint256' },
+      { name: 'seller', type: 'address' },
+      { name: 'price', type: 'uint256' },
+      { name: 'isActive', type: 'bool' },
+      { name: 'createdAt', type: 'uint256' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'getActiveListings',
+    outputs: [
+      { name: 'propertyIds', type: 'uint256[]' },
+      { name: 'sellers', type: 'address[]' },
+      { name: 'prices', type: 'uint256[]' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'getActiveListingsCount',
+    outputs: [{ name: 'count', type: 'uint256' }],
+    stateMutability: 'view',
     type: 'function',
   },
 ] as const;

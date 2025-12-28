@@ -104,7 +104,7 @@ export function useChat() {
     setIsSending(true);
     try {
       console.log('📤 Sending message:', message);
-      const response = await api.post('/chat', {
+      const response = await api.post('/chat/messages', {
         message: message.trim(),
         walletAddress: address,
       });

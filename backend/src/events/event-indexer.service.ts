@@ -255,6 +255,16 @@ export class EventIndexerService implements OnModuleInit {
       }
     });
 
+    // ListingCancelled event
+    contract.on('ListingCancelled', async (propertyId, event) => {
+      try {
+        this.logger.log(`ListingCancelled: propertyId=${propertyId}`);
+        await this.handleListingCancelled(propertyId.toString());
+      } catch (error) {
+        this.logger.error('Error handling ListingCancelled event', error);
+      }
+    });
+
     this.logger.log('Marketplace event listeners started');
   }
 
@@ -546,15 +556,32 @@ export class EventIndexerService implements OnModuleInit {
     price: string,
   ) {
     try {
-      const [property] = await this.db
+      let [property] = await this.db
         .select()
         .from(schema.properties)
         .where(eq(schema.properties.tokenId, Number(propertyId)))
         .limit(1);
 
+      // If property doesn't exist in DB, sync it from blockchain first
       if (!property) {
-        this.logger.warn(`Property ${propertyId} not found`);
-        return;
+        this.logger.log(`Property ${propertyId} not in DB, syncing from blockchain...`);
+        try {
+          await this.propertiesService.syncFromChain(seller);
+          // Try again after sync
+          [property] = await this.db
+            .select()
+            .from(schema.properties)
+            .where(eq(schema.properties.tokenId, Number(propertyId)))
+            .limit(1);
+          
+          if (!property) {
+            this.logger.warn(`Property ${propertyId} still not found after sync`);
+            return;
+          }
+        } catch (syncError) {
+          this.logger.error(`Failed to sync property ${propertyId} before listing: ${syncError.message}`);
+          return;
+        }
       }
 
       // Create or update marketplace listing
@@ -568,9 +595,9 @@ export class EventIndexerService implements OnModuleInit {
         await this.db.insert(schema.marketplaceListings).values({
           propertyId: property.id,
           sellerId: property.ownerId,
-          price: price,
+          price: price.toString(), // Ensure string for numeric column
           isActive: true,
-          listingType: 'fixed_price',
+          listingType: 'fixed', // Match frontend format
           createdAt: new Date(),
           updatedAt: new Date(),
         });
@@ -578,7 +605,7 @@ export class EventIndexerService implements OnModuleInit {
         await this.db
           .update(schema.marketplaceListings)
           .set({
-            price: price,
+            price: price.toString(), // Ensure string for numeric column
             isActive: true,
             updatedAt: new Date(),
           })
@@ -586,6 +613,13 @@ export class EventIndexerService implements OnModuleInit {
       }
 
       this.logger.log(`Property ${propertyId} listed for ${price}`);
+      
+      // Emit WebSocket event for real-time updates
+      this.websocketGateway.emitMarketplaceListing({
+        propertyId: Number(propertyId),
+        seller: seller,
+        price: price,
+      });
     } catch (error) {
       this.logger.error(`Error handling PropertyListed: ${error.message}`);
     }
@@ -654,7 +688,7 @@ export class EventIndexerService implements OnModuleInit {
         await this.db.insert(schema.marketplaceListings).values({
           propertyId: property.id,
           sellerId: property.ownerId,
-          price: startingPrice,
+          price: startingPrice.toString(), // Ensure string for numeric column
           isActive: true,
           listingType: 'auction',
           auctionEndTime: new Date(Number(endTime) * 1000),
@@ -665,6 +699,7 @@ export class EventIndexerService implements OnModuleInit {
         await this.db
           .update(schema.marketplaceListings)
           .set({
+            price: startingPrice.toString(), // Ensure string for numeric column
             listingType: 'auction',
             auctionEndTime: new Date(Number(endTime) * 1000),
             isActive: true,
@@ -704,6 +739,46 @@ export class EventIndexerService implements OnModuleInit {
       this.logger.log(`Auction ended for property ${propertyId}, winner: ${winner}`);
     } catch (error) {
       this.logger.error(`Error handling AuctionEnded: ${error.message}`);
+    }
+  }
+
+  private async handleListingCancelled(propertyId: string) {
+    try {
+      const [property] = await this.db
+        .select()
+        .from(schema.properties)
+        .where(eq(schema.properties.tokenId, Number(propertyId)))
+        .limit(1);
+
+      if (property) {
+        await this.db
+          .update(schema.marketplaceListings)
+          .set({
+            isActive: false,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.marketplaceListings.propertyId, property.id));
+
+        this.logger.log(`Listing cancelled for property ${propertyId}`);
+        
+        // Emit WebSocket event
+        const [seller] = await this.db
+          .select()
+          .from(schema.users)
+          .where(eq(schema.users.id, property.ownerId))
+          .limit(1);
+        
+        if (seller) {
+          this.websocketGateway.emitMarketplaceCancelled({
+            propertyId: property.tokenId,
+            seller: seller.walletAddress,
+          });
+        }
+      } else {
+        this.logger.log(`Listing cancelled for property ${propertyId} (property not found in DB)`);
+      }
+    } catch (error) {
+      this.logger.error(`Error handling ListingCancelled: ${error.message}`);
     }
   }
 

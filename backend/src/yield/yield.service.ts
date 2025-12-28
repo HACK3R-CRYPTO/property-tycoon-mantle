@@ -385,7 +385,15 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
             }
 
             // Get claimable yield from contract
-            const claimableYield = await this.contractsService.calculateYield(BigInt(Number(tokenId)));
+            const claimableYieldResult = await this.contractsService.calculateYield(BigInt(Number(tokenId)));
+            
+            // Ensure claimableYield is a BigInt (contractsService.calculateYield returns bigint)
+            const claimableYieldBigInt: bigint = typeof claimableYieldResult === 'bigint' 
+              ? claimableYieldResult 
+              : BigInt(String(claimableYieldResult));
+            
+            // Log for debugging
+            this.logger.debug(`Property ${tokenId} claimable yield: ${claimableYieldBigInt.toString()} wei (${Number(claimableYieldBigInt) / 1e18} TYCOON)`);
 
             return {
               tokenId: Number(tokenId),
@@ -396,7 +404,7 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
               hoursRemaining,
               minutesRemaining,
               isClaimable,
-              claimableYield: claimableYield.toString(),
+              claimableYield: claimableYieldBigInt.toString(),
             };
           } catch (error) {
             this.logger.warn(`Failed to get yield time info for property ${tokenId}: ${error.message}`);
@@ -418,23 +426,48 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
           return currentMinutes < minMinutes ? current : min;
         });
         shortestTimeRemaining = {
-          hours: shortest.hoursRemaining,
-          minutes: shortest.minutesRemaining,
+          hours: Number(shortest.hoursRemaining), // Ensure number, not BigInt
+          minutes: Number(shortest.minutesRemaining), // Ensure number, not BigInt
         };
       }
 
-      // Calculate total claimable yield
+      // Calculate total claimable yield (keep in wei, frontend will convert)
       const totalClaimable = validProperties.reduce((sum, p) => {
-        return sum + BigInt(p.claimableYield);
+        // claimableYield is already a string from the property object
+        const claimableStr = String(p.claimableYield || '0');
+        
+        // Validate the string is a valid number (not concatenated or corrupted)
+        if (!/^\d+$/.test(claimableStr)) {
+          this.logger.warn(`Invalid claimableYield for property ${p.tokenId}: ${claimableStr}`);
+          return sum;
+        }
+        
+        const claimableBigInt = BigInt(claimableStr);
+        
+        // Sanity check: individual property yield should be reasonable
+        const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000'); // 1000 TYCOON
+        if (claimableBigInt > MAX_REASONABLE_YIELD) {
+          this.logger.warn(`Suspiciously large yield for property ${p.tokenId}: ${claimableStr} wei. Skipping.`);
+          return sum;
+        }
+        
+        const newSum = sum + claimableBigInt;
+        return newSum;
       }, BigInt(0));
+      
+      // Log for debugging
+      this.logger.log(`Total claimable yield for ${walletAddress}: ${totalClaimable.toString()} wei (${Number(totalClaimable) / 1e18} TYCOON)`);
 
       return {
         walletAddress,
-        yieldUpdateIntervalSeconds,
-        currentBlockTimestamp,
+        yieldUpdateIntervalSeconds: Number(yieldUpdateIntervalSeconds), // Ensure number, not BigInt
+        currentBlockTimestamp: Number(currentBlockTimestamp), // Ensure number, not BigInt
         shortestTimeRemaining,
-        totalClaimableYield: totalClaimable.toString(),
-        properties: validProperties,
+        totalClaimableYield: totalClaimable.toString(), // Already string
+        properties: validProperties.map(p => ({
+          ...p,
+          claimableYield: String(p.claimableYield), // Ensure string
+        })),
       };
     } catch (error) {
       this.logger.error(`Error getting yield time info: ${error.message}`);

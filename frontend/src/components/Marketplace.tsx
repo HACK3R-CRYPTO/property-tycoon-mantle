@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
 import { parseEther } from 'viem';
 import { readContract } from 'wagmi/actions';
 import { wagmiConfig } from '@/lib/mantle-viem';
@@ -76,6 +76,15 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
   });
 
   const [needsApproval, setNeedsApproval] = useState(false);
+  const { data: isApprovedForAll, refetch: refetchApproval } = useReadContract({
+    address: CONTRACTS.PropertyNFT,
+    abi: PROPERTY_NFT_ABI,
+    functionName: 'isApprovedForAll',
+    args: address && CONTRACTS.Marketplace ? [address, CONTRACTS.Marketplace] : undefined,
+    query: {
+      enabled: !!address && !!CONTRACTS.Marketplace,
+    },
+  });
 
   useEffect(() => {
     loadListings();
@@ -89,12 +98,62 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
     }
   }, [address, preselectedProperty]);
 
+  // Listen for real-time marketplace updates via WebSocket
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    const socket = (window as any).socket;
+    if (!socket) return;
+
+    const handleListing = (data: { propertyId: number; seller: string; price: string }) => {
+      console.log('📢 New marketplace listing received:', data);
+      // Reload listings to show new one
+      loadListings();
+    };
+
+    const handleCancelled = (data: { propertyId: number; seller: string }) => {
+      console.log('📢 Listing cancelled:', data);
+      // Reload listings to remove cancelled one
+      loadListings();
+    };
+
+    const handleTrade = (data: { listingId: number; seller: string; buyer: string; price: string }) => {
+      console.log('📢 Marketplace trade:', data);
+      // Reload listings to remove sold one
+      loadListings();
+    };
+
+    socket.on('marketplace:listing', handleListing);
+    socket.on('marketplace:cancelled', handleCancelled);
+    socket.on('marketplace:trade', handleTrade);
+
+    return () => {
+      socket.off('marketplace:listing', handleListing);
+      socket.off('marketplace:cancelled', handleCancelled);
+      socket.off('marketplace:trade', handleTrade);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Reload properties when modal opens
   useEffect(() => {
     if (showListProperty && address) {
       loadMyProperties();
+      refetchApproval();
     }
-  }, [showListProperty, address]);
+  }, [showListProperty, address, refetchApproval]);
+
+  // Check approval status when property is selected
+  useEffect(() => {
+    if (selectedProperty && address) {
+      // Check if marketplace is approved for all (better UX)
+      if (isApprovedForAll === false) {
+        setNeedsApproval(true);
+      } else if (isApprovedForAll === true) {
+        setNeedsApproval(false);
+      }
+    }
+  }, [selectedProperty, address, isApprovedForAll]);
 
   useEffect(() => {
     if (isPurchaseSuccess || isListSuccess || isCancelSuccess) {
@@ -115,29 +174,328 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
   const loadListings = async () => {
     setIsLoading(true);
     try {
-      // Try to load from backend (optional - marketplace listings are on blockchain)
+      // Try to load from backend first (faster if synced)
       try {
         const data = await api.get('/marketplace/listings');
-        const activeListings = data.filter((l: Listing) => l.isActive);
+        console.log('✅ Loaded listings from backend:', data.length);
+        
+        // Transform backend data to frontend format
+        const transformedListings: Listing[] = data.map((item: any) => ({
+          id: item.id,
+          propertyId: item.propertyId,
+          property: {
+            tokenId: item.property?.tokenId || Number(item.propertyId),
+            propertyType: item.property?.propertyType || 'Residential',
+            value: BigInt(item.property?.value || '0'),
+            yieldRate: item.property?.yieldRate || 0,
+          },
+          seller: {
+            walletAddress: item.seller?.walletAddress || '',
+            username: item.seller?.username,
+          },
+          price: BigInt(item.price || '0'),
+          listingType: item.listingType || 'fixed',
+          auctionEndTime: item.auctionEndTime ? new Date(item.auctionEndTime) : undefined,
+          highestBid: item.highestBid ? BigInt(item.highestBid) : undefined,
+          isActive: item.isActive !== false,
+        }));
+        
+        const activeListings = transformedListings.filter((l: Listing) => l.isActive);
         setListings(activeListings.filter((l: Listing) => 
-          l.seller.walletAddress?.toLowerCase() !== address?.toLowerCase()
+          l.seller?.walletAddress?.toLowerCase() !== address?.toLowerCase()
         ));
         setMyListings(activeListings.filter((l: Listing) => 
-          l.seller.walletAddress?.toLowerCase() === address?.toLowerCase()
+          l.seller?.walletAddress?.toLowerCase() === address?.toLowerCase()
         ));
+        
+        if (activeListings.length > 0) {
+          console.log(`✅ Using ${activeListings.length} listings from backend`);
+          setIsLoading(false);
+          return; // Backend has data, use it
+        }
       } catch (error) {
-        console.warn('Backend marketplace unavailable, listings will be empty:', error);
-        // Backend unavailable - marketplace listings should come from blockchain contract
-        // For now, show empty state
-        setListings([]);
-        setMyListings([]);
+        console.warn('⚠️ Backend marketplace unavailable, loading from blockchain:', error);
       }
+      
+      // Fallback: Load from blockchain by querying PropertyListed events
+      console.log('📡 Loading listings from blockchain...');
+      await loadListingsFromBlockchain();
     } catch (error) {
       console.error('Failed to load listings:', error);
       setListings([]);
       setMyListings([]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadListingsFromBlockchain = async () => {
+    try {
+      console.log('📡 Loading listings from blockchain...');
+      console.log('📍 Marketplace address:', CONTRACTS.Marketplace);
+      
+      // METHOD 1: Use the new getActiveListings() function (most efficient)
+      console.log('🔍 Method 1: Using getActiveListings() from marketplace contract...');
+      try {
+        const activeListingsDataRaw = await readContract(wagmiConfig, {
+          address: CONTRACTS.Marketplace,
+          abi: MARKETPLACE_ABI,
+          functionName: 'getActiveListings',
+          args: [],
+        }) as unknown as [readonly bigint[], readonly `0x${string}`[], readonly bigint[]];
+        
+        const activeListingsData = {
+          propertyIds: Array.from(activeListingsDataRaw[0]),
+          sellers: Array.from(activeListingsDataRaw[1]),
+          prices: Array.from(activeListingsDataRaw[2]),
+        };
+        
+        console.log(`✅ Found ${activeListingsData.propertyIds.length} active listings via getActiveListings()`);
+        
+        if (activeListingsData.propertyIds.length > 0) {
+          // Process the listings
+          const processedListings: Listing[] = [];
+          for (let i = 0; i < activeListingsData.propertyIds.length; i++) {
+            const propertyId = Number(activeListingsData.propertyIds[i]);
+            const seller = activeListingsData.sellers[i];
+            const price = activeListingsData.prices[i];
+            
+            try {
+              // Get property details
+              const propertyDataRaw = await readContract(wagmiConfig, {
+                address: CONTRACTS.PropertyNFT,
+                abi: PROPERTY_NFT_ABI,
+                functionName: 'getProperty',
+                args: [BigInt(propertyId)],
+              }) as unknown as {
+                propertyType: number;
+                value: bigint;
+                yieldRate: bigint;
+              };
+              
+              const propertyData = {
+                propertyType: BigInt(propertyDataRaw.propertyType),
+                value: propertyDataRaw.value,
+                yieldRate: propertyDataRaw.yieldRate,
+              };
+
+              const propertyTypes = ['Residential', 'Commercial', 'Industrial', 'Luxury'];
+              const propertyTypeNum = Number(propertyData.propertyType);
+              
+              processedListings.push({
+                id: `listing-${propertyId}`,
+                propertyId: propertyId.toString(),
+                property: {
+                  tokenId: propertyId,
+                  propertyType: propertyTypes[propertyTypeNum] || 'Residential',
+                  value: BigInt(propertyData.value.toString()),
+                  yieldRate: Number(propertyData.yieldRate.toString()),
+                },
+                seller: {
+                  walletAddress: seller,
+                },
+                price: BigInt(price.toString()),
+                listingType: 'fixed' as const,
+                isActive: true,
+              });
+              
+              console.log(`  ✅ Processed listing for property ${propertyId}`);
+            } catch (error) {
+              console.error(`  ❌ Failed to get property details for ${propertyId}:`, error);
+            }
+          }
+          
+          // Separate my listings from others
+          const myListingsFiltered = processedListings.filter((l: Listing) => 
+            l.seller.walletAddress?.toLowerCase() === address?.toLowerCase()
+          );
+          const otherListings = processedListings.filter((l: Listing) => 
+            l.seller.walletAddress?.toLowerCase() !== address?.toLowerCase()
+          );
+          
+          console.log(`📊 Listings breakdown: ${myListingsFiltered.length} mine, ${otherListings.length} others`);
+          
+          setListings(otherListings);
+          setMyListings(myListingsFiltered);
+          return; // Success, exit early
+        } else {
+          console.log('ℹ️ No active listings found via getActiveListings()');
+        }
+      } catch (error: any) {
+        console.warn('⚠️ getActiveListings() not available or failed, falling back to manual query:', error.message);
+      }
+      
+      // METHOD 2: Fallback - Get all properties owned by marketplace contract
+      console.log('🔍 Method 2: Querying properties owned by marketplace contract...');
+      console.log('📍 Marketplace contract address:', CONTRACTS.Marketplace);
+      let marketplaceOwnedProperties: bigint[] = [];
+      try {
+        marketplaceOwnedProperties = await getOwnerProperties(CONTRACTS.Marketplace as `0x${string}`);
+        console.log(`✅ Found ${marketplaceOwnedProperties.length} properties owned by marketplace`);
+        if (marketplaceOwnedProperties.length > 0) {
+          console.log('📋 Marketplace-owned property IDs:', marketplaceOwnedProperties.map(id => Number(id)));
+        } else {
+          console.log('ℹ️ No properties owned by marketplace. This means:');
+          console.log('   - Either no properties have been listed yet');
+          console.log('   - Or all listed properties have been sold/cancelled');
+        }
+      } catch (error: any) {
+        console.error('❌ Failed to get marketplace-owned properties:', error);
+        console.error('   Error message:', error.message);
+        console.error('   This could mean the marketplace contract address is incorrect');
+      }
+
+      // METHOD 2: Query PropertyListed events as fallback
+      console.log('🔍 Method 2: Querying PropertyListed events...');
+      const { createPublicClient, http, fallback, parseAbiItem } = await import('viem');
+      const { mantleSepoliaTestnet } = await import('@mantleio/viem/chains');
+      
+      const rpcUrls = [
+        'https://mantle-sepolia.drpc.org',
+        'https://rpc.ankr.com/mantle_sepolia',
+        'https://rpc.sepolia.mantle.xyz',
+        'https://mantle-sepolia-rpc.publicnode.com',
+      ];
+      
+      const publicClient = createPublicClient({
+        chain: mantleSepoliaTestnet,
+        transport: fallback(rpcUrls.map(url => http(url, { timeout: 10000 }))),
+      });
+
+      let eventPropertyIds: bigint[] = [];
+      try {
+        const currentBlock = await publicClient.getBlockNumber();
+        const fromBlock = currentBlock > 100000n ? currentBlock - 100000n : 0n;
+        const events = await publicClient.getLogs({
+          address: CONTRACTS.Marketplace,
+          event: parseAbiItem('event PropertyListed(uint256 indexed propertyId, address indexed seller, uint256 price)'),
+          fromBlock: fromBlock,
+        });
+        eventPropertyIds = events.map(e => BigInt(Number(e.args?.propertyId || 0))).filter(id => id > 0n);
+        console.log(`✅ Found ${events.length} PropertyListed events`);
+      } catch (error) {
+        console.warn('⚠️ Failed to query events:', error);
+      }
+
+      // Combine both methods - use marketplace-owned properties first, then events
+      const allPropertyIds = Array.from(new Set([
+        ...marketplaceOwnedProperties,
+        ...eventPropertyIds,
+      ]));
+      
+      console.log(`📋 Total unique property IDs to check: ${allPropertyIds.length}`);
+      if (allPropertyIds.length === 0) {
+        console.log('⚠️ No property IDs found to check!');
+        console.log('   This means:');
+        console.log('   1. Marketplace contract owns 0 properties');
+        console.log('   2. No PropertyListed events found');
+        console.log('   → Properties may not have been listed yet');
+        setListings([]);
+        setMyListings([]);
+        return;
+      }
+
+      // Check each property to see if it's listed and active
+      const activeListings: Listing[] = [];
+      for (const propertyIdBigInt of allPropertyIds) {
+        try {
+          const propertyId = Number(propertyIdBigInt);
+          if (propertyId === 0) continue;
+          
+          console.log(`🔍 Checking property ${propertyId}...`);
+          
+          // Check if listing is still active
+          const listingDataRaw = await readContract(wagmiConfig, {
+            address: CONTRACTS.Marketplace,
+            abi: MARKETPLACE_ABI,
+            functionName: 'listings',
+            args: [BigInt(propertyId)],
+          }) as unknown as [bigint, `0x${string}`, bigint, boolean, bigint];
+          
+          const listingData = {
+            propertyId: listingDataRaw[0],
+            seller: listingDataRaw[1],
+            price: listingDataRaw[2],
+            isActive: listingDataRaw[3],
+            createdAt: listingDataRaw[4],
+          };
+
+          console.log(`  📊 Listing status for property ${propertyId}:`, {
+            isActive: listingData.isActive,
+            seller: listingData.seller,
+            price: listingData.price.toString(),
+            priceInTYCOON: (Number(listingData.price) / 1e18).toFixed(4),
+            createdAt: new Date(Number(listingData.createdAt) * 1000).toISOString(),
+          });
+
+          if (listingData.isActive) {
+            console.log(`  ✅ Property ${propertyId} is ACTIVE and listed!`);
+            // Get property details
+            const propertyDataRaw = await readContract(wagmiConfig, {
+              address: CONTRACTS.PropertyNFT,
+              abi: PROPERTY_NFT_ABI,
+              functionName: 'getProperty',
+              args: [BigInt(propertyId)],
+            }) as unknown as {
+              propertyType: number;
+              value: bigint;
+              yieldRate: bigint;
+            };
+            
+            const propertyData = {
+              propertyType: BigInt(propertyDataRaw.propertyType),
+              value: propertyDataRaw.value,
+              yieldRate: propertyDataRaw.yieldRate,
+            };
+
+            const propertyTypes = ['Residential', 'Commercial', 'Industrial', 'Luxury'];
+            const propertyTypeNum = Number(propertyData.propertyType);
+            
+            activeListings.push({
+              id: `listing-${propertyId}`,
+              propertyId: propertyId.toString(),
+              property: {
+                tokenId: propertyId,
+                propertyType: propertyTypes[propertyTypeNum] || 'Residential',
+                value: BigInt(propertyData.value.toString()),
+                yieldRate: Number(propertyData.yieldRate.toString()),
+              },
+              seller: {
+                walletAddress: listingData.seller,
+              },
+              price: BigInt(listingData.price.toString()),
+              listingType: 'fixed' as const,
+              isActive: true,
+            });
+            
+            console.log(`  ✅ Added active listing for property ${propertyId}`);
+          } else {
+            console.log(`  ⏭️  Skipping property ${propertyId} - listing is NOT active`);
+            console.log(`     (This property may have been sold or cancelled)`);
+          }
+        } catch (error) {
+          console.error(`❌ Failed to check listing for property ${propertyIdBigInt}:`, error);
+        }
+      }
+
+      console.log(`✅ Found ${activeListings.length} active listings on blockchain`);
+
+      // Separate my listings from others
+      const myListingsFiltered = activeListings.filter((l: Listing) => 
+        l.seller.walletAddress?.toLowerCase() === address?.toLowerCase()
+      );
+      const otherListings = activeListings.filter((l: Listing) => 
+        l.seller.walletAddress?.toLowerCase() !== address?.toLowerCase()
+      );
+      
+      console.log(`📊 Listings breakdown: ${myListingsFiltered.length} mine, ${otherListings.length} others`);
+      
+      setListings(otherListings);
+      setMyListings(myListingsFiltered);
+    } catch (error) {
+      console.error('❌ Failed to load listings from blockchain:', error);
+      setListings([]);
+      setMyListings([]);
     }
   };
 
@@ -233,20 +591,36 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
   };
 
   const approveProperty = async () => {
-    if (!address || !isConnected || !selectedProperty) return;
+    if (!address || !isConnected) return;
     
     try {
+      console.log('🔄 Approving marketplace for all properties...');
+      // Use setApprovalForAll for better UX (approve once for all properties)
       writeApprove({
         address: CONTRACTS.PropertyNFT,
         abi: PROPERTY_NFT_ABI,
-        functionName: 'approve',
-        args: [CONTRACTS.Marketplace, BigInt(selectedProperty.tokenId)],
+        functionName: 'setApprovalForAll',
+        args: [CONTRACTS.Marketplace, true],
       });
+      console.log('✅ Approval transaction submitted');
     } catch (error: any) {
-      console.error('Failed to approve property:', error);
-      alert(error.message || 'Failed to approve property');
+      console.error('❌ Failed to approve marketplace:', error);
+      
+      // Check if it's an RPC error
+      if (error.message?.includes('fetch') || error.message?.includes('HTTP') || error.message?.includes('network')) {
+        alert('Network error: RPC endpoint is unavailable. Please try again in a moment. The system will automatically retry with fallback RPCs.');
+      } else {
+        alert(error.message || 'Failed to approve marketplace. Please check your wallet connection and try again.');
+      }
     }
   };
+
+  // Refetch approval after successful approval
+  useEffect(() => {
+    if (isApproveSuccess) {
+      refetchApproval();
+    }
+  }, [isApproveSuccess, refetchApproval]);
 
   const listProperty = async () => {
     if (!address || !isConnected || !selectedProperty || !listingPrice) {
@@ -378,28 +752,62 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
               </CardTitle>
               <p className="text-sm text-gray-400">Buy and sell properties</p>
             </div>
-            {isConnected && (
+            <div className="flex items-center gap-2">
               <Button
-                onClick={() => setShowListProperty(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => {
+                  console.log('🔄 Manual refresh clicked');
+                  loadListings();
+                }}
+                variant="outline"
+                size="sm"
+                disabled={isLoading}
+                className="text-white border-white/20 hover:bg-white/10"
               >
-                <Plus className="w-4 h-4 mr-2" />
-                List Property
+                {isLoading ? 'Loading...' : 'Refresh'}
               </Button>
-            )}
+              {isConnected && (
+                <Button
+                  onClick={() => setShowListProperty(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  List Property
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
         {isLoading ? (
-          <div className="text-center py-8 text-gray-400">Loading marketplace...</div>
+          <div className="text-center py-8 text-gray-400">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
+            <p>Loading marketplace...</p>
+            <p className="text-xs mt-2">Querying blockchain for listings...</p>
+          </div>
         ) : listings.length === 0 ? (
           <div className="text-center py-8 text-gray-400">
             <ShoppingBag className="w-12 h-12 mx-auto mb-2 opacity-50" />
             <p>No properties for sale</p>
+            <p className="text-xs mt-2 text-gray-500">
+              {myListings.length > 0 
+                ? `You have ${myListings.length} listed property${myListings.length > 1 ? 'ies' : ''} (see "My Listings" below)`
+                : 'List a property to get started'}
+            </p>
+            <Button
+              onClick={() => {
+                console.log('🔄 Manual refresh from empty state');
+                loadListings();
+              }}
+              variant="outline"
+              size="sm"
+              className="mt-4 text-white border-white/20 hover:bg-white/10"
+            >
+              Refresh Listings
+            </Button>
           </div>
         ) : (
           <div className="space-y-4">
-            {listings.map((listing) => (
+            {listings.filter(l => l.property).map((listing) => (
               <div
                 key={listing.id}
                 className="p-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
@@ -409,7 +817,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
                     <div className="flex items-center gap-2 mb-2">
                       <Tag className="w-4 h-4 text-blue-400" />
                       <span className="text-white font-semibold">
-                        {listing.property.propertyType} Property #{listing.property.tokenId}
+                        {listing.property?.propertyType || 'Unknown'} Property #{listing.property?.tokenId || 'N/A'}
                       </span>
                       <span className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400">
                         {listing.listingType === 'auction' ? 'Auction' : 'Fixed Price'}
@@ -419,8 +827,8 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
                       Seller: {listing.seller.username || `${listing.seller.walletAddress.slice(0, 6)}...${listing.seller.walletAddress.slice(-4)}`}
                     </p>
                     <div className="flex items-center gap-4 text-xs text-gray-400">
-                      <span>Value: {formatValue(listing.property.value)} TYCOON</span>
-                      <span>Yield: {listing.property.yieldRate / 100}% APY</span>
+                      <span>Value: {listing.property?.value ? formatValue(listing.property.value) : 'N/A'} TYCOON</span>
+                      <span>Yield: {listing.property?.yieldRate ? listing.property.yieldRate / 100 : 'N/A'}% APY</span>
                       {listing.listingType === 'auction' && listing.auctionEndTime && (
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
@@ -440,7 +848,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
                     )}
                     <Button
                       onClick={() => purchaseProperty(listing)}
-                      disabled={!isConnected || purchasingId === listing.id || isPurchasePending || isPurchaseConfirming}
+                      disabled={!isConnected || purchasingId === listing.id || isPurchasePending || isPurchaseConfirming || !listing.property}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white"
                       size="sm"
                     >
@@ -470,7 +878,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {myListings.map((listing) => (
+              {myListings.filter(l => l.property).map((listing) => (
                 <div
                   key={listing.id}
                   className="p-4 rounded-lg bg-white/5 border border-white/10"
@@ -479,7 +887,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-white font-semibold">
-                          {listing.property.propertyType} Property #{listing.property.tokenId}
+                          {listing.property?.propertyType || 'Unknown'} Property #{listing.property?.tokenId || 'N/A'}
                         </span>
                         <span className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400">
                           {listing.listingType === 'auction' ? 'Auction' : 'Fixed Price'}
@@ -490,8 +898,8 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
                       </p>
                     </div>
                     <Button
-                      onClick={() => cancelListing(listing.property.tokenId)}
-                      disabled={isCancelPending || isCancelConfirming}
+                      onClick={() => cancelListing(listing.property?.tokenId || 0)}
+                      disabled={isCancelPending || isCancelConfirming || !listing.property}
                       variant="outline"
                       size="sm"
                       className="border-red-500/50 text-red-400 hover:bg-red-500/10"
@@ -665,7 +1073,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
               )}
 
               <div className="flex gap-2">
-                {needsApproval ? (
+                {(needsApproval || isApprovedForAll === false) ? (
                   <Button
                     onClick={approveProperty}
                     disabled={isApprovePending || isApproveConfirming}

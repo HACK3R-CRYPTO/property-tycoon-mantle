@@ -261,9 +261,32 @@ export class PropertiesService {
           
           // Convert yieldRate to basis points
           let yieldRateValue = Number(propertyData.yieldRate.toString());
+          
+          // Detect corrupted yieldRate (stored in wei instead of basis points)
+          // Normal yieldRate should be 100-1000 (1%-10%), corrupted would be > 1e15
           if (yieldRateValue > 1e15) {
-            yieldRateValue = Number(propertyData.yieldRate.toString()) / 1e18 * 100;
+            this.logger.warn(`Property ${tokenId}: Detected corrupted yieldRate ${yieldRateValue}. Attempting to fix...`);
+            // Try to convert from wei to basis points
+            // If it's around 5e16, it might be 500 * 1e14 (corrupted)
+            // Or if it's around 5e16, it might be 500 * 1e14 (corrupted)
+            const possibleBasisPoints = yieldRateValue / 1e14; // Try dividing by 1e14
+            if (possibleBasisPoints >= 100 && possibleBasisPoints <= 10000) {
+              yieldRateValue = Math.round(possibleBasisPoints);
+              this.logger.log(`Property ${tokenId}: Fixed yieldRate from ${propertyData.yieldRate.toString()} to ${yieldRateValue} basis points`);
+            } else {
+              // Fallback: assume it should be 500 (5% - most common)
+              yieldRateValue = 500;
+              this.logger.warn(`Property ${tokenId}: Could not auto-fix yieldRate, defaulting to 500 basis points`);
+            }
           }
+          
+          // Ensure yieldRate is in valid range (100-10000 basis points = 1%-100%)
+          if (yieldRateValue < 100 || yieldRateValue > 10000) {
+            this.logger.warn(`Property ${tokenId}: yieldRate ${yieldRateValue} out of valid range (100-10000), defaulting to 500`);
+            yieldRateValue = 500;
+          }
+          
+          // Handle legacy format (0-1 range instead of basis points)
           if (yieldRateValue < 100 && yieldRateValue > 0) {
             yieldRateValue = yieldRateValue * 100;
           }
