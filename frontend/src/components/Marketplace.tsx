@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
 import { parseEther } from 'viem';
 import { readContract } from 'wagmi/actions';
+import { io, Socket } from 'socket.io-client';
 import { wagmiConfig } from '@/lib/mantle-viem';
 import { CONTRACTS, MARKETPLACE_ABI, PROPERTY_NFT_ABI, PROPERTY_NFT_ABI as PropertyNFTABI } from '@/lib/contracts';
 import { getOwnerProperties } from '@/lib/contracts';
@@ -103,23 +104,33 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
-    const socket = (window as any).socket;
-    if (!socket) return;
+    const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL 
+      ? process.env.NEXT_PUBLIC_API_URL.replace('/api', '') 
+      : 'http://localhost:3001';
+
+    const socket: Socket = io(BACKEND_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+    });
+
+    socket.on('connect', () => {
+      console.log('✅ Marketplace WebSocket connected');
+    });
 
     const handleListing = (data: { propertyId: number; seller: string; price: string }) => {
-      console.log('📢 New marketplace listing received:', data);
+      console.log('📢 New marketplace listing received via WebSocket:', data);
       // Reload listings to show new one
       loadListings();
     };
 
     const handleCancelled = (data: { propertyId: number; seller: string }) => {
-      console.log('📢 Listing cancelled:', data);
+      console.log('📢 Listing cancelled via WebSocket:', data);
       // Reload listings to remove cancelled one
       loadListings();
     };
 
     const handleTrade = (data: { listingId: number; seller: string; buyer: string; price: string }) => {
-      console.log('📢 Marketplace trade:', data);
+      console.log('📢 Marketplace trade via WebSocket:', data);
       // Reload listings to remove sold one
       loadListings();
     };
@@ -132,6 +143,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
       socket.off('marketplace:listing', handleListing);
       socket.off('marketplace:cancelled', handleCancelled);
       socket.off('marketplace:trade', handleTrade);
+      socket.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -165,7 +177,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
       
       // Wait a bit for backend to process the event, then reload
       // Backend listens to events and updates database automatically
-      setTimeout(() => {
+      const reloadTimeout = setTimeout(() => {
         console.log('🔄 Reloading listings after transaction success (backend should have synced)...');
         loadListings();
         if (address) {
@@ -176,8 +188,11 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
       if (isListSuccess && onListed) {
         onListed();
       }
+      
+      return () => clearTimeout(reloadTimeout);
     }
-  }, [isPurchaseSuccess, isListSuccess, isCancelSuccess, address, onListed, loadListings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPurchaseSuccess, isListSuccess, isCancelSuccess, address, onListed]);
 
   const loadListings = async () => {
     setIsLoading(true);

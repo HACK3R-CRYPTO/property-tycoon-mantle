@@ -842,7 +842,15 @@ export default function GamePage() {
         
         // Update claimable yield from backend (more reliable than blockchain calls)
         const claimable = BigInt(data.totalClaimableYield || '0');
-        setClaimableYield(claimable);
+        
+        // Validate claimable yield from backend (prevent showing corrupted values)
+        const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000'); // 1000 TYCOON
+        if (claimable > MAX_REASONABLE_YIELD) {
+          console.warn('⚠️ Backend returned suspiciously large claimable yield, resetting to 0:', claimable.toString());
+          setClaimableYield(BigInt(0));
+        } else {
+          setClaimableYield(claimable);
+        }
         
         // Update property claimable yields map
         const newClaimableYieldsMap = new Map<number, bigint>();
