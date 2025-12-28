@@ -270,7 +270,16 @@ export default function GamePage() {
             });
             const claimableYields = await Promise.all(claimablePromises);
             totalClaimable = claimableYields.reduce((sum, y) => sum + y, BigInt(0));
-            setClaimableYield(totalClaimable);
+            
+            // Validate totalClaimable before setting (prevent showing corrupted values)
+            // Max reasonable yield: 1000 TYCOON = 1e21 wei
+            const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000');
+            if (totalClaimable > MAX_REASONABLE_YIELD) {
+              console.warn('⚠️ Total claimable yield is suspiciously large, resetting to 0:', totalClaimable.toString());
+              setClaimableYield(BigInt(0));
+            } else {
+              setClaimableYield(totalClaimable);
+            }
             setPropertyClaimableYields(claimableYieldsMap);
             
             // Store time remaining map for display

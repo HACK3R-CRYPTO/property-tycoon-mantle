@@ -48,6 +48,7 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [myProperties, setMyProperties] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingSource, setLoadingSource] = useState<'backend' | 'blockchain'>('backend');
   const [purchasingId, setPurchasingId] = useState<string | null>(null);
   const [showListProperty, setShowListProperty] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<any | null>(null);
@@ -161,20 +162,29 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
       setShowListProperty(false);
       setSelectedProperty(null);
       setListingPrice('');
-      loadListings();
-      if (address) {
-        loadMyProperties();
-      }
+      
+      // Wait a bit for backend to process the event, then reload
+      // Backend listens to events and updates database automatically
+      setTimeout(() => {
+        console.log('🔄 Reloading listings after transaction success (backend should have synced)...');
+        loadListings();
+        if (address) {
+          loadMyProperties();
+        }
+      }, 2000); // Wait 2 seconds for backend event processing
+      
       if (isListSuccess && onListed) {
         onListed();
       }
     }
-  }, [isPurchaseSuccess, isListSuccess, isCancelSuccess, address, onListed]);
+  }, [isPurchaseSuccess, isListSuccess, isCancelSuccess, address, onListed, loadListings]);
 
   const loadListings = async () => {
     setIsLoading(true);
+    setLoadingSource('backend');
     try {
-      // Try to load from backend first (faster if synced)
+      // PRIMARY: Load from backend (backend syncs from blockchain via events)
+      // Backend validates against contract, so it's the source of truth
       try {
         const data = await api.get('/marketplace/listings');
         console.log('✅ Loaded listings from backend:', data.length);
@@ -213,13 +223,19 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
           setIsLoading(false);
           return; // Backend has data, use it
         }
-      } catch (error) {
-        console.warn('⚠️ Backend marketplace unavailable, loading from blockchain:', error);
+      } catch (error: any) {
+        // Only fallback to blockchain if backend is completely unavailable
+        if (error.response?.status === 404 || error.response?.status >= 500) {
+          console.warn('⚠️ Backend unavailable, falling back to blockchain:', error.message);
+          setLoadingSource('blockchain');
+          await loadListingsFromBlockchain();
+        } else {
+          // For other errors (network, etc.), still try blockchain
+          console.warn('⚠️ Backend error, falling back to blockchain:', error.message);
+          setLoadingSource('blockchain');
+          await loadListingsFromBlockchain();
+        }
       }
-      
-      // Fallback: Load from blockchain by querying PropertyListed events
-      console.log('📡 Loading listings from blockchain...');
-      await loadListingsFromBlockchain();
     } catch (error) {
       console.error('Failed to load listings:', error);
       setListings([]);

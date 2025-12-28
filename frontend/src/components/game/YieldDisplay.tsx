@@ -14,6 +14,13 @@ interface YieldDisplayProps {
 
 export function YieldDisplay({ totalPendingYield, totalYieldEarned, claimableYield, onClaimAll, isClaiming = false }: YieldDisplayProps) {
   const formatValue = (value: bigint) => {
+    // Validate value first - if suspiciously large, return 0
+    const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000'); // 1000 TYCOON
+    if (value > MAX_REASONABLE_YIELD) {
+      console.warn('⚠️ formatValue: Suspiciously large value detected, returning 0:', value.toString());
+      return '0.0000';
+    }
+    
     // Convert from wei to TYCOON (divide by 1e18)
     // Always use BigInt division for accuracy
     const divisor = BigInt('1000000000000000000'); // 1e18
@@ -23,17 +30,6 @@ export function YieldDisplay({ totalPendingYield, totalYieldEarned, claimableYie
     // Calculate decimal part accurately
     const decimalPart = Number(remainder) / Number(divisor);
     const tycoonAmount = Number(quotient) + decimalPart;
-    
-    // Debug logging (remove in production)
-    if (tycoonAmount > 1000) {
-      console.warn('⚠️ formatValue: Large value detected:', {
-        originalWei: value.toString(),
-        quotient: quotient.toString(),
-        remainder: remainder.toString(),
-        decimalPart,
-        tycoonAmount,
-      });
-    }
     
     // Format with appropriate decimal places
     if (tycoonAmount < 0.0001) {
