@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Post } from '@nestjs/common';
 import { MarketplaceService } from './marketplace.service';
 
 @Controller('marketplace')
@@ -8,6 +8,16 @@ export class MarketplaceController {
   @Get('listings')
   getActiveListings() {
     return this.marketplaceService.getActiveListings();
+  }
+
+  @Post('sync')
+  async syncListings() {
+    return this.marketplaceService.syncListingsFromBlockchain();
+  }
+
+  @Get('debug')
+  async debugMarketplace() {
+    return this.marketplaceService.debugMarketplaceState();
   }
 
   @Get('listing/:id')

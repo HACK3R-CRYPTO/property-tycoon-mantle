@@ -196,63 +196,14 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
 
   const loadListings = async () => {
     setIsLoading(true);
-    setLoadingSource('backend');
+    setLoadingSource('blockchain'); // Always use blockchain as primary source
     try {
-      // PRIMARY: Load from backend (backend syncs from blockchain via events)
-      // Backend validates against contract, so it's the source of truth
-      try {
-        const data = await api.get('/marketplace/listings');
-        console.log('✅ Loaded listings from backend:', data.length);
-        
-        // Transform backend data to frontend format
-        const transformedListings: Listing[] = data.map((item: any) => ({
-          id: item.id,
-          propertyId: item.propertyId,
-          property: {
-            tokenId: item.property?.tokenId || Number(item.propertyId),
-            propertyType: item.property?.propertyType || 'Residential',
-            value: BigInt(item.property?.value || '0'),
-            yieldRate: item.property?.yieldRate || 0,
-          },
-          seller: {
-            walletAddress: item.seller?.walletAddress || '',
-            username: item.seller?.username,
-          },
-          price: BigInt(item.price || '0'),
-          listingType: item.listingType || 'fixed',
-          auctionEndTime: item.auctionEndTime ? new Date(item.auctionEndTime) : undefined,
-          highestBid: item.highestBid ? BigInt(item.highestBid) : undefined,
-          isActive: item.isActive !== false,
-        }));
-        
-        const activeListings = transformedListings.filter((l: Listing) => l.isActive);
-        setListings(activeListings.filter((l: Listing) => 
-          l.seller?.walletAddress?.toLowerCase() !== address?.toLowerCase()
-        ));
-        setMyListings(activeListings.filter((l: Listing) => 
-          l.seller?.walletAddress?.toLowerCase() === address?.toLowerCase()
-        ));
-        
-        if (activeListings.length > 0) {
-          console.log(`✅ Using ${activeListings.length} listings from backend`);
-          setIsLoading(false);
-          return; // Backend has data, use it
-        }
-      } catch (error: any) {
-        // Only fallback to blockchain if backend is completely unavailable
-        if (error.response?.status === 404 || error.response?.status >= 500) {
-          console.warn('⚠️ Backend unavailable, falling back to blockchain:', error.message);
-          setLoadingSource('blockchain');
-          await loadListingsFromBlockchain();
-        } else {
-          // For other errors (network, etc.), still try blockchain
-          console.warn('⚠️ Backend error, falling back to blockchain:', error.message);
-          setLoadingSource('blockchain');
-          await loadListingsFromBlockchain();
-        }
-      }
+      // PRIMARY: Load directly from blockchain (source of truth)
+      // Backend sync is optional and only for caching/performance
+      console.log('📡 Loading listings directly from blockchain (source of truth)...');
+      await loadListingsFromBlockchain();
     } catch (error) {
-      console.error('Failed to load listings:', error);
+      console.error('Failed to load listings from blockchain:', error);
       setListings([]);
       setMyListings([]);
     } finally {
@@ -261,10 +212,10 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
   };
 
   const loadListingsFromBlockchain = async () => {
-    // FALLBACK ONLY: This should rarely be called since backend is primary
-    // Only used when backend is completely unavailable
+    // PRIMARY: Load directly from blockchain (source of truth)
+    // This is the main method - blockchain is always the source of truth for marketplace
     try {
-      console.log('📡 FALLBACK: Loading listings directly from blockchain (backend unavailable)...');
+      console.log('📡 Loading listings directly from blockchain (source of truth)...');
       console.log('📍 Marketplace address:', CONTRACTS.Marketplace);
       
       // METHOD 1: Use the new getActiveListings() function (most efficient)

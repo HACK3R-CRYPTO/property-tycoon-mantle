@@ -206,16 +206,20 @@ export class EventIndexerService implements OnModuleInit {
     // PropertyListed event
     contract.on('PropertyListed', async (propertyId, seller, price, event) => {
       try {
-        this.logger.log(`PropertyListed: propertyId=${propertyId}, seller=${seller}, price=${price}`);
+        this.logger.log(`📢 PropertyListed EVENT RECEIVED: propertyId=${propertyId}, seller=${seller}, price=${price}`);
+        this.logger.log(`📢 Event block: ${event?.blockNumber}, tx: ${event?.transactionHash}`);
         await this.handlePropertyListed(
           propertyId.toString(),
           seller,
           price.toString(),
         );
+        this.logger.log(`✅ Successfully processed PropertyListed event for property ${propertyId}`);
       } catch (error) {
-        this.logger.error('Error handling PropertyListed event', error);
+        this.logger.error(`❌ Error handling PropertyListed event: ${error.message}`, error.stack);
       }
     });
+    
+    this.logger.log('✅ Marketplace PropertyListed event listener registered');
 
     // PropertySold event
     contract.on('PropertySold', async (propertyId, seller, buyer, price, event) => {
