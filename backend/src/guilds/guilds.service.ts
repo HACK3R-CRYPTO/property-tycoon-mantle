@@ -3,12 +3,16 @@ import { DATABASE_CONNECTION } from '../database/database.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../database/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
+import { ContractsService } from '../contracts/contracts.service';
 
 @Injectable()
 export class GuildsService {
   private readonly logger = new Logger(GuildsService.name);
 
-  constructor(@Inject(DATABASE_CONNECTION) private db: PostgresJsDatabase<typeof schema>) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private db: PostgresJsDatabase<typeof schema>,
+    private contractsService: ContractsService,
+  ) {}
 
   async createGuild(ownerId: string, name: string, description?: string, isPublic: boolean = true) {
     // Check if user already has a guild
@@ -316,48 +320,113 @@ export class GuildsService {
   }
 
   async updateGuildStats(guildId: string) {
-    // Get all members
-    const members = await this.db
-      .select({ userId: schema.guildMembers.userId })
-      .from(schema.guildMembers)
-      .where(eq(schema.guildMembers.guildId, guildId));
-
-    // Calculate total portfolio value and yield from all members
-    // Read from leaderboard table (source of truth) instead of users table
-    let totalPortfolioValue = BigInt(0);
-    let totalYieldEarned = BigInt(0);
-
-    for (const member of members) {
-      // Get leaderboard entry for this user (has the most up-to-date stats)
-      const [leaderboardEntry] = await this.db
+    try {
+      // Get all members with their wallet addresses
+      const members = await this.db
         .select({
-          totalPortfolioValue: schema.leaderboard.totalPortfolioValue,
-          totalYieldEarned: schema.leaderboard.totalYieldEarned,
+          userId: schema.guildMembers.userId,
+          walletAddress: schema.users.walletAddress,
         })
-        .from(schema.leaderboard)
-        .where(eq(schema.leaderboard.userId, member.userId))
-        .limit(1);
+        .from(schema.guildMembers)
+        .leftJoin(schema.users, eq(schema.guildMembers.userId, schema.users.id))
+        .where(eq(schema.guildMembers.guildId, guildId));
 
-      if (leaderboardEntry) {
-        // Leaderboard values are stored as NUMERIC (string), convert to BigInt for calculation
-        const portfolioValueStr = leaderboardEntry.totalPortfolioValue ? String(leaderboardEntry.totalPortfolioValue) : '0';
-        const yieldEarnedStr = leaderboardEntry.totalYieldEarned ? String(leaderboardEntry.totalYieldEarned) : '0';
-        totalPortfolioValue += BigInt(portfolioValueStr);
-        totalYieldEarned += BigInt(yieldEarnedStr);
+      // Calculate total portfolio value and yield from blockchain (source of truth)
+      let totalPortfolioValue = BigInt(0);
+      let totalYieldEarned = BigInt(0);
+
+      if (!this.contractsService.propertyNFT || !this.contractsService.yieldDistributor) {
+        this.logger.warn('Contracts not initialized, falling back to database values');
+        // Fallback to database if contracts not available
+        for (const member of members) {
+          if (!member.walletAddress) continue;
+          const [leaderboardEntry] = await this.db
+            .select({
+              totalPortfolioValue: schema.leaderboard.totalPortfolioValue,
+              totalYieldEarned: schema.leaderboard.totalYieldEarned,
+            })
+            .from(schema.leaderboard)
+            .where(eq(schema.leaderboard.userId, member.userId))
+            .limit(1);
+
+          if (leaderboardEntry) {
+            const portfolioValueStr = leaderboardEntry.totalPortfolioValue ? String(leaderboardEntry.totalPortfolioValue) : '0';
+            const yieldEarnedStr = leaderboardEntry.totalYieldEarned ? String(leaderboardEntry.totalYieldEarned) : '0';
+            totalPortfolioValue += BigInt(portfolioValueStr);
+            totalYieldEarned += BigInt(yieldEarnedStr);
+          }
+        }
+      } else {
+        // Fetch directly from blockchain
+        for (const member of members) {
+          if (!member.walletAddress) continue;
+          
+          try {
+            // Get all properties owned by this member from blockchain
+            const tokenIds = await this.contractsService.getOwnerProperties(member.walletAddress);
+            if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
+              continue;
+            }
+
+            // Deduplicate tokenIds
+            const uniqueTokenIds = Array.from(new Set(tokenIds.map(id => Number(id))));
+
+            // Calculate portfolio value and yield for each property
+            for (const tokenId of uniqueTokenIds) {
+              try {
+                const propertyData = await this.contractsService.getProperty(BigInt(tokenId));
+                if (propertyData) {
+                  // Add property value to portfolio
+                  const value = propertyData.value?.toString() || '0';
+                  totalPortfolioValue += BigInt(value);
+
+                  // Get total yield earned from property
+                  const yieldEarned = propertyData.totalYieldEarned?.toString() || '0';
+                  totalYieldEarned += BigInt(yieldEarned);
+                }
+              } catch (error) {
+                this.logger.warn(`Failed to get property ${tokenId} for guild stats: ${error.message}`);
+              }
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to get properties for ${member.walletAddress}: ${error.message}`);
+            // Fallback to database for this member
+            const [leaderboardEntry] = await this.db
+              .select({
+                totalPortfolioValue: schema.leaderboard.totalPortfolioValue,
+                totalYieldEarned: schema.leaderboard.totalYieldEarned,
+              })
+              .from(schema.leaderboard)
+              .where(eq(schema.leaderboard.userId, member.userId))
+              .limit(1);
+
+            if (leaderboardEntry) {
+              const portfolioValueStr = leaderboardEntry.totalPortfolioValue ? String(leaderboardEntry.totalPortfolioValue) : '0';
+              const yieldEarnedStr = leaderboardEntry.totalYieldEarned ? String(leaderboardEntry.totalYieldEarned) : '0';
+              totalPortfolioValue += BigInt(portfolioValueStr);
+              totalYieldEarned += BigInt(yieldEarnedStr);
+            }
+          }
+        }
       }
+
+      // Update guild stats - convert BigInt to string for NUMERIC columns
+      await this.db
+        .update(schema.guilds)
+        .set({
+          totalPortfolioValue: totalPortfolioValue.toString(), // String for NUMERIC column
+          totalYieldEarned: totalYieldEarned.toString(), // String for NUMERIC column
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.guilds.id, guildId));
+
+      const portfolioValueStr = (Number(totalPortfolioValue) / 1e18).toFixed(2);
+      const yieldEarnedStr = (Number(totalYieldEarned) / 1e18).toFixed(2);
+      this.logger.log(`Updated stats for guild ${guildId}: ${portfolioValueStr} TYCOON portfolio, ${yieldEarnedStr} TYCOON yield`);
+    } catch (error) {
+      this.logger.error(`Error updating guild stats for ${guildId}: ${error.message}`, error.stack);
+      throw error;
     }
-
-    // Update guild stats - convert BigInt to string for NUMERIC columns
-    await this.db
-      .update(schema.guilds)
-      .set({
-        totalPortfolioValue: totalPortfolioValue.toString(), // String for NUMERIC column
-        totalYieldEarned: totalYieldEarned.toString(), // String for NUMERIC column
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.guilds.id, guildId));
-
-    this.logger.log(`Updated stats for guild ${guildId}: ${totalPortfolioValue.toString()} portfolio, ${totalYieldEarned.toString()} yield`);
   }
 
   async searchGuilds(query: string, limit: number = 20) {
