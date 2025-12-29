@@ -280,15 +280,47 @@ export class GuildsService {
         .where(eq(schema.guildMembers.guildId, guildId));
 
       // Convert BigInt values to strings for JSON serialization
-      const members = membersRaw.map(member => ({
-        ...member,
-        contribution: member.contribution ? String(member.contribution) : '0',
-      }));
+      const members = membersRaw.map(member => {
+        // Convert contribution BigInt to string
+        const contribution = member.contribution;
+        const contributionStr = contribution !== null && contribution !== undefined 
+          ? (typeof contribution === 'bigint' ? contribution.toString() : String(contribution))
+          : '0';
+        
+        return {
+          id: member.id,
+          userId: member.userId,
+          role: member.role,
+          contribution: contributionStr,
+          joinedAt: member.joinedAt,
+          user: member.user,
+        };
+      });
+
+      // Ensure all numeric fields are strings
+      const totalPortfolioValueStr = guild.totalPortfolioValue 
+        ? (typeof guild.totalPortfolioValue === 'bigint' 
+            ? guild.totalPortfolioValue.toString() 
+            : String(guild.totalPortfolioValue))
+        : '0';
+      
+      const totalYieldEarnedStr = guild.totalYieldEarned 
+        ? (typeof guild.totalYieldEarned === 'bigint' 
+            ? guild.totalYieldEarned.toString() 
+            : String(guild.totalYieldEarned))
+        : '0';
 
       return {
-        ...guild,
-        totalPortfolioValue: guild.totalPortfolioValue ? String(guild.totalPortfolioValue) : '0',
-        totalYieldEarned: guild.totalYieldEarned ? String(guild.totalYieldEarned) : '0',
+        id: guild.id,
+        name: guild.name,
+        description: guild.description,
+        ownerId: guild.ownerId,
+        totalMembers: guild.totalMembers,
+        totalPortfolioValue: totalPortfolioValueStr,
+        totalYieldEarned: totalYieldEarnedStr,
+        isPublic: guild.isPublic,
+        createdAt: guild.createdAt,
+        owner: guild.owner,
         members,
       };
     } catch (error) {
