@@ -14,6 +14,33 @@ export class GuildsService {
     private contractsService: ContractsService,
   ) {}
 
+  // Helper to recursively convert BigInt values to strings for JSON serialization
+  private serializeBigInts(obj: any): any {
+    if (obj === null || obj === undefined) {
+      return obj;
+    }
+    
+    if (typeof obj === 'bigint') {
+      return obj.toString();
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.serializeBigInts(item));
+    }
+    
+    if (typeof obj === 'object') {
+      const result: any = {};
+      for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+          result[key] = this.serializeBigInts(obj[key]);
+        }
+      }
+      return result;
+    }
+    
+    return obj;
+  }
+
   async createGuild(ownerId: string, name: string, description?: string, isPublic: boolean = true) {
     // Check if user already has a guild
     const existingGuild = await this.db
