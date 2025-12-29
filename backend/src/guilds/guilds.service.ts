@@ -306,22 +306,15 @@ export class GuildsService {
         .leftJoin(schema.users, eq(schema.guildMembers.userId, schema.users.id))
         .where(eq(schema.guildMembers.guildId, guildId));
 
-      // Convert BigInt values to strings for JSON serialization
-      const members = membersRaw.map(member => {
-        // Convert contribution BigInt to string
-        // contribution is defined as bigint in schema with mode: 'bigint', so it's a BigInt
-        const contributionValue = member.contribution as bigint | null | undefined;
-        const contributionStr = contributionValue != null ? String(contributionValue) : '0';
-        
-        return {
-          id: member.id,
-          userId: member.userId,
-          role: member.role,
-          contribution: contributionStr,
-          joinedAt: member.joinedAt,
-          user: member.user,
-        };
-      });
+      // contribution is now numeric (returns string), no conversion needed
+      const members = membersRaw.map(member => ({
+        id: member.id,
+        userId: member.userId,
+        role: member.role,
+        contribution: member.contribution ? String(member.contribution) : '0',
+        joinedAt: member.joinedAt,
+        user: member.user,
+      }));
 
       // Ensure all numeric fields are strings (they come from database as strings for NUMERIC type)
       const totalPortfolioValueStr = guild.totalPortfolioValue 

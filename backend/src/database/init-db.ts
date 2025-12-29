@@ -133,9 +133,23 @@ async function initDatabase() {
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         role VARCHAR(20) DEFAULT 'member' NOT NULL,
         joined_at TIMESTAMP DEFAULT NOW(),
-        contribution BIGINT DEFAULT 0 NOT NULL,
+        contribution NUMERIC DEFAULT '0' NOT NULL,
         UNIQUE(guild_id, user_id)
       );
+
+      -- Migrate existing contribution column from BIGINT to NUMERIC if it exists
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'guild_members' 
+          AND column_name = 'contribution' 
+          AND data_type = 'bigint'
+        ) THEN
+          ALTER TABLE guild_members 
+          ALTER COLUMN contribution TYPE NUMERIC USING contribution::text::numeric;
+        END IF;
+      END $$;
 
       CREATE INDEX IF NOT EXISTS idx_users_wallet_address ON users(wallet_address);
       CREATE INDEX IF NOT EXISTS idx_guilds_owner_id ON guilds(owner_id);

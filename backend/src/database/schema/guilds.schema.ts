@@ -25,7 +25,7 @@ export const guildMembers = pgTable('guild_members', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   role: varchar('role', { length: 50 }).default('member').notNull(), // owner, admin, member
-  contribution: bigint('contribution', { mode: 'bigint' }).default(BigInt(0)).notNull(),
+  contribution: numeric('contribution').default('0').notNull(), // Use numeric to return strings (like properties.value)
   joinedAt: timestamp('joined_at').defaultNow().notNull(),
 });
 
