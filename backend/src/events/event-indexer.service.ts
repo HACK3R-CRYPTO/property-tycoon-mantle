@@ -571,6 +571,23 @@ export class EventIndexerService implements OnModuleInit {
         })
         .where(eq(schema.properties.id, property.id));
 
+      // Update leaderboard after yield claim
+      const [user] = await this.db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.walletAddress, owner.toLowerCase()))
+        .limit(1);
+
+      if (user) {
+        await this.leaderboardService.updateLeaderboard(user.id);
+
+        // Update guild stats if user is in a guild
+        const userGuild = await this.guildsService.getUserGuild(user.id);
+        if (userGuild) {
+          await this.guildsService.updateGuildStats(userGuild.id);
+        }
+      }
+
       // Emit WebSocket event
       this.websocketGateway.emitYieldClaimed({
         propertyId: property.id,
