@@ -353,18 +353,9 @@ export class GuildsService {
 
       const guild = await this.getUserGuild(user.id);
       
-      // Ensure all BigInt values are converted to strings
+      // Ensure all BigInt values are converted to strings using recursive helper
       if (guild) {
-        // getGuild already converts BigInts, but let's ensure it's safe
-        return {
-          ...guild,
-          totalPortfolioValue: String(guild.totalPortfolioValue || '0'),
-          totalYieldEarned: String(guild.totalYieldEarned || '0'),
-          members: guild.members?.map(m => ({
-            ...m,
-            contribution: String(m.contribution || '0'),
-          })) || [],
-        };
+        return this.serializeBigInts(guild);
       }
       
       return null;
