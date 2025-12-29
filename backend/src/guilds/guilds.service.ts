@@ -282,11 +282,9 @@ export class GuildsService {
       // Convert BigInt values to strings for JSON serialization
       const members = membersRaw.map(member => {
         // Convert contribution BigInt to string
-        let contributionStr = '0';
-        if (member.contribution !== null && member.contribution !== undefined) {
-          // contribution is defined as bigint in schema, so it will be a BigInt
-          contributionStr = String(member.contribution);
-        }
+        // contribution is defined as bigint in schema with mode: 'bigint', so it's a BigInt
+        const contributionValue = member.contribution as bigint | null | undefined;
+        const contributionStr = contributionValue != null ? String(contributionValue) : '0';
         
         return {
           id: member.id,
