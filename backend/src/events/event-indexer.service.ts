@@ -92,6 +92,9 @@ export class EventIndexerService implements OnModuleInit {
     
     // Listen to QuestSystem events
     this.listenToQuestSystemEvents();
+    
+    // Note: TokenSwap events are not listened to - token purchase is blockchain-only
+    // No backend sync needed for token purchases
   }
 
   private listenToPropertyNFTEvents() {

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./PropertyNFT.sol";
+import "./GameToken.sol";
 
 contract YieldDistributor is ReentrancyGuard, Ownable {
     PropertyNFT public propertyNFT;
-    IERC20 public gameToken;
+    GameToken public gameToken;
     
     mapping(uint256 => uint256) public pendingYield;
     mapping(address => uint256) public totalYieldClaimed;
@@ -23,7 +23,7 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
     
     constructor(address _propertyNFT, address _gameToken) Ownable(msg.sender) {
         propertyNFT = PropertyNFT(_propertyNFT);
-        gameToken = IERC20(_gameToken);
+        gameToken = GameToken(_gameToken);
     }
     
     function distributeYield(uint256 propertyId, uint256 amount) public {
@@ -60,7 +60,8 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
         lastYieldUpdate[propertyId] = block.timestamp;
         totalYieldClaimed[msg.sender] += amount;
         
-        gameToken.transfer(msg.sender, amount);
+        // Mint tokens directly to the user (yield is generated, not transferred)
+        gameToken.mint(msg.sender, amount);
         emit YieldClaimed(propertyId, msg.sender, amount);
     }
     
@@ -82,7 +83,9 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
         require(totalAmount > 0, "No yield to claim");
         
         totalYieldClaimed[msg.sender] += totalAmount;
-        gameToken.transfer(msg.sender, totalAmount);
+        
+        // Mint tokens directly to the user (yield is generated, not transferred)
+        gameToken.mint(msg.sender, totalAmount);
         
         emit BatchYieldClaimed(msg.sender, propertyIds, totalAmount);
     }

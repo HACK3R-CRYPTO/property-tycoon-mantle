@@ -474,7 +474,37 @@ export class GuildsService {
           try {
             this.logger.log(`Getting properties for member ${member.walletAddress}...`);
             // Get all properties owned by this member from blockchain
-            const tokenIds = await this.contractsService.getOwnerProperties(member.walletAddress);
+            let tokenIds: bigint[] = [];
+            try {
+              const result = await this.contractsService.getOwnerProperties(member.walletAddress);
+              if (Array.isArray(result)) {
+                tokenIds = result;
+              } else if (result && typeof result === 'object' && 'length' in result) {
+                tokenIds = Array.from(result as any);
+              }
+            } catch (error: any) {
+              // If getOwnerProperties fails, member has no properties in new contract
+              this.logger.warn(`No properties found in new contract for ${member.walletAddress}: ${error.message}`);
+              // Fallback to database for this member
+              const [leaderboardEntry] = await this.db
+                .select({
+                  totalPortfolioValue: schema.leaderboard.totalPortfolioValue,
+                  totalYieldEarned: schema.leaderboard.totalYieldEarned,
+                })
+                .from(schema.leaderboard)
+                .where(eq(schema.leaderboard.userId, member.userId))
+                .limit(1);
+              
+              if (leaderboardEntry) {
+                const portfolioValue = BigInt(leaderboardEntry.totalPortfolioValue?.toString() || '0');
+                const yieldEarned = BigInt(leaderboardEntry.totalYieldEarned?.toString() || '0');
+                totalPortfolioValue += portfolioValue;
+                totalYieldEarned += yieldEarned;
+                this.logger.log(`Using database fallback for ${member.walletAddress}: portfolio=${portfolioValue}, yield=${yieldEarned}`);
+              }
+              continue;
+            }
+            
             if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
               this.logger.log(`No properties found for ${member.walletAddress}`);
               continue;
@@ -484,20 +514,54 @@ export class GuildsService {
             const uniqueTokenIds = Array.from(new Set(tokenIds.map(id => Number(id))));
             this.logger.log(`Found ${uniqueTokenIds.length} unique properties for ${member.walletAddress}`);
 
+            // Get contract addresses to exclude listed properties
+            const contractAddresses: string[] = [];
+            if (this.contractsService.marketplace?.address) {
+              contractAddresses.push(this.contractsService.marketplace.address.toLowerCase());
+            }
+            if (this.contractsService.yieldDistributor?.address) {
+              contractAddresses.push(this.contractsService.yieldDistributor.address.toLowerCase());
+            }
+            if (this.contractsService.questSystem?.address) {
+              contractAddresses.push(this.contractsService.questSystem.address.toLowerCase());
+            }
+            if (this.contractsService.propertyNFT?.address) {
+              contractAddresses.push(this.contractsService.propertyNFT.address.toLowerCase());
+            }
+            if (this.contractsService.gameToken?.address) {
+              contractAddresses.push(this.contractsService.gameToken.address.toLowerCase());
+            }
+            // Hardcode old marketplace address
+            contractAddresses.push('0x6389d7168029715de118baf51b6d32ee1ebea46b'.toLowerCase());
+
             // Calculate portfolio value for each property
+            // Check ownerOf FIRST to exclude listed properties (owned by marketplace contract)
             for (const tokenId of uniqueTokenIds) {
               try {
-                const propertyData = await this.contractsService.getProperty(BigInt(tokenId));
-                if (propertyData) {
-                  // Add property value to portfolio
-                  const value = propertyData.value?.toString() || '0';
-                  const valueBigInt = BigInt(value);
-                  totalPortfolioValue += valueBigInt;
-                  
-                  this.logger.log(`Property ${tokenId}: value=${valueBigInt.toString()}`);
+                // Check ownerOf FIRST - this is the source of truth
+                const currentOwner = await this.contractsService.propertyNFT.ownerOf(tokenId);
+                const ownerLower = currentOwner.toLowerCase();
+                const isOwnedByUser = ownerLower === member.walletAddress.toLowerCase();
+                const isContract = contractAddresses.includes(ownerLower);
+
+                this.logger.log(`🔍 Guild Property ${tokenId}: ownerOf=${currentOwner}, member=${member.walletAddress}, isOwnedByUser=${isOwnedByUser}, isContract=${isContract}`);
+
+                // Only process if owned by user AND not a contract address
+                if (isOwnedByUser && !isContract) {
+                  const propertyData = await this.contractsService.getProperty(BigInt(tokenId));
+                  if (propertyData) {
+                    // Add property value to portfolio
+                    const value = propertyData.value?.toString() || '0';
+                    const valueBigInt = BigInt(value);
+                    totalPortfolioValue += valueBigInt;
+                    
+                    this.logger.log(`✅ Guild Property ${tokenId} counted: value=${valueBigInt.toString()}`);
+                  }
+                } else {
+                  this.logger.log(`❌ Guild Property ${tokenId} excluded: owned by ${currentOwner} (${isContract ? 'contract' : 'different user'})`);
                 }
               } catch (error) {
-                this.logger.warn(`Failed to get property ${tokenId} for guild stats: ${error.message}`);
+                this.logger.warn(`Failed to verify property ${tokenId} for guild stats: ${error.message}`);
               }
             }
 

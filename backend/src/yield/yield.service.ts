@@ -338,7 +338,20 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
       const currentBlockTimestamp = block.timestamp;
 
       // Get user's properties from blockchain
-      const tokenIds = await this.contractsService.getOwnerProperties(walletAddress);
+      let tokenIds: bigint[] = [];
+      try {
+        const result = await this.contractsService.getOwnerProperties(walletAddress);
+        if (Array.isArray(result)) {
+          tokenIds = result;
+        } else if (result && typeof result === 'object' && 'length' in result) {
+          tokenIds = Array.from(result as any);
+        }
+      } catch (error: any) {
+        // If getOwnerProperties fails, user has no properties in new contract
+        this.logger.warn(`No properties found in new contract for ${walletAddress}: ${error.message}`);
+        return { walletAddress, properties: [] };
+      }
+      
       if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
         return { walletAddress, properties: [] };
       }

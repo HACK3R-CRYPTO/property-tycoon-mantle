@@ -189,5 +189,32 @@ contract QuestSystem is Ownable {
     function getTotalQuestsCompleted(address player) public view returns (uint256) {
         return playerProgress[player].totalQuestsCompleted;
     }
+    
+    /**
+     * @notice Owner can update quest reward
+     * @dev Allows changing rewards without redeploying
+     */
+    function updateQuestReward(QuestType questType, uint256 newReward) public onlyOwner {
+        require(quests[questType].questType == questType, "Invalid quest type");
+        quests[questType].reward = newReward;
+    }
+    
+    /**
+     * @notice Owner can enable/disable a quest
+     * @dev Allows disabling quests without redeploying
+     */
+    function setQuestActive(QuestType questType, bool isActive) public onlyOwner {
+        require(quests[questType].questType == questType, "Invalid quest type");
+        quests[questType].isActive = isActive;
+    }
+    
+    /**
+     * @notice Owner can update quest description
+     * @dev Allows updating quest info without redeploying
+     */
+    function updateQuestDescription(QuestType questType, string memory newDescription) public onlyOwner {
+        require(quests[questType].questType == questType, "Invalid quest type");
+        quests[questType].description = newDescription;
+    }
 }
 

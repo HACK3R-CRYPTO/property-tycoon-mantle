@@ -189,7 +189,7 @@ export class LeaderboardService {
     this.logger.log('Database leaderboard empty or invalid, calculating from blockchain...');
     return await this.calculateLeaderboardFromBlockchain(limit);
   }
-  }
+  
 
   private async calculateLeaderboardFromBlockchain(limit: number = 100) {
     if (!this.contractsService.propertyNFT) {
@@ -294,7 +294,20 @@ export class LeaderboardService {
         userAddresses.map(async (user) => {
           try {
             // Get properties from blockchain
-            const tokenIds = await this.contractsService.getOwnerProperties(user.walletAddress);
+            let tokenIds: bigint[] = [];
+            try {
+              const result = await this.contractsService.getOwnerProperties(user.walletAddress);
+              if (Array.isArray(result)) {
+                tokenIds = result;
+              } else if (result && typeof result === 'object' && 'length' in result) {
+                tokenIds = Array.from(result as any);
+              }
+            } catch (error: any) {
+              // If getOwnerProperties fails, user has no properties in new contract
+              this.logger.debug(`No properties found in new contract for ${user.walletAddress}: ${error.message}`);
+              return null; // No properties
+            }
+            
             if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
               this.logger.debug(`No properties found for ${user.walletAddress}`);
               return null; // No properties
@@ -402,30 +415,66 @@ export class LeaderboardService {
     if (this.contractsService.propertyNFT) {
       try {
         // Get actual properties owned by user from blockchain
-        const tokenIds = await this.contractsService.getOwnerProperties(user.walletAddress);
+        let tokenIds: bigint[] = [];
+        try {
+          const result = await this.contractsService.getOwnerProperties(user.walletAddress);
+          if (Array.isArray(result)) {
+            tokenIds = result;
+          } else if (result && typeof result === 'object' && 'length' in result) {
+            tokenIds = Array.from(result as any);
+          }
+        } catch (error: any) {
+          // If getOwnerProperties fails, user has no properties in new contract
+          this.logger.warn(`No properties found in new contract for ${user.walletAddress}: ${error.message}`);
+          // Don't update leaderboard if user has no properties
+          return;
+        }
+        
+        this.logger.log(`🔍 getOwnerProperties returned ${tokenIds.length} properties for ${user.walletAddress}`);
         const contractAddresses = this.getContractAddresses();
         
         if (Array.isArray(tokenIds) && tokenIds.length > 0) {
           // Deduplicate tokenIds
           const uniqueTokenIds = Array.from(new Set(tokenIds.map(id => Number(id))));
           
-          // For each property, get its value from blockchain
+          // For each property, verify current owner FIRST (before getting property data)
+          // This ensures listed properties (owned by marketplace) are excluded
           for (const tokenId of uniqueTokenIds) {
             try {
-              const propertyData = await this.contractsService.getProperty(BigInt(tokenId));
-              if (propertyData) {
-                // Verify current owner is still the user (not marketplace)
-                const currentOwner = await this.contractsService.propertyNFT.ownerOf(tokenId);
-                this.logger.debug(`Property ${tokenId}: owner=${currentOwner}, user=${user.walletAddress}, isMatch=${currentOwner.toLowerCase() === user.walletAddress.toLowerCase()}, isContract=${contractAddresses.includes(currentOwner.toLowerCase())}`);
-                if (currentOwner.toLowerCase() === user.walletAddress.toLowerCase() && 
-                    !contractAddresses.includes(currentOwner.toLowerCase())) {
+              // Check ownerOf FIRST - this is the source of truth
+              let currentOwner: string;
+              try {
+                currentOwner = await this.contractsService.propertyNFT.ownerOf(tokenId);
+              } catch (error) {
+                // ownerOf failed - property doesn't exist in new contract (from old contract)
+                this.logger.warn(`⚠️ Property ${tokenId} doesn't exist in new contract, skipping`);
+                continue; // Skip this property
+              }
+              
+              const isOwnedByUser = currentOwner.toLowerCase() === user.walletAddress.toLowerCase();
+              const isContract = contractAddresses.includes(currentOwner.toLowerCase());
+              
+              this.logger.log(`🔍 Property ${tokenId}: ownerOf=${currentOwner}, user=${user.walletAddress}, isOwnedByUser=${isOwnedByUser}, isContract=${isContract}`);
+              
+              // Only process if owned by user AND not a contract address
+              if (isOwnedByUser && !isContract) {
+                const propertyData = await this.contractsService.getProperty(BigInt(tokenId));
+                if (propertyData) {
                   const value = propertyData.value?.toString() || '0';
                   totalPortfolioValue += BigInt(value);
                   actualPropertyCount++;
+                  this.logger.log(`✅ Property ${tokenId} counted: value=${value}`);
                 }
+              } else {
+                this.logger.log(`❌ Property ${tokenId} excluded: owned by ${currentOwner} (${isContract ? 'contract' : 'different user'})`);
               }
-            } catch (error) {
-              this.logger.warn(`Failed to get property ${tokenId} for leaderboard: ${error.message}`);
+            } catch (error: any) {
+              // If ownerOf fails, property doesn't exist in new contract - skip it
+              if (error.message?.includes('revert') || error.code === 'CALL_EXCEPTION') {
+                this.logger.debug(`Property ${tokenId} doesn't exist in new contract, skipping`);
+              } else {
+                this.logger.warn(`Failed to verify property ${tokenId} for leaderboard: ${error.message}`);
+              }
             }
           }
         }

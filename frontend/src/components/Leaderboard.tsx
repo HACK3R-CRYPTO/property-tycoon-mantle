@@ -26,21 +26,38 @@ export function Leaderboard() {
   const [visitingPortfolio, setVisitingPortfolio] = useState<{ address: string; username?: string } | null>(null);
 
   useEffect(() => {
+    // Load leaderboard immediately
     loadLeaderboard();
     
     // Subscribe to WebSocket for real-time leaderboard updates
-    const socket = (window as any).socket || io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001');
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const socket = (window as any).socket || io(apiUrl);
+    
+    // Ensure socket is connected
+    if (!socket.connected) {
+      socket.connect();
+    }
+    
     socket.emit('subscribe:leaderboard');
+    console.log('📡 Subscribed to leaderboard WebSocket updates');
     
     socket.on('leaderboard:updated', (data: { rankings: LeaderboardEntry[] }) => {
       console.log('📊 Leaderboard updated via WebSocket:', data);
       if (activeTab === 'global' && data.rankings) {
         setLeaderboard(data.rankings);
+        console.log('✅ Updated leaderboard from WebSocket:', data.rankings.length, 'entries');
       }
     });
     
+    // Also refresh periodically (every 5 seconds) to catch any missed updates
+    const refreshInterval = setInterval(() => {
+      console.log('🔄 Periodic leaderboard refresh...');
+      loadLeaderboard();
+    }, 5000);
+    
     return () => {
       socket.off('leaderboard:updated');
+      clearInterval(refreshInterval);
     };
   }, [activeTab]);
 
@@ -50,6 +67,17 @@ export function Leaderboard() {
       if (activeTab === 'global') {
         try {
           const data = await api.get('/leaderboard?limit=100');
+          console.log('📊 Loaded leaderboard from backend:', data.length, 'entries');
+          // Find current user's entry
+          const userEntry = data.find((entry: LeaderboardEntry) => 
+            entry.walletAddress?.toLowerCase() === '0xd2df53d9791e98db221842dd085f4144014bbe2a'.toLowerCase()
+          );
+          if (userEntry) {
+            console.log('👤 Your leaderboard entry:', {
+              propertiesOwned: userEntry.propertiesOwned,
+              totalPortfolioValue: userEntry.totalPortfolioValue,
+            });
+          }
           setLeaderboard(data);
         } catch (error) {
           console.warn('Backend leaderboard unavailable, showing empty leaderboard:', error);

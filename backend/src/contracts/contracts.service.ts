@@ -6,6 +6,7 @@ import GameTokenABI from './abis/GameToken.json';
 import YieldDistributorABI from './abis/YieldDistributor.json';
 import MarketplaceABI from './abis/Marketplace.json';
 import QuestSystemABI from './abis/QuestSystem.json';
+import TokenSwapABI from './abis/TokenSwap.json';
 
 @Injectable()
 export class ContractsService implements OnModuleInit {
@@ -18,6 +19,7 @@ export class ContractsService implements OnModuleInit {
   public yieldDistributor: ethers.Contract;
   public marketplace: ethers.Contract;
   public questSystem: ethers.Contract;
+  public tokenSwap: ethers.Contract;
 
   constructor(private configService: ConfigService) {
     // Don't initialize in constructor - wait for OnModuleInit
@@ -54,6 +56,7 @@ export class ContractsService implements OnModuleInit {
       const yieldDistributorAddress = this.configService.get<string>('YIELD_DISTRIBUTOR_ADDRESS') || process.env.YIELD_DISTRIBUTOR_ADDRESS;
       const marketplaceAddress = this.configService.get<string>('MARKETPLACE_ADDRESS') || process.env.MARKETPLACE_ADDRESS;
       const questSystemAddress = this.configService.get<string>('QUEST_SYSTEM_ADDRESS') || process.env.QUEST_SYSTEM_ADDRESS;
+      const tokenSwapAddress = this.configService.get<string>('TOKEN_SWAP_ADDRESS') || process.env.TOKEN_SWAP_ADDRESS;
 
       this.logger.log(`PropertyNFT Address: ${propertyNFTAddress || 'NOT SET'}`);
 
@@ -115,6 +118,17 @@ export class ContractsService implements OnModuleInit {
           throw new Error('QuestSystem ABI is not an array');
         }
         this.questSystem = new ethers.Contract(questSystemAddress, questSystemAbi, this.wallet);
+      }
+      if (tokenSwapAddress) {
+        let tokenSwapAbi: any = TokenSwapABI;
+        if (!Array.isArray(tokenSwapAbi)) {
+          tokenSwapAbi = (TokenSwapABI as any).default || (TokenSwapABI as any).abi || TokenSwapABI;
+        }
+        if (!Array.isArray(tokenSwapAbi)) {
+          throw new Error('TokenSwap ABI is not an array');
+        }
+        this.tokenSwap = new ethers.Contract(tokenSwapAddress, tokenSwapAbi, this.wallet);
+        this.logger.log(`TokenSwap contract initialized at ${tokenSwapAddress}`);
       }
 
       if (this.propertyNFT) {

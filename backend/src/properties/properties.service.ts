@@ -159,6 +159,46 @@ export class PropertiesService {
       }
     }
 
+    // Filter out listed properties by checking ownerOf on blockchain (source of truth)
+    // Listed properties are owned by the marketplace contract
+    if (this.contractsService.propertyNFT && properties.length > 0) {
+      const marketplaceAddress = this.contractsService.marketplace?.address?.toLowerCase();
+      const contractAddresses = [
+        marketplaceAddress,
+        this.contractsService.yieldDistributor?.address?.toLowerCase(),
+        this.contractsService.questSystem?.address?.toLowerCase(),
+        this.contractsService.propertyNFT?.address?.toLowerCase(),
+        '0x6389d7168029715de118baf51b6d32ee1ebea46b', // Old marketplace
+      ].filter(Boolean) as string[];
+
+      this.logger.log(`🔍 Filtering ${properties.length} properties to exclude listed ones...`);
+      const ownedProperties: typeof properties = [];
+      
+      for (const prop of properties) {
+        try {
+          const currentOwner = await this.contractsService.propertyNFT.ownerOf(prop.tokenId);
+          const ownerLower = currentOwner.toLowerCase();
+          const isOwnedByUser = ownerLower === normalizedAddress;
+          const isContract = contractAddresses.includes(ownerLower);
+          
+          if (isOwnedByUser && !isContract) {
+            ownedProperties.push(prop);
+            this.logger.debug(`✅ Property ${prop.tokenId} is owned by user`);
+          } else {
+            this.logger.log(`❌ Property ${prop.tokenId} excluded: owned by ${currentOwner} (${isContract ? 'contract' : 'different user'})`);
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to check ownerOf for property ${prop.tokenId}: ${error.message}`);
+          // If ownerOf fails, property doesn't exist in NEW contract (it's from old contract)
+          // Exclude it - don't show old properties
+          this.logger.log(`❌ Property ${prop.tokenId} excluded: doesn't exist in new contract (from old contract)`);
+        }
+      }
+      
+      this.logger.log(`✅ Filtered to ${ownedProperties.length} properties actually owned by user (excluded ${properties.length - ownedProperties.length} listed/transferred)`);
+      properties = ownedProperties;
+    }
+
     // Convert BigInt values to strings for JSON serialization
     return properties.map(prop => ({
       ...prop,
@@ -203,18 +243,26 @@ export class PropertiesService {
       }
 
       this.logger.log(`Fetching properties from chain for ${normalizedAddress}...`);
-      let properties: bigint[];
+      let properties: bigint[] = [];
       try {
-        properties = await this.contractsService.getOwnerProperties(walletAddress);
-        // Convert to array if needed
-        if (!Array.isArray(properties)) {
-          this.logger.warn('getOwnerProperties returned non-array, converting...');
-          properties = Array.isArray(properties) ? properties : [];
+        const result = await this.contractsService.getOwnerProperties(walletAddress);
+        // Handle different return types
+        if (Array.isArray(result)) {
+          properties = result;
+        } else if (result && typeof result === 'object' && 'length' in result) {
+          // Convert array-like object to array
+          properties = Array.from(result as any);
+        } else {
+          this.logger.warn(`getOwnerProperties returned unexpected type: ${typeof result}`);
+          properties = [];
         }
         this.logger.log(`Found ${properties.length} properties on-chain for ${normalizedAddress}`);
-      } catch (error) {
-        this.logger.error(`Failed to fetch properties from chain: ${error.message}`, error.stack);
-        throw new Error(`Failed to fetch properties from blockchain: ${error.message}`);
+      } catch (error: any) {
+        // If getOwnerProperties fails, user has no properties in new contract
+        // Return empty array instead of throwing error
+        this.logger.warn(`No properties found in new contract for ${normalizedAddress}: ${error.message}`);
+        this.logger.log(`Returning empty array - user may not have properties yet in new contract`);
+        return [];
       }
       
       // Get or create user
@@ -545,5 +593,52 @@ export class PropertiesService {
       this.logger.error(`Failed to sync all existing properties: ${error.message}`, error.stack);
       throw error;
     }
+  }
+
+  async cleanupOldProperties() {
+    // Clean up properties that don't exist in the new contract
+    // (properties from old contract that fail ownerOf check)
+    if (!this.contractsService.propertyNFT) {
+      this.logger.error('PropertyNFT contract not initialized');
+      throw new Error('Contract not initialized');
+    }
+
+    this.logger.log('🧹 Starting cleanup of old properties (checking against new contract)...');
+    const allProperties = await this.db
+      .select({
+        id: schema.properties.id,
+        tokenId: schema.properties.tokenId,
+      })
+      .from(schema.properties);
+
+    let deleted = 0;
+    const errors: string[] = [];
+
+    for (const prop of allProperties) {
+      try {
+        // Try to get ownerOf - if it fails, property doesn't exist in new contract
+        await this.contractsService.propertyNFT.ownerOf(prop.tokenId);
+        // If successful, property exists in new contract - keep it
+      } catch (error) {
+        // ownerOf failed - property doesn't exist in new contract, delete it
+        try {
+          await this.db
+            .delete(schema.properties)
+            .where(eq(schema.properties.id, prop.id));
+          deleted++;
+          this.logger.log(`🗑️ Deleted property ${prop.tokenId} (doesn't exist in new contract)`);
+        } catch (deleteError: any) {
+          errors.push(`Failed to delete property ${prop.tokenId}: ${deleteError.message}`);
+          this.logger.error(`Failed to delete property ${prop.tokenId}: ${deleteError.message}`);
+        }
+      }
+    }
+
+    this.logger.log(`✅ Cleanup complete: deleted ${deleted} old properties from database`);
+    if (errors.length > 0) {
+      this.logger.warn(`⚠️ ${errors.length} errors during cleanup`);
+    }
+
+    return { deleted, errors };
   }
 }

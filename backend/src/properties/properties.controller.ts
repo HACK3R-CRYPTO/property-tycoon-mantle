@@ -65,4 +65,22 @@ export class PropertiesController {
       };
     }
   }
+
+  @Post('cleanup-old')
+  async cleanupOldProperties() {
+    try {
+      const result = await this.propertiesService.cleanupOldProperties();
+      return {
+        success: true,
+        deleted: result.deleted,
+        message: `Deleted ${result.deleted} properties from old contract`,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || 'Unknown error',
+        message: 'Failed to cleanup old properties. Check backend logs for details.',
+      };
+    }
+  }
 }

@@ -18,22 +18,25 @@ if (typeof window !== 'undefined') {
     fetch('/abis/YieldDistributor.json').then(r => r.json()),
     fetch('/abis/Marketplace.json').then(r => r.json()),
     fetch('/abis/QuestSystem.json').then(r => r.json()),
-  ]).then(([pnft, gt, yd, mp, qs]) => {
+    fetch('/abis/TokenSwap.json').then(r => r.json()).catch(() => null), // Optional, fallback to inline ABI
+  ]).then(([pnft, gt, yd, mp, qs, ts]) => {
     PropertyNFTABI = pnft;
     GameTokenABI = gt;
     YieldDistributorABI = yd;
     MarketplaceABI = mp;
     QuestSystemABI = qs;
+    // TokenSwapABI can use inline ABI if fetch fails
   }).catch(console.error);
 }
 
 // Contract addresses (Mantle Sepolia Testnet)
 export const CONTRACTS = {
-  PropertyNFT: (process.env.NEXT_PUBLIC_PROPERTY_NFT_ADDRESS || '0x0AE7119c7187D88643fb7B409937B68828eE733D') as Address,
-  GameToken: (process.env.NEXT_PUBLIC_GAME_TOKEN_ADDRESS || '0x32D9a9b9e241Da421f34786De0B39fD34D1EfeA8') as Address,
-  YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0x8CaD66cd3CcF6038879fa7bEC68d4F808c92A3cd') as Address,
+  PropertyNFT: (process.env.NEXT_PUBLIC_PROPERTY_NFT_ADDRESS || '0xe1fF4f5f79D843208A0c70a0634a0CE4F034D697') as Address,
+  GameToken: (process.env.NEXT_PUBLIC_GAME_TOKEN_ADDRESS || '0x7a809e1B20e3956eDD263e04244d98D82Fb7F711') as Address,
+  YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0xaeDF1F2cDD6f06bcf00aFacf51a4F6af328630F4') as Address,
   Marketplace: (process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || '0xe9E855ff6EB78055AaE90631468BfC948A1446Bb') as Address,
-  QuestSystem: (process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS || '0xb5a595A6cd30D1798387A2c781E0646FCA8c4AeD') as Address,
+  QuestSystem: (process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS || '0x1A9890B59E7DD74dA063adB3f9f6262379fE5c2A') as Address,
+  TokenSwap: (process.env.NEXT_PUBLIC_TOKEN_SWAP_ADDRESS || '0xd3EB32149C505e67dE96d854B7AC4345dFE69f2e') as Address,
 } as const;
 
 // Fallback inline ABIs for critical functions (used until dynamic ABIs load)
@@ -41,6 +44,13 @@ export const PROPERTY_NFT_ABI = [
   {
     inputs: [{ name: 'to', type: 'address' }, { name: 'propertyType', type: 'uint8' }, { name: 'value', type: 'uint256' }, { name: 'yieldRate', type: 'uint256' }],
     name: 'mintProperty',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'propertyType', type: 'uint8' }, { name: 'value', type: 'uint256' }, { name: 'yieldRate', type: 'uint256' }],
+    name: 'purchaseProperty',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'nonpayable',
     type: 'function',
@@ -340,4 +350,35 @@ export async function calculateYield(propertyId: bigint) {
     args: [propertyId],
   });
 }
+
+export const TOKEN_SWAP_ABI = [
+  {
+    inputs: [],
+    name: 'buyTokens',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'mntAmount', type: 'uint256' }],
+    name: 'getTycoonAmount',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'pure',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'getTokenBalance',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'EXCHANGE_RATE',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
 

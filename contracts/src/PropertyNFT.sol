@@ -4,8 +4,13 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract PropertyNFT is ERC721, Ownable, ReentrancyGuard {
+    IERC20 public gameToken;
+    
+    // Property costs in TYCOON tokens (with 18 decimals)
+    mapping(PropertyType => uint256) public propertyCosts;
     uint256 private _tokenIdCounter;
     
     enum PropertyType { Residential, Commercial, Industrial, Luxury }
@@ -29,8 +34,77 @@ contract PropertyNFT is ERC721, Ownable, ReentrancyGuard {
     event PropertyLinkedToRWA(uint256 indexed tokenId, address rwaContract, uint256 rwaTokenId);
     event PropertyUpgraded(uint256 indexed tokenId, PropertyType newType, uint256 newValue);
     event PropertiesBatchMinted(address indexed owner, uint256[] tokenIds);
+    event PropertyPurchased(uint256 indexed tokenId, address indexed buyer, PropertyType propertyType, uint256 cost);
     
-    constructor() ERC721("PropertyNFT", "PROP") Ownable(msg.sender) {}
+    constructor() ERC721("PropertyNFT", "PROP") Ownable(msg.sender) {
+        // Set property costs (in TYCOON tokens with 18 decimals)
+        propertyCosts[PropertyType.Residential] = 100 * 10**18;  // 100 TYCOON
+        propertyCosts[PropertyType.Commercial] = 200 * 10**18;  // 200 TYCOON
+        propertyCosts[PropertyType.Industrial] = 500 * 10**18; // 500 TYCOON
+        propertyCosts[PropertyType.Luxury] = 1000 * 10**18;     // 1000 TYCOON
+    }
+    
+    /**
+     * @notice Set the game token address (for existing deployments)
+     * @dev Only owner can call this - allows updating existing contract
+     */
+    function setGameToken(address _gameToken) public onlyOwner {
+        gameToken = IERC20(_gameToken);
+    }
+    
+    /**
+     * @notice Purchase and mint a property by paying TYCOON tokens
+     * @param propertyType The type of property to purchase
+     * @param value The property value (used for yield calculation)
+     * @param yieldRate The yield rate in basis points (e.g., 500 = 5%)
+     */
+    function purchaseProperty(
+        PropertyType propertyType,
+        uint256 value,
+        uint256 yieldRate
+    ) public nonReentrant returns (uint256) {
+        require(address(gameToken) != address(0), "Game token not set");
+        uint256 cost = propertyCosts[propertyType];
+        require(cost > 0, "Invalid property type");
+        
+        // Check user has enough TYCOON tokens
+        require(gameToken.balanceOf(msg.sender) >= cost, "Insufficient TYCOON balance");
+        
+        // Transfer TYCOON tokens from user to contract
+        require(gameToken.transferFrom(msg.sender, address(this), cost), "Token transfer failed");
+        
+        // Mint property to user
+        uint256 tokenId = _tokenIdCounter++;
+        _safeMint(msg.sender, tokenId);
+        
+        properties[tokenId] = Property({
+            propertyType: propertyType,
+            value: value,
+            yieldRate: yieldRate,
+            rwaContract: address(0),
+            rwaTokenId: 0,
+            totalYieldEarned: 0,
+            createdAt: block.timestamp,
+            isActive: true
+        });
+        
+        ownerProperties[msg.sender].push(tokenId);
+        propertyTypeCounts[propertyType]++;
+        
+        emit PropertyCreated(tokenId, msg.sender, propertyType, value);
+        emit PropertyPurchased(tokenId, msg.sender, propertyType, cost);
+        
+        return tokenId;
+    }
+    
+    /**
+     * @notice Owner can withdraw TYCOON tokens collected from property purchases
+     */
+    function withdrawTokens() public onlyOwner {
+        uint256 balance = gameToken.balanceOf(address(this));
+        require(balance > 0, "No tokens to withdraw");
+        require(gameToken.transfer(owner(), balance), "Token transfer failed");
+    }
     
     function mintProperty(
         address to,

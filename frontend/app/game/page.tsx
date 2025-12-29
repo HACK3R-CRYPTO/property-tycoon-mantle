@@ -14,7 +14,8 @@ import { GameGuide } from '@/components/game/GameGuide';
 import { Guilds } from '@/components/Guilds';
 import { Marketplace } from '@/components/Marketplace';
 import { Quests } from '@/components/Quests';
-import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target } from 'lucide-react';
+import { TokenPurchase } from '@/components/TokenPurchase';
+import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import Link from 'next/link';
@@ -50,6 +51,7 @@ export default function GamePage() {
   const [showGuilds, setShowGuilds] = useState(false);
   const [showMarketplace, setShowMarketplace] = useState(false);
   const [showQuests, setShowQuests] = useState(false);
+  const [showTokenPurchase, setShowTokenPurchase] = useState(false);
   const [showSellProperty, setShowSellProperty] = useState(false);
   const [propertyToSell, setPropertyToSell] = useState<Property | null>(null);
   const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0)); // Real-time estimated yield
@@ -62,6 +64,7 @@ export default function GamePage() {
   const [isClaiming, setIsClaiming] = useState(false);
   const [tokenBalanceValue, setTokenBalanceValue] = useState<bigint>(BigInt(0));
   const [otherPlayersProperties, setOtherPlayersProperties] = useState<Array<Property & { owner: string; isOwned: boolean }>>([]);
+  const [pendingPropertyType, setPendingPropertyType] = useState<'Residential' | 'Commercial' | 'Industrial' | 'Luxury' | null>(null);
 
   // Load properties function - FROM BACKEND (synced from blockchain)
   const loadProperties = useCallback(async () => {
@@ -351,8 +354,8 @@ export default function GamePage() {
       try {
         const fetchedIds = await getOwnerProperties(address as `0x${string}`);
         tokenIds = Array.isArray(fetchedIds) ? [...fetchedIds] : [];
-        
-        if (tokenIds.length === 0) {
+      
+      if (tokenIds.length === 0) {
           setProperties([]);
           setTotalPendingYield(BigInt(0));
           setTotalYieldEarned(BigInt(0));
@@ -371,15 +374,51 @@ export default function GamePage() {
       // Deduplicate tokenIds
       const uniqueTokenIds = Array.from(new Set(tokenIds.map(id => Number(id))));
       
-      // Map properties from blockchain
+      // Filter out listed properties by checking ownerOf for each property
+      // Listed properties are owned by the marketplace contract
+      const marketplaceAddress = CONTRACTS.Marketplace.toLowerCase();
+      const ownedTokenIds: number[] = [];
+      
+      console.log(`🔍 Checking ownership for ${uniqueTokenIds.length} properties...`);
+      for (const tokenId of uniqueTokenIds) {
+        try {
+          const currentOwner = await readContract(config, {
+            address: CONTRACTS.PropertyNFT,
+            abi: PROPERTY_NFT_ABI,
+            functionName: 'ownerOf',
+            args: [BigInt(tokenId)],
+          }) as `0x${string}`;
+          
+          const ownerLower = currentOwner.toLowerCase();
+          const isOwnedByUser = ownerLower === address.toLowerCase();
+          const isListed = ownerLower === marketplaceAddress;
+          
+          console.log(`Property ${tokenId}: owner=${currentOwner}, isOwnedByUser=${isOwnedByUser}, isListed=${isListed}`);
+          
+          if (isOwnedByUser && !isListed) {
+            ownedTokenIds.push(tokenId);
+            console.log(`✅ Property ${tokenId} is owned by user`);
+          } else {
+            console.log(`❌ Property ${tokenId} excluded: ${isListed ? 'listed (owned by marketplace)' : 'owned by different address'}`);
+          }
+      } catch (error) {
+          console.warn(`Failed to check ownerOf for property ${tokenId}:`, error);
+          // If ownerOf fails, include it (better to show than hide)
+          ownedTokenIds.push(tokenId);
+        }
+      }
+      
+      console.log(`✅ Filtered to ${ownedTokenIds.length} properties actually owned by user (excluded ${uniqueTokenIds.length - ownedTokenIds.length} listed/transferred)`);
+      
+      // Map properties from blockchain (only owned ones)
       const mappedProperties: Property[] = await Promise.all(
-        uniqueTokenIds.map(async (tokenId: number, index: number) => {
+        ownedTokenIds.map(async (tokenId: number, index: number) => {
           try {
             const propData = await readContract(config, {
-              address: CONTRACTS.PropertyNFT,
-              abi: PROPERTY_NFT_ABI,
-              functionName: 'getProperty',
-              args: [BigInt(tokenId)],
+            address: CONTRACTS.PropertyNFT,
+            abi: PROPERTY_NFT_ABI,
+            functionName: 'getProperty',
+            args: [BigInt(tokenId)],
             }) as {
               propertyType: bigint | number;
               value: bigint;
@@ -392,19 +431,19 @@ export default function GamePage() {
             };
 
             // Convert yieldRate
-            const yieldRateRaw = propData.yieldRate;
-            const yieldRateBigInt = typeof yieldRateRaw === 'bigint' 
-              ? yieldRateRaw 
-              : BigInt(String(yieldRateRaw));
-            let yieldRateValue = Number(yieldRateBigInt);
-            
-            if (yieldRateValue < 100 && yieldRateValue > 0) {
-              yieldRateValue = yieldRateValue * 100;
-            } else if (yieldRateValue > 1e15) {
-              yieldRateValue = Number(yieldRateBigInt) / 1e18 * 100;
-            }
-            
-            if (yieldRateValue < 100) {
+          const yieldRateRaw = propData.yieldRate;
+          const yieldRateBigInt = typeof yieldRateRaw === 'bigint' 
+            ? yieldRateRaw 
+            : BigInt(String(yieldRateRaw));
+          let yieldRateValue = Number(yieldRateBigInt);
+          
+          if (yieldRateValue < 100 && yieldRateValue > 0) {
+            yieldRateValue = yieldRateValue * 100;
+          } else if (yieldRateValue > 1e15) {
+            yieldRateValue = Number(yieldRateBigInt) / 1e18 * 100;
+          }
+          
+          if (yieldRateValue < 100) {
               yieldRateValue = 500;
             }
 
@@ -470,17 +509,17 @@ export default function GamePage() {
             });
 
             const property = {
-              id: `prop-${tokenId}`,
-              tokenId: tokenId,
-              propertyType: ['Residential', 'Commercial', 'Industrial', 'Luxury'][Number(propData.propertyType)] as Property['propertyType'],
-              value: BigInt(propData.value.toString()),
+            id: `prop-${tokenId}`,
+            tokenId: tokenId,
+            propertyType: ['Residential', 'Commercial', 'Industrial', 'Luxury'][Number(propData.propertyType)] as Property['propertyType'],
+            value: BigInt(propData.value.toString()),
               yieldRate: yieldRateValue,
-              totalYieldEarned: BigInt(propData.totalYieldEarned.toString()),
+            totalYieldEarned: BigInt(propData.totalYieldEarned.toString()),
               createdAt: createdAtDate, // Store creation date for yield calculation
               x: index % 10,
               y: Math.floor(index / 10),
-              rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' ? propData.rwaContract : undefined,
-              rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId) : undefined,
+            rwaContract: propData.rwaContract !== '0x0000000000000000000000000000000000000000' ? propData.rwaContract : undefined,
+            rwaTokenId: propData.rwaTokenId ? Number(propData.rwaTokenId) : undefined,
               isOwned: true,
             };
             
@@ -658,25 +697,25 @@ export default function GamePage() {
       const loadBalance = async () => {
         try {
           const balance = await readContract(config, {
-            address: CONTRACTS.GameToken,
-            abi: [
-              {
-                inputs: [{ name: 'account', type: 'address' }],
-                name: 'balanceOf',
-                outputs: [{ name: '', type: 'uint256' }],
-                stateMutability: 'view',
-                type: 'function',
-              },
-            ],
-            functionName: 'balanceOf',
-            args: [address],
+        address: CONTRACTS.GameToken,
+        abi: [
+          {
+            inputs: [{ name: 'account', type: 'address' }],
+            name: 'balanceOf',
+            outputs: [{ name: '', type: 'uint256' }],
+            stateMutability: 'view',
+            type: 'function',
+          },
+        ],
+        functionName: 'balanceOf',
+        args: [address],
           }) as bigint;
           console.log('💰 Manual balance fetch:', balance.toString());
-          setTokenBalanceValue(BigInt(balance.toString()));
-        } catch (error) {
+      setTokenBalanceValue(BigInt(balance.toString()));
+    } catch (error) {
           console.error('❌ Failed to load token balance:', error);
-          setTokenBalanceValue(BigInt(0));
-        }
+      setTokenBalanceValue(BigInt(0));
+    }
       };
       loadBalance();
     }
@@ -684,6 +723,68 @@ export default function GamePage() {
 
   // Mint property transaction
   const { writeContract: writeMint, data: mintHash, isPending: isMintPending } = useWriteContract();
+  const { writeContract: writeApprove, data: approveHash, isPending: isApprovePending } = useWriteContract();
+  
+  // Check TYCOON token allowance
+  const { data: tokenAllowance } = useReadContract({
+    address: CONTRACTS.GameToken,
+    abi: [
+      {
+        name: 'allowance',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [
+          { name: 'owner', type: 'address' },
+          { name: 'spender', type: 'address' },
+        ],
+        outputs: [{ name: '', type: 'uint256' }],
+      },
+    ],
+    functionName: 'allowance',
+    args: address ? [address, CONTRACTS.PropertyNFT] : undefined,
+    query: { enabled: !!address },
+  });
+  
+  // Wait for approve transaction
+  const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt({
+    hash: approveHash,
+  });
+  
+  // Auto-purchase property after approval succeeds
+  useEffect(() => {
+    if (isApproveSuccess && pendingPropertyType && address) {
+      const propertyTypes: Record<string, number> = {
+        Residential: 0,
+        Commercial: 1,
+        Industrial: 2,
+        Luxury: 3,
+      };
+      
+      const propertyCosts: Record<string, bigint> = {
+        Residential: parseEther('100'),
+        Commercial: parseEther('200'),
+        Industrial: parseEther('500'),
+        Luxury: parseEther('1000'),
+      };
+      
+      const yieldRates: Record<string, bigint> = {
+        Residential: BigInt(500),
+        Commercial: BigInt(800),
+        Industrial: BigInt(1200),
+        Luxury: BigInt(1500),
+      };
+      
+      console.log(`Approval successful, purchasing ${pendingPropertyType} property...`);
+      writeMint({
+        address: CONTRACTS.PropertyNFT,
+        abi: PROPERTY_NFT_ABI,
+        functionName: 'purchaseProperty',
+        args: [propertyTypes[pendingPropertyType], propertyCosts[pendingPropertyType], yieldRates[pendingPropertyType]],
+      });
+      setPendingPropertyType(null);
+      setShowBuildMenu(false);
+    }
+  }, [isApproveSuccess, pendingPropertyType, address, writeMint]);
   
   // Claim yield transaction
   const { writeContract: writeClaim, data: claimHash, isPending: isClaimPending } = useWriteContract();
@@ -720,7 +821,7 @@ export default function GamePage() {
             const x = propertyCount % 10;
             const y = Math.floor(propertyCount / 10);
             
-            console.log(`Auto-placed property ${latestTokenId} at (${x}, ${y})`);
+                  console.log(`Auto-placed property ${latestTokenId} at (${x}, ${y})`);
             
             // Optionally save coordinates to backend (non-blocking)
             api.put(`/properties/${latestTokenId}/coordinates`, { x, y }).catch(() => {
@@ -1004,13 +1105,13 @@ export default function GamePage() {
               How to Play
             </Button>
             <Link href="/leaderboard">
-              <Button
-                variant="outline"
-                className="border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
-              >
-                <Trophy className="w-4 h-4 mr-2" />
-                Leaderboard
-              </Button>
+            <Button
+              variant="outline"
+              className="border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
+            >
+              <Trophy className="w-4 h-4 mr-2" />
+              Leaderboard
+            </Button>
             </Link>
             <Button
               onClick={() => setShowGuilds(!showGuilds)}
@@ -1078,6 +1179,20 @@ export default function GamePage() {
             />
 
             <Button
+              onClick={() => setShowTokenPurchase(!showTokenPurchase)}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 mb-2"
+            >
+              <Coins className="w-4 h-4 mr-2" />
+              {showTokenPurchase ? 'Close Token Purchase' : 'Buy TYCOON Tokens'}
+            </Button>
+
+            {showTokenPurchase && (
+              <div className="mb-4">
+                <TokenPurchase />
+              </div>
+            )}
+
+            <Button
               onClick={() => setShowBuildMenu(!showBuildMenu)}
               className="w-full bg-blue-600 hover:bg-blue-700"
             >
@@ -1116,15 +1231,46 @@ export default function GamePage() {
 
                   try {
                     setIsMinting(true);
-                    await writeMint({
+                    const cost = propertyCosts[type];
+                    const currentAllowance = (tokenAllowance as bigint) || BigInt(0);
+                    
+                    // If allowance is insufficient, approve first
+                    if (currentAllowance < cost) {
+                      console.log(`Approving ${cost.toString()} TYCOON tokens for PropertyNFT...`);
+                      setPendingPropertyType(type); // Store property type for auto-purchase after approval
+                      writeApprove({
+                        address: CONTRACTS.GameToken,
+                        abi: [
+                          {
+                            name: 'approve',
+                            type: 'function',
+                            stateMutability: 'nonpayable',
+                            inputs: [
+                              { name: 'spender', type: 'address' },
+                              { name: 'amount', type: 'uint256' },
+                            ],
+                            outputs: [{ name: '', type: 'bool' }],
+                          },
+                        ],
+                        functionName: 'approve',
+                        args: [CONTRACTS.PropertyNFT, cost],
+                      });
+                      // Wait for approval to complete before purchasing
+                      // The useEffect hook will handle the purchase after approval succeeds
+                      return;
+                    }
+                    
+                    // Purchase property (this will transfer TYCOON tokens and mint NFT)
+                    console.log(`Purchasing ${type} property for ${cost.toString()} TYCOON...`);
+                    writeMint({
                       address: CONTRACTS.PropertyNFT,
                       abi: PROPERTY_NFT_ABI,
-                      functionName: 'mintProperty',
-                      args: [address, propertyTypes[type], propertyCosts[type], yieldRates[type]],
+                      functionName: 'purchaseProperty',
+                      args: [propertyTypes[type], propertyCosts[type], yieldRates[type]],
                     });
                     setShowBuildMenu(false);
                   } catch (error) {
-                    console.error('Failed to mint property:', error);
+                    console.error('Failed to purchase property:', error);
                     setIsMinting(false);
                   }
                 }}
@@ -1199,8 +1345,8 @@ export default function GamePage() {
                       }
                     }}
                   />
-                  ))}
-                </div>
+                ))}
+              </div>
               </ScrollArea>
             )}
           </div>
