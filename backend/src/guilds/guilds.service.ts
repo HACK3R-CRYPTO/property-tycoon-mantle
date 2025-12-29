@@ -236,49 +236,60 @@ export class GuildsService {
   }
 
   async getGuild(guildId: string) {
-    const [guild] = await this.db
-      .select({
-        id: schema.guilds.id,
-        name: schema.guilds.name,
-        description: schema.guilds.description,
-        ownerId: schema.guilds.ownerId,
-        totalMembers: schema.guilds.totalMembers,
-        totalPortfolioValue: schema.guilds.totalPortfolioValue,
-        totalYieldEarned: schema.guilds.totalYieldEarned,
-        isPublic: schema.guilds.isPublic,
-        createdAt: schema.guilds.createdAt,
-        owner: {
-          walletAddress: schema.users.walletAddress,
-          username: schema.users.username,
-        },
-      })
-      .from(schema.guilds)
-      .leftJoin(schema.users, eq(schema.guilds.ownerId, schema.users.id))
-      .where(eq(schema.guilds.id, guildId))
-      .limit(1);
+    try {
+      const [guild] = await this.db
+        .select({
+          id: schema.guilds.id,
+          name: schema.guilds.name,
+          description: schema.guilds.description,
+          ownerId: schema.guilds.ownerId,
+          totalMembers: schema.guilds.totalMembers,
+          totalPortfolioValue: schema.guilds.totalPortfolioValue,
+          totalYieldEarned: schema.guilds.totalYieldEarned,
+          isPublic: schema.guilds.isPublic,
+          createdAt: schema.guilds.createdAt,
+          owner: {
+            walletAddress: schema.users.walletAddress,
+            username: schema.users.username,
+          },
+        })
+        .from(schema.guilds)
+        .leftJoin(schema.users, eq(schema.guilds.ownerId, schema.users.id))
+        .where(eq(schema.guilds.id, guildId))
+        .limit(1);
 
-    if (!guild) {
-      throw new NotFoundException('Guild not found');
+      if (!guild) {
+        throw new NotFoundException('Guild not found');
+      }
+
+      // Get members
+      const members = await this.db
+        .select({
+          id: schema.guildMembers.id,
+          userId: schema.guildMembers.userId,
+          role: schema.guildMembers.role,
+          contribution: schema.guildMembers.contribution,
+          joinedAt: schema.guildMembers.joinedAt,
+          user: {
+            walletAddress: schema.users.walletAddress,
+            username: schema.users.username,
+          },
+        })
+        .from(schema.guildMembers)
+        .leftJoin(schema.users, eq(schema.guildMembers.userId, schema.users.id))
+        .where(eq(schema.guildMembers.guildId, guildId));
+
+      // Convert BigInt values to strings for JSON serialization
+      return {
+        ...guild,
+        totalPortfolioValue: guild.totalPortfolioValue ? String(guild.totalPortfolioValue) : '0',
+        totalYieldEarned: guild.totalYieldEarned ? String(guild.totalYieldEarned) : '0',
+        members,
+      };
+    } catch (error) {
+      this.logger.error(`Error getting guild ${guildId}: ${error.message}`, error.stack);
+      throw error;
     }
-
-    // Get members
-    const members = await this.db
-      .select({
-        id: schema.guildMembers.id,
-        userId: schema.guildMembers.userId,
-        role: schema.guildMembers.role,
-        contribution: schema.guildMembers.contribution,
-        joinedAt: schema.guildMembers.joinedAt,
-        user: {
-          walletAddress: schema.users.walletAddress,
-          username: schema.users.username,
-        },
-      })
-      .from(schema.guildMembers)
-      .leftJoin(schema.users, eq(schema.guildMembers.userId, schema.users.id))
-      .where(eq(schema.guildMembers.guildId, guildId));
-
-    return { ...guild, members };
   }
 
   async getUserGuild(userId: string) {
@@ -296,18 +307,24 @@ export class GuildsService {
   }
 
   async getUserGuildByWallet(walletAddress: string) {
-    // Get user by wallet address (don't auto-create for read operations)
-    const [user] = await this.db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.walletAddress, walletAddress))
-      .limit(1);
+    try {
+      // Get user by wallet address (don't auto-create for read operations)
+      const [user] = await this.db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.walletAddress, walletAddress))
+        .limit(1);
 
-    if (!user) {
-      return null; // User doesn't exist, so no guild
+      if (!user) {
+        return null; // User doesn't exist, so no guild
+      }
+
+      const guild = await this.getUserGuild(user.id);
+      return guild;
+    } catch (error) {
+      this.logger.error(`Error getting user guild by wallet ${walletAddress}: ${error.message}`, error.stack);
+      throw error;
     }
-
-    return this.getUserGuild(user.id);
   }
 
   async getGuildLeaderboard(limit: number = 20) {
