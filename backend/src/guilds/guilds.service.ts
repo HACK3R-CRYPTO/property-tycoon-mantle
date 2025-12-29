@@ -282,14 +282,10 @@ export class GuildsService {
       // Convert BigInt values to strings for JSON serialization
       const members = membersRaw.map(member => {
         // Convert contribution BigInt to string
-        const contribution = member.contribution;
         let contributionStr = '0';
-        if (contribution !== null && contribution !== undefined) {
-          if (typeof contribution === 'bigint') {
-            contributionStr = contribution.toString();
-          } else {
-            contributionStr = String(contribution);
-          }
+        if (member.contribution !== null && member.contribution !== undefined) {
+          // contribution is defined as bigint in schema, so it will be a BigInt
+          contributionStr = String(member.contribution);
         }
         
         return {
@@ -302,24 +298,14 @@ export class GuildsService {
         };
       });
 
-      // Ensure all numeric fields are strings
-      let totalPortfolioValueStr = '0';
-      if (guild.totalPortfolioValue) {
-        if (typeof guild.totalPortfolioValue === 'bigint') {
-          totalPortfolioValueStr = guild.totalPortfolioValue.toString();
-        } else {
-          totalPortfolioValueStr = String(guild.totalPortfolioValue);
-        }
-      }
+      // Ensure all numeric fields are strings (they come from database as strings for NUMERIC type)
+      const totalPortfolioValueStr = guild.totalPortfolioValue 
+        ? String(guild.totalPortfolioValue) 
+        : '0';
       
-      let totalYieldEarnedStr = '0';
-      if (guild.totalYieldEarned) {
-        if (typeof guild.totalYieldEarned === 'bigint') {
-          totalYieldEarnedStr = guild.totalYieldEarned.toString();
-        } else {
-          totalYieldEarnedStr = String(guild.totalYieldEarned);
-        }
-      }
+      const totalYieldEarnedStr = guild.totalYieldEarned 
+        ? String(guild.totalYieldEarned) 
+        : '0';
 
       return {
         id: guild.id,
@@ -368,7 +354,22 @@ export class GuildsService {
       }
 
       const guild = await this.getUserGuild(user.id);
-      return guild;
+      
+      // Ensure all BigInt values are converted to strings
+      if (guild) {
+        // getGuild already converts BigInts, but let's ensure it's safe
+        return {
+          ...guild,
+          totalPortfolioValue: String(guild.totalPortfolioValue || '0'),
+          totalYieldEarned: String(guild.totalYieldEarned || '0'),
+          members: guild.members?.map(m => ({
+            ...m,
+            contribution: String(m.contribution || '0'),
+          })) || [],
+        };
+      }
+      
+      return null;
     } catch (error) {
       this.logger.error(`Error getting user guild by wallet ${walletAddress}: ${error.message}`, error.stack);
       throw error;
