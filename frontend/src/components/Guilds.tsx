@@ -56,13 +56,21 @@ export function Guilds() {
       // Get guild by wallet address directly
       const guildResponse = await api.get(`/guilds/wallet/${address.toLowerCase()}`)
       console.log('Loaded my guild:', guildResponse)
-      setMyGuild(guildResponse)
-    } catch (error: any) {
-      // User might not be in a guild yet (404 is expected)
-      if (error.response?.status !== 404) {
-        console.error('Failed to load my guild:', error)
+      if (guildResponse && guildResponse.id) {
+        setMyGuild(guildResponse)
+      } else {
+        setMyGuild(null)
       }
-      setMyGuild(null)
+    } catch (error: any) {
+      // User might not be in a guild yet (404 is expected, 500 means server error)
+      if (error.response?.status === 404) {
+        // Not in a guild - this is normal
+        setMyGuild(null)
+      } else {
+        // Other error (500, etc.) - log it but don't block UI
+        console.error('Failed to load my guild:', error)
+        setMyGuild(null)
+      }
     }
   }
 
@@ -120,7 +128,11 @@ export function Guilds() {
       return
     }
     
-    // Check if already in a guild
+    // First, check if we're already in a guild by reloading myGuild
+    // This ensures we have the latest state
+    await loadMyGuild()
+    
+    // Check if already in a guild (after reloading)
     if (myGuild) {
       alert(`You are already a member of ${myGuild.name}. Leave it first to join another guild.`)
       return
@@ -141,7 +153,7 @@ export function Guilds() {
       // If error says "already a member", reload myGuild to update UI
       if (errorMessage.includes('already a member')) {
         await loadMyGuild()
-        // Don't show error alert if user is already in the guild
+        alert(`You are already a member of a guild. Please refresh the page or leave your current guild first.`)
         return
       }
       
