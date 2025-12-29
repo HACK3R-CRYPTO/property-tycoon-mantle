@@ -220,6 +220,21 @@ export class GuildsService {
     return { success: true };
   }
 
+  async leaveGuildByWallet(walletAddress: string, guildId: string) {
+    // Get user by wallet address
+    const [user] = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.walletAddress, walletAddress))
+      .limit(1);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.leaveGuild(user.id, guildId);
+  }
+
   async getGuild(guildId: string) {
     const [guild] = await this.db
       .select({

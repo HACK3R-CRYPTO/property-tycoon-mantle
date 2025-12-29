@@ -66,8 +66,19 @@ export class GuildsController {
   @Post(':id/leave')
   @ApiOperation({ summary: 'Leave a guild' })
   @ApiResponse({ status: 200, description: 'Left guild successfully' })
-  async leaveGuild(@Param('id') id: string, @Body('userId') userId: string) {
-    return this.guildsService.leaveGuild(userId, id);
+  async leaveGuild(
+    @Param('id') id: string, 
+    @Body('walletAddress') walletAddress?: string,
+    @Body('userId') userId?: string,
+  ) {
+    // Support both walletAddress and userId for backward compatibility
+    if (walletAddress) {
+      return this.guildsService.leaveGuildByWallet(walletAddress.toLowerCase(), id);
+    }
+    if (userId) {
+      return this.guildsService.leaveGuild(userId, id);
+    }
+    throw new Error('Either walletAddress or userId is required');
   }
 
   @Get('user/:userId')

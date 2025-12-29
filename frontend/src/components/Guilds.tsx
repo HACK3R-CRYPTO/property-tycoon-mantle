@@ -61,6 +61,13 @@ export function Guilds() {
 
   const createGuild = async () => {
     if (!guildName.trim() || !address) return
+    
+    // Check if already in a guild
+    if (myGuild) {
+      alert(`You are already a member of ${myGuild.name}. Leave it first to create a new guild.`)
+      return
+    }
+    
     try {
       await api.post('/guilds', {
         walletAddress: address.toLowerCase(),
@@ -75,6 +82,28 @@ export function Guilds() {
     } catch (error: any) {
       console.error('Failed to create guild:', error)
       alert(error.response?.data?.message || 'Failed to create guild')
+    }
+  }
+
+  const leaveGuild = async (guildId: string) => {
+    if (!address || !isConnected) {
+      alert('Please connect your wallet first')
+      return
+    }
+    
+    if (!confirm(`Are you sure you want to leave ${myGuild?.name || 'this guild'}?`)) {
+      return
+    }
+    
+    try {
+      await api.post(`/guilds/${guildId}/leave`, {
+        walletAddress: address.toLowerCase(),
+      })
+      await Promise.all([loadGuilds(), loadMyGuild()])
+      alert('Successfully left guild!')
+    } catch (error: any) {
+      console.error('Failed to leave guild:', error)
+      alert(error.response?.data?.message || 'Failed to leave guild')
     }
   }
 
@@ -126,10 +155,17 @@ export function Guilds() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">Guilds</h2>
         <Button
-          onClick={() => setShowCreateForm(!showCreateForm)}
+          onClick={() => {
+            if (myGuild) {
+              alert(`You are already a member of ${myGuild.name}. Leave it first to create a new guild.`)
+              return
+            }
+            setShowCreateForm(!showCreateForm)
+          }}
           variant="outline"
           size="sm"
           className="border-green-500/50 text-green-400 hover:bg-green-500/10"
+          disabled={!!myGuild}
         >
           <Plus className="w-4 h-4 mr-2" />
           Create Guild
@@ -142,20 +178,31 @@ export function Guilds() {
             <CardTitle className="text-white">Create New Guild</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {myGuild && (
+              <div className="bg-yellow-500/10 border border-yellow-500/50 rounded p-3 text-sm text-yellow-400">
+                You are already a member of {myGuild.name}. Leave it first to create a new guild.
+              </div>
+            )}
             <Input
               placeholder="Guild name"
               value={guildName}
               onChange={(e) => setGuildName(e.target.value)}
               className="bg-gray-900 border-white/10 text-white"
+              disabled={!!myGuild}
             />
             <Input
               placeholder="Description (optional)"
               value={guildDescription}
               onChange={(e) => setGuildDescription(e.target.value)}
               className="bg-gray-900 border-white/10 text-white"
+              disabled={!!myGuild}
             />
             <div className="flex gap-2">
-              <Button onClick={createGuild} className="bg-green-500 hover:bg-green-600">
+              <Button 
+                onClick={createGuild} 
+                className="bg-green-500 hover:bg-green-600"
+                disabled={!!myGuild}
+              >
                 Create
               </Button>
               <Button
@@ -186,6 +233,14 @@ export function Guilds() {
                   <span>{myGuild.totalMembers || myGuild.members?.length || 0} members</span>
                 </div>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-500/50 text-red-400 hover:bg-red-500/10"
+                onClick={() => leaveGuild(myGuild.id)}
+              >
+                Leave Guild
+              </Button>
             </div>
           </CardContent>
         </Card>
