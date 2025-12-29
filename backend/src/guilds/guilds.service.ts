@@ -263,7 +263,7 @@ export class GuildsService {
       }
 
       // Get members
-      const members = await this.db
+      const membersRaw = await this.db
         .select({
           id: schema.guildMembers.id,
           userId: schema.guildMembers.userId,
@@ -280,6 +280,11 @@ export class GuildsService {
         .where(eq(schema.guildMembers.guildId, guildId));
 
       // Convert BigInt values to strings for JSON serialization
+      const members = membersRaw.map(member => ({
+        ...member,
+        contribution: member.contribution ? String(member.contribution) : '0',
+      }));
+
       return {
         ...guild,
         totalPortfolioValue: guild.totalPortfolioValue ? String(guild.totalPortfolioValue) : '0',
