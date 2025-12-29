@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { VisitPortfolio } from './VisitPortfolio';
+import { io, Socket } from 'socket.io-client';
 
 interface LeaderboardEntry {
   rank: number;
@@ -26,6 +27,21 @@ export function Leaderboard() {
 
   useEffect(() => {
     loadLeaderboard();
+    
+    // Subscribe to WebSocket for real-time leaderboard updates
+    const socket = (window as any).socket || io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001');
+    socket.emit('subscribe:leaderboard');
+    
+    socket.on('leaderboard:updated', (data: { rankings: LeaderboardEntry[] }) => {
+      console.log('📊 Leaderboard updated via WebSocket:', data);
+      if (activeTab === 'global' && data.rankings) {
+        setLeaderboard(data.rankings);
+      }
+    });
+    
+    return () => {
+      socket.off('leaderboard:updated');
+    };
   }, [activeTab]);
 
   const loadLeaderboard = async () => {

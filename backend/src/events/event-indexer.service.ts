@@ -677,6 +677,20 @@ export class EventIndexerService implements OnModuleInit {
 
       this.logger.log(`Property ${propertyId} listed for ${price}`);
       
+      // Update seller's leaderboard (property is no longer in their portfolio)
+      if (property.ownerId) {
+        await this.leaderboardService.updateLeaderboard(property.ownerId);
+        const sellerGuild = await this.guildsService.getUserGuild(property.ownerId);
+        if (sellerGuild) {
+          await this.guildsService.updateGuildStats(sellerGuild.id);
+        }
+        this.logger.log(`Updated leaderboard for seller ${seller} after listing property ${propertyId}`);
+        
+        // Emit leaderboard update via WebSocket
+        const updatedLeaderboard = await this.leaderboardService.getGlobalLeaderboard(100);
+        this.websocketGateway.emitLeaderboardUpdate({ rankings: updatedLeaderboard });
+      }
+      
       // Emit WebSocket event for real-time updates
       this.websocketGateway.emitMarketplaceListing({
         propertyId: Number(propertyId),
@@ -710,6 +724,56 @@ export class EventIndexerService implements OnModuleInit {
             updatedAt: new Date(),
           })
           .where(eq(schema.marketplaceListings.propertyId, property.id));
+
+        // Update property ownership to buyer
+        // Get or create buyer user
+        let [buyerUser] = await this.db
+          .select()
+          .from(schema.users)
+          .where(eq(schema.users.walletAddress, buyer.toLowerCase()))
+          .limit(1);
+
+        if (!buyerUser) {
+          [buyerUser] = await this.db
+            .insert(schema.users)
+            .values({
+              walletAddress: buyer.toLowerCase(),
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .returning();
+        }
+
+        // Update property owner
+        await this.db
+          .update(schema.properties)
+          .set({
+            ownerId: buyerUser.id,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.properties.tokenId, Number(propertyId)));
+
+        // Update leaderboards for both seller and buyer
+        const oldOwnerId = property.ownerId;
+        if (oldOwnerId) {
+          await this.leaderboardService.updateLeaderboard(oldOwnerId);
+          const sellerGuild = await this.guildsService.getUserGuild(oldOwnerId);
+          if (sellerGuild) {
+            await this.guildsService.updateGuildStats(sellerGuild.id);
+          }
+        }
+
+        await this.leaderboardService.updateLeaderboard(buyerUser.id);
+        const buyerGuild = await this.guildsService.getUserGuild(buyerUser.id);
+        if (buyerGuild) {
+          await this.guildsService.updateGuildStats(buyerGuild.id);
+        }
+
+        this.logger.log(`Property ${propertyId} ownership updated: ${seller} -> ${buyer}`);
+        
+        // Emit leaderboard update via WebSocket
+        const updatedLeaderboard = await this.leaderboardService.getGlobalLeaderboard(100);
+        this.websocketGateway.emitLeaderboardUpdate({ rankings: updatedLeaderboard });
       }
 
       // Emit WebSocket event

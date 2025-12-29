@@ -148,7 +148,9 @@ export class LeaderboardService {
   async getGlobalLeaderboard(limit: number = 100) {
     const contractAddresses = this.getContractAddresses();
     
-    // Try to get leaderboard from database first
+    // Return cached data immediately (fast response)
+    // Event listeners automatically update leaderboard when properties are listed/sold
+    // No need to refresh on every request - that's too slow
     try {
       const rankings = await this.db
         .select({
@@ -172,35 +174,13 @@ export class LeaderboardService {
         return !contractAddresses.includes(address);
       }).slice(0, limit);
 
-      // Check if leaderboard has valid data (non-zero values) - use filtered rankings
-      const hasValidData = filteredRankings.some(r => 
-        (r.totalPortfolioValue && r.totalPortfolioValue !== '0' && r.totalPortfolioValue !== '0.0') ||
-        (r.propertiesOwned && r.propertiesOwned > 0)
-      );
-
-      // If we have rankings with valid data, return them
-      if (filteredRankings.length > 0 && hasValidData) {
-        return filteredRankings.map((r, index) => ({
-          ...r,
-          rank: index + 1,
-          // Convert string values (NUMERIC) to strings for JSON serialization
-          totalPortfolioValue: r.totalPortfolioValue ? String(r.totalPortfolioValue) : '0',
-          totalYieldEarned: r.totalYieldEarned ? String(r.totalYieldEarned) : '0',
-        }));
-      }
-
-      // If leaderboard exists but has no valid data, return it anyway (don't block on update)
-      // Updates should happen via event indexer or manual sync, not on every request
-      if (filteredRankings.length > 0 && !hasValidData) {
-        this.logger.warn('Leaderboard has entries but values are zero. Run sync to update.');
-        // Return the data anyway (fast response)
-        return filteredRankings.map((r, index) => ({
-          ...r,
-          rank: index + 1,
-          totalPortfolioValue: r.totalPortfolioValue ? String(r.totalPortfolioValue) : '0',
-          totalYieldEarned: r.totalYieldEarned ? String(r.totalYieldEarned) : '0',
-        }));
-      }
+      return filteredRankings.map((r, index) => ({
+        ...r,
+        rank: index + 1,
+        // Convert string values (NUMERIC) to strings for JSON serialization
+        totalPortfolioValue: r.totalPortfolioValue ? String(r.totalPortfolioValue) : '0',
+        totalYieldEarned: r.totalYieldEarned ? String(r.totalYieldEarned) : '0',
+      }));
     } catch (error) {
       this.logger.warn(`Error fetching leaderboard from database: ${error.message}`);
     }
@@ -208,6 +188,7 @@ export class LeaderboardService {
     // If database is empty or failed, calculate from blockchain directly
     this.logger.log('Database leaderboard empty or invalid, calculating from blockchain...');
     return await this.calculateLeaderboardFromBlockchain(limit);
+  }
   }
 
   private async calculateLeaderboardFromBlockchain(limit: number = 100) {
@@ -413,32 +394,66 @@ export class LeaderboardService {
       }
     }
 
-    // Get user's properties (now synced from blockchain)
-    let properties = await this.db
-      .select()
-      .from(schema.properties)
-      .where(eq(schema.properties.ownerId, userId));
-
-    // If no properties in database, try to sync from blockchain directly
-    if (properties.length === 0 && this.contractsService.propertyNFT) {
+    // Get user's properties directly from blockchain (source of truth)
+    // This ensures listed properties (owned by marketplace contract) are not counted
+    let totalPortfolioValue = BigInt(0);
+    let actualPropertyCount = 0;
+    
+    if (this.contractsService.propertyNFT) {
       try {
-        this.logger.log(`No properties in DB for user ${user.walletAddress}, syncing from blockchain...`);
-        await this.syncUserPropertiesFromChain(user.walletAddress);
-        // Try again after sync
-        properties = await this.db
+        // Get actual properties owned by user from blockchain
+        const tokenIds = await this.contractsService.getOwnerProperties(user.walletAddress);
+        const contractAddresses = this.getContractAddresses();
+        
+        if (Array.isArray(tokenIds) && tokenIds.length > 0) {
+          // Deduplicate tokenIds
+          const uniqueTokenIds = Array.from(new Set(tokenIds.map(id => Number(id))));
+          
+          // For each property, get its value from blockchain
+          for (const tokenId of uniqueTokenIds) {
+            try {
+              const propertyData = await this.contractsService.getProperty(BigInt(tokenId));
+              if (propertyData) {
+                // Verify current owner is still the user (not marketplace)
+                const currentOwner = await this.contractsService.propertyNFT.ownerOf(tokenId);
+                this.logger.debug(`Property ${tokenId}: owner=${currentOwner}, user=${user.walletAddress}, isMatch=${currentOwner.toLowerCase() === user.walletAddress.toLowerCase()}, isContract=${contractAddresses.includes(currentOwner.toLowerCase())}`);
+                if (currentOwner.toLowerCase() === user.walletAddress.toLowerCase() && 
+                    !contractAddresses.includes(currentOwner.toLowerCase())) {
+                  const value = propertyData.value?.toString() || '0';
+                  totalPortfolioValue += BigInt(value);
+                  actualPropertyCount++;
+                }
+              }
+            } catch (error) {
+              this.logger.warn(`Failed to get property ${tokenId} for leaderboard: ${error.message}`);
+            }
+          }
+        }
+        
+        this.logger.log(`Calculated portfolio for ${user.walletAddress}: ${actualPropertyCount} properties, ${totalPortfolioValue.toString()} wei`);
+      } catch (error) {
+        this.logger.error(`Failed to get properties from blockchain for leaderboard: ${error.message}`);
+        // Fallback to database if blockchain query fails
+        const properties = await this.db
           .select()
           .from(schema.properties)
           .where(eq(schema.properties.ownerId, userId));
-      } catch (error) {
-        this.logger.error(`Failed to sync properties from blockchain: ${error.message}`);
+        totalPortfolioValue = properties.reduce((sum, prop) => {
+          return sum + BigInt(prop.value?.toString() || '0');
+        }, BigInt(0));
+        actualPropertyCount = actualPropertyCount;
       }
+    } else {
+      // Fallback to database if contract not initialized
+      const properties = await this.db
+        .select()
+        .from(schema.properties)
+        .where(eq(schema.properties.ownerId, userId));
+      totalPortfolioValue = properties.reduce((sum, prop) => {
+        return sum + BigInt(prop.value?.toString() || '0');
+      }, BigInt(0));
+      actualPropertyCount = actualPropertyCount;
     }
-
-    // Calculate total portfolio value
-    // Property value is stored as string (numeric), convert to BigInt for calculation
-    const totalPortfolioValue = properties.reduce((sum, prop) => {
-      return sum + BigInt(prop.value?.toString() || '0');
-    }, BigInt(0));
 
     // Get completed quests
     const completedQuests = await this.db
@@ -481,7 +496,7 @@ export class LeaderboardService {
       userId,
       totalPortfolioValue: totalPortfolioValueStr, // String for NUMERIC column
       totalYieldEarned: totalYieldEarnedStr, // String for NUMERIC column
-      propertiesOwned: properties.length,
+      propertiesOwned: actualPropertyCount,
       questsCompleted: completedQuests.length,
       updatedAt: new Date(),
     };
@@ -511,7 +526,7 @@ export class LeaderboardService {
     }
 
     const portfolioValueStr = (Number(totalPortfolioValue) / 1e18).toFixed(2);
-    this.logger.log(`Updated leaderboard for user ${userId}: ${properties.length} properties, ${portfolioValueStr} TYCOON portfolio`);
+    this.logger.log(`Updated leaderboard for user ${userId}: ${actualPropertyCount} properties, ${portfolioValueStr} TYCOON portfolio`);
   }
 
   private async syncUserPropertiesFromChain(walletAddress: string) {
