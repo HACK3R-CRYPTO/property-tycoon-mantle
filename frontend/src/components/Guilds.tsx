@@ -128,13 +128,23 @@ export function Guilds() {
       return
     }
     
-    // First, check if we're already in a guild by reloading myGuild
-    // This ensures we have the latest state
-    await loadMyGuild()
+    // First, check if we're already in a guild by checking the API directly
+    // This ensures we have the latest state before attempting to join
+    let currentGuild = null
+    try {
+      currentGuild = await api.get(`/guilds/wallet/${address.toLowerCase()}`)
+    } catch (error: any) {
+      // 404 means not in a guild, which is fine
+      if (error.response?.status !== 404) {
+        console.error('Error checking guild status:', error)
+      }
+    }
     
-    // Check if already in a guild (after reloading)
-    if (myGuild) {
-      alert(`You are already a member of ${myGuild.name}. Leave it first to join another guild.`)
+    // If we're already in a guild, prevent join attempt
+    if (currentGuild && currentGuild.id) {
+      alert(`You are already a member of ${currentGuild.name}. Leave it first to join another guild.`)
+      // Update state to reflect current guild
+      setMyGuild(currentGuild)
       return
     }
     
@@ -153,7 +163,9 @@ export function Guilds() {
       // If error says "already a member", reload myGuild to update UI
       if (errorMessage.includes('already a member')) {
         await loadMyGuild()
-        alert(`You are already a member of a guild. Please refresh the page or leave your current guild first.`)
+        alert(`You are already a member of a guild. The page will refresh to show your current guild.`)
+        // Force a reload to ensure UI is in sync
+        window.location.reload()
         return
       }
       
