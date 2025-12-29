@@ -394,7 +394,7 @@ export class GuildsService {
             const uniqueTokenIds = Array.from(new Set(tokenIds.map(id => Number(id))));
             this.logger.log(`Found ${uniqueTokenIds.length} unique properties for ${member.walletAddress}`);
 
-            // Calculate portfolio value and yield for each property
+            // Calculate portfolio value for each property
             for (const tokenId of uniqueTokenIds) {
               try {
                 const propertyData = await this.contractsService.getProperty(BigInt(tokenId));
@@ -403,17 +403,27 @@ export class GuildsService {
                   const value = propertyData.value?.toString() || '0';
                   const valueBigInt = BigInt(value);
                   totalPortfolioValue += valueBigInt;
-
-                  // Get total yield earned from property
-                  const yieldEarned = propertyData.totalYieldEarned?.toString() || '0';
-                  const yieldBigInt = BigInt(yieldEarned);
-                  totalYieldEarned += yieldBigInt;
                   
-                  this.logger.log(`Property ${tokenId}: value=${valueBigInt.toString()}, yield=${yieldBigInt.toString()}`);
+                  this.logger.log(`Property ${tokenId}: value=${valueBigInt.toString()}`);
                 }
               } catch (error) {
                 this.logger.warn(`Failed to get property ${tokenId} for guild stats: ${error.message}`);
               }
+            }
+
+            // Get total yield claimed by this member from YieldDistributor
+            try {
+              if (this.contractsService.yieldDistributor) {
+                const totalYieldClaimed = await this.contractsService.yieldDistributor.totalYieldClaimed(member.walletAddress);
+                if (totalYieldClaimed) {
+                  const yieldStr = totalYieldClaimed.toString() || '0';
+                  const yieldBigInt = BigInt(yieldStr);
+                  totalYieldEarned += yieldBigInt;
+                  this.logger.log(`Member ${member.walletAddress}: totalYieldClaimed=${yieldBigInt.toString()}`);
+                }
+              }
+            } catch (error) {
+              this.logger.warn(`Failed to get totalYieldClaimed for ${member.walletAddress}: ${error.message}`);
             }
           } catch (error) {
             this.logger.warn(`Failed to get properties for ${member.walletAddress}: ${error.message}`);
