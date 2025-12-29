@@ -48,13 +48,20 @@ export function Guilds() {
   }
 
   const loadMyGuild = async () => {
-    if (!address) return
+    if (!address) {
+      setMyGuild(null)
+      return
+    }
     try {
       // Get guild by wallet address directly
       const guildResponse = await api.get(`/guilds/wallet/${address.toLowerCase()}`)
+      console.log('Loaded my guild:', guildResponse)
       setMyGuild(guildResponse)
-    } catch (error) {
-      // User might not be in a guild yet
+    } catch (error: any) {
+      // User might not be in a guild yet (404 is expected)
+      if (error.response?.status !== 404) {
+        console.error('Failed to load my guild:', error)
+      }
       setMyGuild(null)
     }
   }
@@ -284,7 +291,7 @@ export function Guilds() {
                     size="sm" 
                     className="border-green-500/50 text-green-400 hover:bg-green-500/10"
                     onClick={() => joinGuild(guild.id)}
-                    disabled={joiningGuildId === guild.id || (myGuild && myGuild.id === guild.id) || !isConnected}
+                    disabled={joiningGuildId === guild.id || !!myGuild || !isConnected}
                   >
                     {joiningGuildId === guild.id 
                       ? 'Joining...' 
