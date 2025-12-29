@@ -283,9 +283,14 @@ export class GuildsService {
       const members = membersRaw.map(member => {
         // Convert contribution BigInt to string
         const contribution = member.contribution;
-        const contributionStr = contribution !== null && contribution !== undefined 
-          ? (typeof contribution === 'bigint' ? contribution.toString() : String(contribution))
-          : '0';
+        let contributionStr = '0';
+        if (contribution !== null && contribution !== undefined) {
+          if (typeof contribution === 'bigint') {
+            contributionStr = contribution.toString();
+          } else {
+            contributionStr = String(contribution);
+          }
+        }
         
         return {
           id: member.id,
@@ -298,17 +303,23 @@ export class GuildsService {
       });
 
       // Ensure all numeric fields are strings
-      const totalPortfolioValueStr = guild.totalPortfolioValue 
-        ? (typeof guild.totalPortfolioValue === 'bigint' 
-            ? guild.totalPortfolioValue.toString() 
-            : String(guild.totalPortfolioValue))
-        : '0';
+      let totalPortfolioValueStr = '0';
+      if (guild.totalPortfolioValue) {
+        if (typeof guild.totalPortfolioValue === 'bigint') {
+          totalPortfolioValueStr = guild.totalPortfolioValue.toString();
+        } else {
+          totalPortfolioValueStr = String(guild.totalPortfolioValue);
+        }
+      }
       
-      const totalYieldEarnedStr = guild.totalYieldEarned 
-        ? (typeof guild.totalYieldEarned === 'bigint' 
-            ? guild.totalYieldEarned.toString() 
-            : String(guild.totalYieldEarned))
-        : '0';
+      let totalYieldEarnedStr = '0';
+      if (guild.totalYieldEarned) {
+        if (typeof guild.totalYieldEarned === 'bigint') {
+          totalYieldEarnedStr = guild.totalYieldEarned.toString();
+        } else {
+          totalYieldEarnedStr = String(guild.totalYieldEarned);
+        }
+      }
 
       return {
         id: guild.id,
