@@ -386,22 +386,11 @@ export class GuildsService {
   }
 
   async getGuildLeaderboard(limit: number = 20) {
-    // First, get all guild IDs
-    const allGuilds = await this.db
-      .select({ id: schema.guilds.id })
-      .from(schema.guilds);
-
-    // Update stats for all guilds before returning leaderboard
-    this.logger.log(`Updating stats for ${allGuilds.length} guilds before returning leaderboard...`);
-    for (const guild of allGuilds) {
-      try {
-        await this.updateGuildStats(guild.id);
-      } catch (error) {
-        this.logger.warn(`Failed to update stats for guild ${guild.id}: ${error.message}`);
-      }
-    }
-
-    // Now fetch the updated rankings
+    // Return cached data immediately (fast response)
+    // Stats are updated via event listeners or manual sync
+    // Updating stats for all guilds on every request is too slow and causes reload loops
+    
+    // Fetch the current rankings from database
     const rankings = await this.db
       .select({
         id: schema.guilds.id,
