@@ -47,6 +47,9 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
 
   private async broadcastYieldTimeUpdates() {
     try {
+      // Get contract addresses to exclude
+      const contractAddresses = this.getContractAddresses();
+      
       // Get all users with properties
       const users = await this.db
         .select({
@@ -57,6 +60,13 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
         .limit(100); // Limit to avoid overload
 
       for (const user of users) {
+        // Skip contract addresses
+        const userAddr = user.walletAddress.toLowerCase();
+        if (contractAddresses.includes(userAddr)) {
+          this.logger.debug(`Skipping contract address ${userAddr} for yield updates`);
+          continue;
+        }
+        
         try {
           const yieldTimeInfo = await this.getYieldTimeInfo(user.walletAddress);
           // Check if yieldTimeInfo is valid and has all required properties
@@ -76,6 +86,34 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.logger.error(`Error in broadcastYieldTimeUpdates: ${error.message}`);
     }
+  }
+
+  private getContractAddresses(): string[] {
+    const addresses: string[] = [];
+    if (this.contractsService.marketplace?.address) {
+      addresses.push(this.contractsService.marketplace.address.toLowerCase());
+    }
+    if (this.contractsService.yieldDistributor?.address) {
+      addresses.push(this.contractsService.yieldDistributor.address.toLowerCase());
+    }
+    if (this.contractsService.questSystem?.address) {
+      addresses.push(this.contractsService.questSystem.address.toLowerCase());
+    }
+    if (this.contractsService.propertyNFT?.address) {
+      addresses.push(this.contractsService.propertyNFT.address.toLowerCase());
+    }
+    if (this.contractsService.gameToken?.address) {
+      addresses.push(this.contractsService.gameToken.address.toLowerCase());
+    }
+    if (this.contractsService.tokenSwap?.address) {
+      addresses.push(this.contractsService.tokenSwap.address.toLowerCase());
+    }
+    // Old marketplace
+    const oldMarketplace = process.env.OLD_MARKETPLACE_ADDRESS;
+    if (oldMarketplace) {
+      addresses.push(oldMarketplace.toLowerCase());
+    }
+    return addresses;
   }
 
   async broadcastYieldTimeUpdateForUser(walletAddress: string) {
@@ -323,13 +361,27 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
    */
   async getYieldTimeInfo(walletAddress: string) {
     try {
+      // Skip contract addresses
+      const contractAddresses = this.getContractAddresses();
+      if (contractAddresses.includes(walletAddress.toLowerCase())) {
+        this.logger.debug(`Skipping yield time info for contract address ${walletAddress}`);
+        return null;
+      }
+      
       if (!this.contractsService.yieldDistributor || !this.contractsService.propertyNFT) {
         this.logger.warn('Contracts not initialized');
         return null;
       }
 
       // Get yield update interval from contract
-      const yieldUpdateInterval = await this.contractsService.getYieldUpdateInterval();
+      let yieldUpdateInterval: bigint;
+      try {
+        yieldUpdateInterval = await this.contractsService.getYieldUpdateInterval();
+      } catch (error: any) {
+        // If YIELD_UPDATE_INTERVAL fails, contract might not be initialized correctly
+        this.logger.error(`Failed to get YIELD_UPDATE_INTERVAL: ${error.message}`);
+        return null;
+      }
       const yieldUpdateIntervalSeconds = Number(yieldUpdateInterval);
 
       // Get current block timestamp

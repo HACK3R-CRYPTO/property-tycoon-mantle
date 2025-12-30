@@ -191,19 +191,45 @@ export class LeaderboardService {
   }
   
 
-  private async calculateLeaderboardFromBlockchain(limit: number = 100) {
+  async clearAndRecalculateLeaderboard(limit: number = 100) {
+    this.logger.log('🗑️ Clearing all old leaderboard data and recalculating from new contract only...');
+    
+    // Step 1: Delete ALL leaderboard entries
+    try {
+      await this.db.delete(schema.leaderboard);
+      this.logger.log('✅ Cleared all leaderboard entries');
+    } catch (error: any) {
+      this.logger.error(`Failed to clear leaderboard: ${error.message}`);
+      throw error;
+    }
+    
+    // Step 2: Recalculate from new contract only
+    const rankings = await this.calculateLeaderboardFromBlockchain(limit);
+    
+    this.logger.log(`✅ Recalculated leaderboard with ${rankings.length} entries from new contract`);
+    return rankings;
+  }
+
+  async calculateLeaderboardFromBlockchain(limit: number = 100) {
     if (!this.contractsService.propertyNFT) {
       this.logger.warn('PropertyNFT contract not initialized, cannot calculate leaderboard from blockchain');
       return [];
     }
 
     try {
+      // Get the current PropertyNFT contract address to ensure we only query the new contract
+      const propertyNFTAddress = this.contractsService.propertyNFT.address;
+      this.logger.log(`Using PropertyNFT contract: ${propertyNFTAddress}`);
+      
       // First, discover property owners from blockchain events (chunk queries to avoid RPC limit)
       const discoveredOwners = new Set<string>();
       try {
-        this.logger.log('Discovering property owners from blockchain events...');
+        this.logger.log('Discovering property owners from blockchain events (new contract only)...');
         const currentBlock = await this.contractsService.getProvider().getBlockNumber();
-        const fromBlock = 0;
+        
+        // Start from a recent block (e.g., last 100k blocks) to avoid querying old contract events
+        // Or query from deployment block if we know it
+        const fromBlock = Math.max(0, currentBlock - 100000); // Last 100k blocks
         const chunkSize = 10000; // RPC limit
         
         for (let i = fromBlock; i <= currentBlock; i += chunkSize) {
@@ -223,7 +249,7 @@ export class LeaderboardService {
             this.logger.warn(`Failed to query events from block ${i} to ${toBlock}: ${error.message}`);
           }
         }
-        this.logger.log(`Found ${discoveredOwners.size} unique property owners from events`);
+        this.logger.log(`Found ${discoveredOwners.size} unique property owners from new contract events`);
       } catch (error) {
         this.logger.warn(`Failed to discover owners from events: ${error.message}`);
       }
@@ -360,7 +386,35 @@ export class LeaderboardService {
           rank: index + 1,
         }));
 
-      this.logger.log(`Calculated leaderboard from blockchain: ${validEntries.length} entries`);
+      // Save leaderboard entries to database
+      for (const entry of validEntries) {
+        try {
+          await this.db
+            .insert(schema.leaderboard)
+            .values({
+              userId: entry.userId,
+              totalPortfolioValue: entry.totalPortfolioValue,
+              totalYieldEarned: entry.totalYieldEarned,
+              propertiesOwned: entry.propertiesOwned,
+              questsCompleted: entry.questsCompleted || 0,
+              updatedAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: schema.leaderboard.userId,
+              set: {
+                totalPortfolioValue: entry.totalPortfolioValue,
+                totalYieldEarned: entry.totalYieldEarned,
+                propertiesOwned: entry.propertiesOwned,
+                questsCompleted: entry.questsCompleted || 0,
+                updatedAt: new Date(),
+              },
+            });
+        } catch (error: any) {
+          this.logger.warn(`Failed to save leaderboard entry for ${entry.walletAddress}: ${error.message}`);
+        }
+      }
+      
+      this.logger.log(`Calculated and saved ${validEntries.length} leaderboard entries from blockchain`);
       
       if (validEntries.length === 0) {
         this.logger.warn('No leaderboard entries found. Possible reasons:');

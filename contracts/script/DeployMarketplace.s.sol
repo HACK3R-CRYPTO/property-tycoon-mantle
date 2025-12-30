@@ -27,9 +27,12 @@ contract DeployMarketplaceScript is Script {
         
         // Deploy Marketplace
         Marketplace marketplace = new Marketplace(propertyNFT, gameToken);
+        address marketplaceAddress = address(marketplace);
         
         console.log("\n=== Marketplace Deployed ===");
-        console.log("Address:", address(marketplace));
+        console.log("Marketplace Address:", marketplaceAddress);
+        console.log("PropertyNFT Address:", propertyNFT);
+        console.log("GameToken Address:", gameToken);
         console.log("\nIMPORTANT: Update these files with the new address:");
         console.log("  1. frontend/.env.local -> NEXT_PUBLIC_MARKETPLACE_ADDRESS");
         console.log("  2. backend/.env -> MARKETPLACE_ADDRESS");

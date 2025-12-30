@@ -23,4 +23,27 @@ export class LeaderboardController {
   async cleanupContracts() {
     return this.leaderboardService.cleanupContractAddresses();
   }
+
+  @Post('recalculate')
+  async recalculateLeaderboard() {
+    // Force recalculation from blockchain (removes old data)
+    const rankings = await this.leaderboardService.calculateLeaderboardFromBlockchain(100);
+    return {
+      success: true,
+      count: rankings.length,
+      message: `Recalculated leaderboard with ${rankings.length} entries from new contract`,
+    };
+  }
+
+  @Post('clear-and-recalculate')
+  async clearAndRecalculate() {
+    // Clear all old data and recalculate from new contract only
+    const rankings = await this.leaderboardService.clearAndRecalculateLeaderboard(100);
+    return {
+      success: true,
+      count: rankings.length,
+      message: `Cleared old data and recalculated leaderboard with ${rankings.length} entries from new contract`,
+      rankings,
+    };
+  }
 }

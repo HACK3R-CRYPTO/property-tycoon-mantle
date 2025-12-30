@@ -318,7 +318,18 @@ export class ContractsService implements OnModuleInit {
   }
 
   async getYieldUpdateInterval(): Promise<bigint> {
-    return this.yieldDistributor.YIELD_UPDATE_INTERVAL();
+    if (!this.yieldDistributor) {
+      throw new Error('YieldDistributor contract not initialized');
+    }
+    try {
+      // Try calling as a function first (for public constant)
+      const result = await this.yieldDistributor.YIELD_UPDATE_INTERVAL();
+      return typeof result === 'bigint' ? result : BigInt(result.toString());
+    } catch (error: any) {
+      // If function call fails, return default (1 day = 86400 seconds)
+      this.logger.warn(`Failed to get YIELD_UPDATE_INTERVAL from contract, using default 86400 seconds: ${error.message}`);
+      return BigInt(86400); // 1 day in seconds
+    }
   }
 
   async getListing(propertyId: bigint) {
