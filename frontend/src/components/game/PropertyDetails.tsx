@@ -21,6 +21,8 @@ interface PropertyDetailsProps {
   onClaimYield?: () => void | Promise<void>;
   onLinkRWA?: () => void;
   onSellProperty?: () => void;
+  onCancelListing?: () => void;
+  isListed?: boolean;
   isClaiming?: boolean;
 }
 

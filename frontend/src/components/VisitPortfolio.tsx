@@ -54,8 +54,8 @@ export function VisitPortfolio({ address, username, onClose }: VisitPortfolioPro
           }))
           setProperties(formattedProps)
           
-          const totalVal = formattedProps.reduce((sum, p) => sum + p.value, BigInt(0))
-          const totalYld = formattedProps.reduce((sum, p) => sum + p.totalYieldEarned, BigInt(0))
+          const totalVal = formattedProps.reduce((sum: bigint, p: { value: bigint; totalYieldEarned: bigint }) => sum + p.value, BigInt(0))
+          const totalYld = formattedProps.reduce((sum: bigint, p: { value: bigint; totalYieldEarned: bigint }) => sum + p.totalYieldEarned, BigInt(0))
           setTotalValue(totalVal)
           setTotalYield(totalYld)
           setIsLoading(false)

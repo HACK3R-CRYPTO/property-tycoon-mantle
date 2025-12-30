@@ -196,8 +196,11 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
   useEffect(() => {
     if (!propertiesLayerRef.current || !gridLayerRef.current || !spritesLoaded) return;
 
+    // Store ref value to avoid TypeScript null checks
+    const propertiesLayer = propertiesLayerRef.current;
+
     // Clear existing properties
-    propertiesLayerRef.current.removeChildren();
+    propertiesLayer.removeChildren();
     
 
     // Render other players' properties first (dimmer, in background)
@@ -245,7 +248,7 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       // Don't block clicks - let stage handle them
       propertyGraphics.hitArea = null;
 
-      propertiesLayerRef.current.addChild(propertyGraphics);
+      propertiesLayer.addChild(propertyGraphics);
     });
 
     // Render your properties on top (bright, clickable)
@@ -303,7 +306,7 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
         onPropertyClick?.(property);
       });
 
-      propertiesLayerRef.current.addChild(propertyGraphics);
+      propertiesLayer.addChild(propertyGraphics);
     });
       }, [properties, otherPlayersProperties, spritesLoaded, onPropertyClick]);
 
