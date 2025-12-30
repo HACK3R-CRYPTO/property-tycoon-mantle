@@ -225,7 +225,9 @@ Files:
 
 Uses Chronicle Oracle for price feeds on Mantle Sepolia. 60 to 80 percent less gas than other oracles. Critical for frequent yield calculations. Property value updates cost less.
 
-Backend fetches real-time prices for USDC, USDT, ETH, and MNT. Price feeds used for yield calculations and property valuations. RWA property values fetched from Chronicle when configured. Falls back to contract queries if Chronicle oracle not available.
+Chronicle Oracle integration is implemented in `OracleService` with methods to fetch real-time prices for USDC, USDT, ETH, and MNT (`getUSDCPrice`, `getUSDTPrice`, `getETHPrice`, `getMNTPrice`). However, these price feed methods are not currently being called in the application. The integration is ready for use but not actively utilized in this demo.
+
+RWA property values can be fetched from Chronicle when `CHRONICLE_RWA_PROPERTY_ORACLE` is configured in `getRWAPropertyValue()` method, but this environment variable is not set. The system falls back to contract queries (MockRWA) when Chronicle oracle is not configured.
 
 YieldDistributor contract uses RWA data for yield calculation. If property linked to RWA, contract fetches RWA value and yield rate. Uses RWA data instead of property data for yield calculation. Automatic fallback to property data if RWA not linked or unavailable. All yield calculations happen on-chain via YieldDistributor contract.
 

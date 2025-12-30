@@ -120,9 +120,11 @@ Chronicle Oracle addresses on Mantle Sepolia:
 - ETH/USD: 0xa6896dCf3f5Dc3c29A5bD3a788D6b7e901e487D8
 - MNT/USD: 0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307
 
-Backend fetches real-time prices for USDC, USDT, ETH, and MNT. Price feeds used for yield calculations and property valuations. RWA property values can be fetched from Chronicle when configured. Falls back to contract queries if Chronicle oracle not available.
+Chronicle Oracle integration is implemented in `OracleService` with methods to fetch prices for USDC, USDT, ETH, and MNT. However, these price feed methods are not currently being called in the application. The integration is ready for use but not actively utilized in this demo.
 
-**Note:** Chronicle Oracle integration is implemented and ready for production use. For this demo, we are using MockRWA contract instead of real Chronicle Oracle RWA data. To use real Chronicle Oracle RWA, configure `CHRONICLE_RWA_PROPERTY_ORACLE` environment variable in backend and `NEXT_PUBLIC_ORACLE_RWA_ADDRESS` in frontend.
+RWA property values can be fetched from Chronicle when `CHRONICLE_RWA_PROPERTY_ORACLE` is configured, but this environment variable is not set in the demo. The system falls back to contract queries (MockRWA) when Chronicle oracle is not configured.
+
+**Note:** Chronicle Oracle integration is fully implemented and ready for production use. For this demo, we are using MockRWA contract instead of real Chronicle Oracle RWA data. The price feed methods (`getUSDCPrice`, `getUSDTPrice`, `getETHPrice`, `getMNTPrice`) exist but are not currently being called. To use real Chronicle Oracle RWA, configure `CHRONICLE_RWA_PROPERTY_ORACLE` environment variable in backend and `NEXT_PUBLIC_ORACLE_RWA_ADDRESS` in frontend.
 
 ## MockRWA
 
