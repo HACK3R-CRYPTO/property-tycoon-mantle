@@ -493,6 +493,9 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
         } else if (result && typeof result === 'object' && 'length' in result) {
           tokenIds = Array.from(result as any);
         }
+        
+        // Log raw tokenIds to debug
+        this.logger.debug(`Raw tokenIds from contract for ${walletAddress}:`, tokenIds.map(id => id.toString()));
       } catch (error: any) {
         // If getOwnerProperties fails, user has no properties in new contract
         this.logger.warn(`No properties found in new contract for ${walletAddress}: ${error.message}`);
@@ -505,10 +508,36 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
 
       // Deduplicate tokenIds (convert to numbers, remove duplicates)
       const uniqueTokenIds = Array.from(new Set(tokenIds.map(id => Number(id))));
-      this.logger.log(`Found ${tokenIds.length} tokenIds, ${uniqueTokenIds.length} unique for ${walletAddress}`);
+      
+      // Validate each property ID exists before processing
+      // Property ID 0 CAN exist (first property minted), so we validate instead of filtering
+      const validTokenIds: number[] = [];
+      for (const tokenId of uniqueTokenIds) {
+        if (tokenId < 0) {
+          this.logger.warn(`Skipping invalid property ID (negative): ${tokenId} for ${walletAddress}`);
+          continue;
+        }
+        
+        // Check if property exists by trying to get owner
+        try {
+          await this.contractsService.propertyNFT.ownerOf(BigInt(tokenId));
+          validTokenIds.push(tokenId);
+        } catch (error: any) {
+          // Property doesn't exist, skip it
+          this.logger.warn(`Skipping non-existent property ID: ${tokenId} for ${walletAddress}`);
+        }
+      }
+      
+      // Log if we filtered out any invalid/non-existent IDs
+      const filteredCount = uniqueTokenIds.length - validTokenIds.length;
+      if (filteredCount > 0) {
+        this.logger.warn(`Filtered out ${filteredCount} invalid/non-existent property ID(s) for ${walletAddress}`);
+      }
+      
+      this.logger.log(`Found ${tokenIds.length} tokenIds, ${validTokenIds.length} unique valid properties for ${walletAddress}`);
 
       const properties = await Promise.all(
-        uniqueTokenIds.map(async (tokenId): Promise<{
+        validTokenIds.map(async (tokenId): Promise<{
           tokenId: number;
           lastYieldUpdate: number;
           createdAt: number;

@@ -91,6 +91,7 @@ export default function GamePage() {
         if (response.ok) {
           const backendProperties = await response.json();
           console.log(`✅ Loaded ${backendProperties.length} properties from backend`);
+          console.log('📋 Backend property tokenIds:', backendProperties.map((p: any) => p.tokenId));
           
           if (backendProperties.length > 0) {
             // Convert backend properties to frontend format
@@ -1365,6 +1366,8 @@ export default function GamePage() {
                 try {
                   setIsClaiming(true);
                   const propertyIds = properties.map(p => BigInt(p.tokenId));
+                  console.log('💰 Claiming yield for properties:', propertyIds.map(id => id.toString()));
+                  console.log('📋 Property details:', properties.map(p => ({ tokenId: p.tokenId, propertyType: p.propertyType })));
                   writeClaim({
                     address: CONTRACTS.YieldDistributor,
                     abi: YIELD_DISTRIBUTOR_ABI,
@@ -1565,6 +1568,11 @@ export default function GamePage() {
             if (!selectedProperty) return;
             try {
               setIsClaiming(true);
+              console.log('💰 Claiming yield for property:', {
+                tokenId: selectedProperty.tokenId,
+                propertyType: selectedProperty.propertyType,
+                claimableYield: propertyClaimableYields.get(selectedProperty.tokenId)?.toString() || '0',
+              });
               writeClaim({
                 address: CONTRACTS.YieldDistributor,
                 abi: YIELD_DISTRIBUTOR_ABI,

@@ -128,4 +128,14 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     this.logger.log(`Emitting yield:time-update to ${room} (${data.properties.length} properties, ${clientCount} clients)`);
     this.server.to(room).emit('yield:time-update', serializableData);
   }
+
+  emitPriceUpdate(data: {
+    mntPriceUSD: number;
+    tycoonPriceUSD: number;
+    timestamp: number;
+  }) {
+    // Broadcast to all connected clients
+    this.server.emit('price:update', data);
+    this.logger.debug(`Emitted price update: MNT/USD = $${data.mntPriceUSD.toFixed(4)}, TYCOON/USD = $${data.tycoonPriceUSD.toFixed(6)}`);
+  }
 }

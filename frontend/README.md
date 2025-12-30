@@ -101,11 +101,12 @@ Property appears on city map instantly.
 
 Connect property to tokenized real estate:
 - Select RWA contract (Oracle-based or MockRWA)
-- View only RWA tokens you own
+- View only RWA tokens you own (up to 20 tokens displayed)
 - Link property to RWA token
 - Property generates real yield from rental income
 - Estimated yield calculation uses RWA value and yield rate
 - Yield display updates in real time with RWA data
+- Property validation ensures only existing properties are processed
 
 ### Claim Yield
 
@@ -180,6 +181,30 @@ Usernames and avatars.
 Share tips and strategies.
 
 Build community.
+
+## Chronicle Oracle Integration
+
+Frontend uses Chronicle Oracle to fetch MNT/USD price for USD conversions. All TYCOON amounts are displayed with USD equivalents using real-time price data from Chronicle Oracle.
+
+**Implementation:**
+- `useMNTPrice` hook fetches MNT/USD price from backend API endpoint
+- Backend fetches price from Chronicle Oracle via whitelisted wallet
+- Price updates broadcast via Socket.io every 5 minutes
+- Frontend receives real-time price updates without page refresh
+- TYCOON/USD rate calculated as: MNT/USD ÷ 100 (since 1 MNT = 100 TYCOON)
+- USD values displayed alongside TYCOON amounts in:
+  - Yield Display (claimable yield, estimated yield, total earned)
+  - Property Cards (property value, total yield earned)
+  - Property Details modal (property value, total yield earned)
+
+**Chronicle Oracle Address:**
+- MNT/USD: `0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307` (Mantle Sepolia)
+
+**Backend API:**
+- `/api/oracle/mnt-price` - Returns MNT/USD and TYCOON/USD prices
+
+Files:
+- `src/hooks/useMNTPrice.ts` - Price fetching hook with Socket.io integration
 
 ## Mantle Network Integration
 

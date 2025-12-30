@@ -120,11 +120,23 @@ Chronicle Oracle addresses on Mantle Sepolia:
 - ETH/USD: 0xa6896dCf3f5Dc3c29A5bD3a788D6b7e901e487D8
 - MNT/USD: 0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307
 
-Chronicle Oracle integration is implemented in `OracleService` with methods to fetch prices for USDC, USDT, ETH, and MNT. However, these price feed methods are not currently being called in the application. The integration is ready for use but not actively utilized in this demo.
+Chronicle Oracle integration is implemented and actively used for USD price conversions. Frontend displays all TYCOON amounts with USD equivalents using real-time MNT/USD price from Chronicle Oracle. Backend fetches price via whitelisted wallet and broadcasts updates via Socket.io every 5 minutes. Frontend receives real-time price updates without page refresh.
 
+**Active Usage:**
+- Frontend displays all TYCOON amounts with USD equivalents using Chronicle Oracle MNT/USD price feed
+- Property values, yield amounts, and portfolio totals show both TYCOON and USD
+- Real-time price updates via Socket.io without page refresh
+- Uses Chronicle Oracle address: `0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307` (MNT/USD on Mantle Sepolia)
+- Exchange rate: 1 MNT = 100 TYCOON, so TYCOON/USD = MNT/USD ÷ 100
+- Backend wallet must be whitelisted on Chronicle Oracle for price fetching
+
+**Other Price Feeds:**
+Backend has methods for USDC, USDT, and ETH price feeds, but these are not currently used. They are available for future features like multi-currency support.
+
+**RWA Property Values:**
 RWA property values can be fetched from Chronicle when `CHRONICLE_RWA_PROPERTY_ORACLE` is configured, but this environment variable is not set in the demo. The system falls back to contract queries (MockRWA) when Chronicle oracle is not configured.
 
-**Note:** Chronicle Oracle integration is fully implemented and ready for production use. For this demo, we are using MockRWA contract instead of real Chronicle Oracle RWA data. The price feed methods (`getUSDCPrice`, `getUSDTPrice`, `getETHPrice`, `getMNTPrice`) exist but are not currently being called. To use real Chronicle Oracle RWA, configure `CHRONICLE_RWA_PROPERTY_ORACLE` environment variable in backend and `NEXT_PUBLIC_ORACLE_RWA_ADDRESS` in frontend.
+**Note:** Chronicle Oracle MNT/USD price feed is actively used for USD display with real-time updates. For RWA property values, we are using MockRWA contract instead of real Chronicle Oracle RWA data. To use real Chronicle Oracle RWA, configure `CHRONICLE_RWA_PROPERTY_ORACLE` environment variable in backend and `NEXT_PUBLIC_ORACLE_RWA_ADDRESS` in frontend.
 
 ## MockRWA
 

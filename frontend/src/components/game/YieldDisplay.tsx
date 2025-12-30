@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect } from 'react';
 import { TrendingUp, DollarSign, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useMNTPrice, tycoonToUSD, formatUSD } from '@/hooks/useMNTPrice';
 
 interface YieldDisplayProps {
   totalPendingYield: bigint; // Real-time estimated yield (accumulating by seconds)
@@ -13,6 +15,18 @@ interface YieldDisplayProps {
 }
 
 export function YieldDisplay({ totalPendingYield, totalYieldEarned, claimableYield, onClaimAll, isClaiming = false }: YieldDisplayProps) {
+  const { tycoonPriceUSD, loading: priceLoading, error: priceError } = useMNTPrice();
+  
+  // Debug logging
+  useEffect(() => {
+    if (tycoonPriceUSD) {
+      console.log(`💰 TYCOON/USD price loaded: $${tycoonPriceUSD.toFixed(6)}`);
+    }
+    if (priceError) {
+      console.warn('⚠️ Price fetch error:', priceError);
+    }
+  }, [tycoonPriceUSD, priceError]);
+  
   const formatValue = (value: bigint) => {
     // Validate value first - if suspiciously large, return 0
     const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000'); // 1000 TYCOON
@@ -64,9 +78,20 @@ export function YieldDisplay({ totalPendingYield, totalYieldEarned, claimableYie
             <Clock className="w-3 h-3" />
             Claimable Yield
           </p>
-          <p className="text-3xl font-bold text-emerald-400 flex items-center gap-2">
+          <p className="text-3xl font-bold text-emerald-400 flex items-center gap-2 flex-wrap">
             <DollarSign className="w-6 h-6" />
-            {claimableYield !== undefined ? formatValue(claimableYield) : formatValue(totalPendingYield)} TYCOON
+            <span>
+              {claimableYield !== undefined ? formatValue(claimableYield) : formatValue(totalPendingYield)} TYCOON
+              {tycoonPriceUSD && (() => {
+                const usdValue = tycoonToUSD(claimableYield !== undefined ? claimableYield : totalPendingYield, tycoonPriceUSD);
+                const usdFormatted = formatUSD(usdValue);
+                return usdFormatted ? (
+                  <span className="text-lg text-gray-400 ml-2">
+                    ({usdFormatted})
+                  </span>
+                ) : null;
+              })()}
+            </span>
           </p>
           {claimableYield !== undefined && claimableYield === BigInt(0) && totalPendingYield > BigInt(0) ? (
             <p className="text-xs text-yellow-400 mt-1">
@@ -111,6 +136,11 @@ export function YieldDisplay({ totalPendingYield, totalYieldEarned, claimableYie
             </p>
             <p className="text-xl font-semibold text-white">
               {formatValue(totalPendingYield)} TYCOON
+              {tycoonPriceUSD && (
+                <span className="text-sm text-gray-400 ml-2">
+                  {formatUSD(tycoonToUSD(totalPendingYield, tycoonPriceUSD))}
+                </span>
+              )}
             </p>
             <p className="text-xs text-gray-500 mt-1">
               Growing in real-time • Will be claimable after 24 hours
@@ -120,7 +150,14 @@ export function YieldDisplay({ totalPendingYield, totalYieldEarned, claimableYie
 
         <div className="border-t border-white/10 pt-4">
           <p className="text-xs text-gray-400 mb-1">Total Earned (All Time)</p>
-          <p className="text-xl font-semibold text-white">{formatValue(totalYieldEarned)} TYCOON</p>
+          <p className="text-xl font-semibold text-white">
+            {formatValue(totalYieldEarned)} TYCOON
+            {tycoonPriceUSD && (
+              <span className="text-sm text-gray-400 ml-2">
+                {formatUSD(tycoonToUSD(totalYieldEarned, tycoonPriceUSD))}
+              </span>
+            )}
+          </p>
         </div>
 
         {onClaimAll && claimableYield !== undefined && claimableYield > 0n && (

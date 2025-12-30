@@ -13,12 +13,13 @@ import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { ChatModule } from './chat/chat.module';
 import { GuildsModule } from './guilds/guilds.module';
 import { UsersModule } from './users/users.module';
-import { WebsocketGateway } from './websocket/websocket.gateway';
+import { WebsocketModule } from './websocket/websocket.module';
 import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    WebsocketModule,
     DatabaseModule,
     MantleModule,
     ContractsModule,
@@ -33,6 +34,6 @@ import { EventsModule } from './events/events.module';
     EventsModule,
   ],
   controllers: [AppController],
-  providers: [AppService, WebsocketGateway],
+  providers: [AppService],
 })
 export class AppModule {}

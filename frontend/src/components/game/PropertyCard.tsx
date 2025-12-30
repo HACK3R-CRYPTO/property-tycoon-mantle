@@ -3,6 +3,7 @@
 import { Building2, TrendingUp, DollarSign } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useMNTPrice, tycoonToUSD, formatUSD } from '@/hooks/useMNTPrice';
 
 interface PropertyCardProps {
   property: {
@@ -27,6 +28,8 @@ const PROPERTY_COLORS = {
 };
 
 export function PropertyCard({ property, claimableYield, onClaimYield, onViewDetails, isClaiming = false }: PropertyCardProps) {
+  const { tycoonPriceUSD } = useMNTPrice();
+  
   const formatValue = (value: bigint) => {
     return (Number(value) / 1e18).toFixed(2);
   };
@@ -51,6 +54,11 @@ export function PropertyCard({ property, claimableYield, onClaimYield, onViewDet
             <p className="text-lg font-semibold text-white flex items-center gap-1">
               <DollarSign className="w-4 h-4" />
               {formatValue(property.value)} TYCOON
+              {tycoonPriceUSD && (
+                <span className="text-xs text-gray-400 ml-1">
+                  {formatUSD(tycoonToUSD(property.value, tycoonPriceUSD))}
+                </span>
+              )}
             </p>
           </div>
           <div>
@@ -64,7 +72,14 @@ export function PropertyCard({ property, claimableYield, onClaimYield, onViewDet
         
         <div>
           <p className="text-xs text-gray-400 mb-1">Total Yield Earned</p>
-          <p className="text-xl font-bold text-emerald-500">{formatValue(property.totalYieldEarned)} TYCOON</p>
+          <p className="text-xl font-bold text-emerald-500">
+            {formatValue(property.totalYieldEarned)} TYCOON
+            {tycoonPriceUSD && (
+              <span className="text-sm text-gray-400 ml-2">
+                {formatUSD(tycoonToUSD(property.totalYieldEarned, tycoonPriceUSD))}
+              </span>
+            )}
+          </p>
         </div>
 
         <div className="flex gap-2">

@@ -32,6 +32,9 @@ DATABASE_URL=postgresql://postgres:password@localhost:5432/property_tycoon
 
 # Mantle Network
 MANTLE_RPC_URL=https://rpc.sepolia.mantle.xyz
+# Optional: Multiple RPC endpoints for failover (comma-separated)
+# If not set, uses default fallback chain: official, Ankr, DRPC
+MANTLE_RPC_URLS=https://rpc.sepolia.mantle.xyz,https://rpc.ankr.com/mantle_sepolia,https://mantle-sepolia.drpc.org
 L1_RPC_URL=https://eth.llamarpc.com
 
 # Contract Addresses (Mantle Sepolia Testnet)
@@ -225,13 +228,19 @@ Files:
 
 Uses Chronicle Oracle for price feeds on Mantle Sepolia. 60 to 80 percent less gas than other oracles. Critical for frequent yield calculations. Property value updates cost less.
 
-Chronicle Oracle integration is implemented in `OracleService` with methods to fetch real-time prices for USDC, USDT, ETH, and MNT (`getUSDCPrice`, `getUSDTPrice`, `getETHPrice`, `getMNTPrice`). However, these price feed methods are not currently being called in the application. The integration is ready for use but not actively utilized in this demo.
+Chronicle Oracle integration is implemented in `OracleService` with methods to fetch real-time prices for USDC, USDT, ETH, and MNT (`getUSDCPrice`, `getUSDTPrice`, `getETHPrice`, `getMNTPrice`). MNT/USD price is actively used for USD conversions. Backend wallet must be whitelisted on Chronicle Oracle to fetch prices.
+
+**Active Usage:**
+- `OracleController` exposes `/api/oracle/mnt-price` endpoint
+- `PriceUpdateService` fetches MNT/USD price every 5 minutes
+- Price updates broadcast via Socket.io to all connected clients
+- Frontend receives real-time price updates without polling
 
 RWA property values can be fetched from Chronicle when `CHRONICLE_RWA_PROPERTY_ORACLE` is configured in `getRWAPropertyValue()` method, but this environment variable is not set. The system falls back to contract queries (MockRWA) when Chronicle oracle is not configured.
 
 YieldDistributor contract uses RWA data for yield calculation. If property linked to RWA, contract fetches RWA value and yield rate. Uses RWA data instead of property data for yield calculation. Automatic fallback to property data if RWA not linked or unavailable. All yield calculations happen on-chain via YieldDistributor contract.
 
-Backend yield service also uses RWA data for estimated yield calculations. When property is linked to RWA, backend fetches RWA value and yield rate from blockchain. Uses RWA data for pending yield calculations. Falls back to property data if RWA fetch fails. BigInt values are properly serialized to numbers for JSON responses.
+Backend yield service also uses RWA data for estimated yield calculations. When property is linked to RWA, backend fetches RWA value and yield rate from blockchain. Uses RWA data for pending yield calculations. Falls back to property data if RWA fetch fails. BigInt values are properly serialized to numbers for JSON responses. Property ID validation ensures only existing properties are processed. Property ID 0 is valid if it exists and is owned.
 
 Chronicle Oracle addresses on Mantle Sepolia:
 - USDC/USD: 0x9Dd500569A6e77ECdDE7694CDc2E58ac587768D0
@@ -240,6 +249,25 @@ Chronicle Oracle addresses on Mantle Sepolia:
 - MNT/USD: 0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307
 
 Schnorr-based architecture ensures secure price feeds. Data freshness validation with 3-hour default threshold. tryReadWithAge functions prevent reverts. Graceful fallbacks if oracle data is stale.
+
+## Multi-RPC Failover
+
+Backend uses multiple RPC endpoints for resilience. If one RPC fails, automatically switches to another. Ensures contract calls succeed even if primary RPC is down.
+
+Implementation:
+- `MultiRpcService` manages multiple RPC providers
+- Tests connectivity to all configured RPCs on startup
+- `executeWithFailover` attempts function with each RPC until one succeeds
+- Logs RPC endpoint usage and failures
+- Default fallback chain: official Mantle RPC, Ankr, DRPC
+- Integrated into `ContractsService` for all contract calls
+- Property validation prevents processing non-existent properties
+
+Why we use it: RPC endpoints can be unreliable. Failover ensures backend continues working. Multiple endpoints provide redundancy. Critical for production deployments. Property ID validation prevents contract reverts for invalid properties.
+
+Files:
+- `src/mantle/multi-rpc.service.ts` - Multi-RPC failover service
+- `src/contracts/contracts.service.ts` - Uses MultiRpcService for contract calls
 
 ## Event Indexing
 
@@ -255,7 +283,11 @@ Events are indexed in real-time and broadcast via WebSocket to frontend.
 
 ## BigInt Serialization
 
-Backend properly handles BigInt values in JSON responses. All property methods convert BigInt fields (tokenId, rwaTokenId, totalYieldEarned) to numbers or strings before returning. This prevents "Do not know how to serialize a BigInt" errors when sending data to frontend.
+Backend properly handles BigInt values in JSON responses. All property methods convert BigInt fields (tokenId, rwaTokenId, totalYieldEarned, value) to numbers or strings before returning. This prevents "Do not know how to serialize a BigInt" errors when sending data to frontend.
+
+## Property Validation
+
+Backend validates property IDs before processing. Checks if property exists using `ownerOf` before calculating yield. Property ID 0 is valid if it exists and is owned. Only skips properties that don't exist. Prevents contract reverts for invalid property IDs. Filters out non-existent properties in batch operations.
 
 ## WebSocket Events
 
@@ -263,11 +295,13 @@ Backend emits real-time events via Socket.io:
 
 - `property:created` - New property minted
 - `yield:updated` - Yield accumulation updated
+- `yield:time-update` - Yield time information updated
 - `leaderboard:updated` - Leaderboard position changed
 - `chat:new` - New chat message
 - `quest:completed` - Quest completed
+- `price:update` - MNT/USD price updated (every 5 minutes)
 
-Frontend subscribes to these events for instant updates.
+Frontend subscribes to these events for instant updates. Price updates broadcast automatically without frontend polling.
 
 ## Project Structure
 

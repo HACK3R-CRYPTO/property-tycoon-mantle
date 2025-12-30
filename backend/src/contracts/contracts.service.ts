@@ -7,6 +7,7 @@ import YieldDistributorABI from './abis/YieldDistributor.json';
 import MarketplaceABI from './abis/Marketplace.json';
 import QuestSystemABI from './abis/QuestSystem.json';
 import TokenSwapABI from './abis/TokenSwap.json';
+import { MultiRpcService } from '../mantle/multi-rpc.service';
 
 @Injectable()
 export class ContractsService implements OnModuleInit {
@@ -21,7 +22,10 @@ export class ContractsService implements OnModuleInit {
   public questSystem: ethers.Contract;
   public tokenSwap: ethers.Contract;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private multiRpcService?: MultiRpcService,
+  ) {
     // Don't initialize in constructor - wait for OnModuleInit
   }
 
@@ -48,7 +52,18 @@ export class ContractsService implements OnModuleInit {
         return;
       }
 
-      this.provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+      // Use MultiRpcService if available, otherwise use single provider
+      if (this.multiRpcService) {
+        this.provider = this.multiRpcService.getProvider();
+        this.logger.log(`Using MultiRpcService with ${this.multiRpcService.getAllRpcUrls().length} endpoints`);
+        // Test connectivity on startup
+        this.multiRpcService.testConnectivity().catch(err => {
+          this.logger.warn('RPC connectivity test failed:', err.message);
+        });
+      } else {
+        this.provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+        this.logger.log(`Using single RPC provider: ${rpcUrl}`);
+      }
       this.wallet = new ethers.Wallet(privateKey, this.provider);
 
       const propertyNFTAddress = this.configService.get<string>('PROPERTY_NFT_ADDRESS') || process.env.PROPERTY_NFT_ADDRESS;
@@ -143,7 +158,23 @@ export class ContractsService implements OnModuleInit {
   }
 
   getProvider(): ethers.providers.JsonRpcProvider {
+    // Return current provider (MultiRpcService handles failover internally)
     return this.provider;
+  }
+
+  /**
+   * Execute contract call with automatic RPC failover
+   */
+  async executeWithFailover<T>(
+    operation: (provider: ethers.providers.JsonRpcProvider) => Promise<T>,
+    operationName: string = 'contract call',
+  ): Promise<T> {
+    if (this.multiRpcService) {
+      return this.multiRpcService.executeWithFailover(operation, operationName);
+    } else {
+      // Fallback to single provider if MultiRpcService not available
+      return operation(this.provider);
+    }
   }
 
   getWallet(): ethers.Wallet {
@@ -186,20 +217,71 @@ export class ContractsService implements OnModuleInit {
   }
 
   async calculateYield(propertyId: bigint): Promise<bigint> {
+    // Validate property ID (allow 0, but check if negative)
+    if (propertyId < BigInt(0)) {
+      this.logger.warn(`Invalid property ID: ${propertyId}. Property IDs cannot be negative.`);
+      return BigInt(0);
+    }
+
+    // Check if property exists before calculating yield (property 0 CAN exist)
     try {
+      await this.propertyNFT.ownerOf(propertyId);
+    } catch (error: any) {
+      // Property doesn't exist
+      this.logger.warn(`Property ${propertyId} does not exist. Skipping yield calculation.`);
+      return BigInt(0);
+    }
+
+    try {
+      // Use failover mechanism if available
+      if (this.multiRpcService) {
+        const result = await this.multiRpcService.executeWithFailover(
+          async (provider) => {
+            // Create a new contract instance with the provider
+            const yieldDistributorWithProvider = new ethers.Contract(
+              this.yieldDistributor.address,
+              this.yieldDistributor.interface,
+              provider,
+            );
+            return await yieldDistributorWithProvider.calculateYield(propertyId);
+          },
+          `calculateYield(${propertyId})`,
+        );
+        
+        // Convert result to BigInt (same logic as below)
+        return this.convertYieldResultToBigInt(result, propertyId);
+      }
+      
+      // Fallback to single provider
       const result = await this.yieldDistributor.calculateYield(propertyId);
       
-      // Debug: Log the actual result type and structure
-      this.logger.debug(`calculateYield result for property ${propertyId}:`, {
-        type: typeof result,
-        isBigInt: typeof result === 'bigint',
-        hasHex: result && typeof result === 'object' && '_hex' in result,
-        hasIsBigNumber: result && typeof result === 'object' && '_isBigNumber' in result,
-        keys: result && typeof result === 'object' ? Object.keys(result) : 'N/A',
-      });
-      
-      // Handle different return types from ethers.js
-      let resultBigInt: bigint;
+      return this.convertYieldResultToBigInt(result, propertyId);
+    } catch (error: any) {
+      // If it's a revert (property doesn't exist or invalid), return 0 instead of throwing
+      if (error.code === 'CALL_EXCEPTION' || error.message?.includes('revert')) {
+        this.logger.warn(`Property ${propertyId} yield calculation reverted (property may not exist or be invalid): ${error.message}`);
+        return BigInt(0);
+      }
+      this.logger.error(`Error calling calculateYield for property ${propertyId}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Convert yield result from ethers.js to BigInt
+   */
+  private convertYieldResultToBigInt(result: any, propertyId: bigint): bigint {
+    // Debug: Log the actual result type and structure
+    this.logger.debug(`calculateYield result for property ${propertyId}:`, {
+      type: typeof result,
+      isBigInt: typeof result === 'bigint',
+      hasHex: result && typeof result === 'object' && '_hex' in result,
+      hasIsBigNumber: result && typeof result === 'object' && '_isBigNumber' in result,
+      keys: result && typeof result === 'object' ? Object.keys(result) : 'N/A',
+    });
+    
+    // Handle different return types from ethers.js
+    let resultBigInt: bigint;
       
       if (typeof result === 'bigint') {
         resultBigInt = result;
@@ -283,30 +365,10 @@ export class ContractsService implements OnModuleInit {
       const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000'); // 1000 TYCOON
       if (resultBigInt > MAX_REASONABLE_YIELD) {
         this.logger.error(`Corrupted yield value for property ${propertyId}: ${resultBigInt.toString()} wei. Returning 0.`);
-        // Try to get the value directly using _hex if available
-        try {
-          const directResult = await this.yieldDistributor.calculateYield(propertyId);
-          if (directResult && typeof directResult === 'object' && '_hex' in directResult) {
-            const hexValue = directResult._hex;
-            if (typeof hexValue === 'string' && hexValue.startsWith('0x')) {
-              const correctedValue = BigInt(hexValue);
-              if (correctedValue <= MAX_REASONABLE_YIELD) {
-                this.logger.log(`Corrected yield for property ${propertyId} using _hex: ${correctedValue.toString()} wei`);
-                return correctedValue;
-              }
-            }
-          }
-        } catch (retryError) {
-          this.logger.warn(`Failed to retry with _hex for property ${propertyId}: ${retryError.message}`);
-        }
         return BigInt(0);
       }
       
       return resultBigInt;
-    } catch (error) {
-      this.logger.error(`Error calling calculateYield for property ${propertyId}: ${error.message}`);
-      return BigInt(0);
-    }
   }
 
   async getTotalPendingYield(ownerAddress: string) {
