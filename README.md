@@ -2,11 +2,15 @@
 
 Build property empires. Earn real yield. Own your portfolio. Real-time updates powered by Mantle Network.
 
-**Built for Mantle Global Hackathon 2025** 🏆
-
 ## What You Get
 
 You build property portfolios. You manage properties. You earn real yield from RWA-backed assets. Top tycoons win more. Your properties stay on blockchain. Your yield stays in your wallet. Portfolio updates instantly without refreshing. No waiting. No polling. Pure real-time property management. See other players. Visit their portfolios. Trade properties. Join neighborhoods. Compete on leaderboards. All in real time.
+
+## Why We Built This
+
+Property investment is expensive. Real estate requires large capital. Most people cannot afford properties. We built Property Tycoon to make property investment accessible. Start with small amounts. Build your portfolio over time. Learn investment strategies. Experience the fun of property management. Watch your empire grow. See your yield accumulate. Compete with friends. Visit their portfolios. Learn from top tycoons. All while earning real yield from tokenized real estate.
+
+The game makes property investment fun. You see your properties on a city map. You watch yield accumulate in real time. You compete on leaderboards. You complete investment quests. You join guilds with friends. You trade properties with other players. You link properties to real-world assets. You earn actual rental income. All powered by blockchain. All transparent. All yours.
 
 ## How It Works
 
@@ -74,12 +78,9 @@ Powered by Mantle Network. Backend emits events via smart contracts when propert
 
 Properties linked to tokenized real estate. Each property NFT backed by real-world asset. Real yield from actual rental income. Transparent distribution on-chain. Verifiable ownership. Compliant with regulations. KYC flow for RWA investments. Fractional ownership supported. Multiple properties per RWA. Yield distributed proportionally.
 
-**Perfect fit for RWA / RealFi Track** 🏅
+Linking property to RWA updates yield calculation. YieldDistributor contract checks if property is linked to RWA. If linked, uses RWA value and yield rate for yield calculation. If not linked, uses property's own value and yield rate. Automatic fallback ensures backward compatibility. All existing linked properties benefit immediately.
 
-- Tokenization of real estate assets
-- Compliant yield distribution mechanisms
-- On-chain ownership verification
-- Transparent yield tracking
+Uses MockRWA contract for demo and testing. ERC-721 compatible. Replaced with real RWA contracts in production. Chronicle Oracle integration ready for RWA property values. Frontend supports both oracle-based and MockRWA contracts.
 
 ## Yield Distribution
 
@@ -95,74 +96,43 @@ Your property NFTs belong to you. Trade them. Sell them. Keep them. Your TYCOON 
 
 Mantle offers low fees. Your yield stays in your pocket. Fast transactions mean quick property purchases. Real-time updates mean instant portfolio changes. Sub-second finality. High throughput. Built for real use. Perfect for property management. Perfect for multiplayer interactions.
 
+Property minting costs 0.001 MNT. Yield claiming costs 0.0005 MNT. Enables micro-transactions for frequent yield collection. Supports real-time multiplayer interactions. Handles concurrent property minting. Processes multiple yield claims simultaneously.
+
 ## Mantle Integration
 
-Property Tycoon leverages Mantle's modular architecture and advanced tooling for seamless blockchain integration:
+We use Mantle SDK for cross-chain messaging. Asset bridging between L1 and L2. Deposit and withdrawal estimation. Message status tracking. L1 to L2 asset transfers for RWA tokenization.
 
-**Mantle SDK Integration:**
-- Cross-chain messaging for asset bridging between L1 and L2
-- Deposit and withdrawal estimation for gas optimization
-- Message status tracking for reliable cross-chain operations
-- Seamless L1 to L2 asset transfers for RWA tokenization
+We use Mantle Viem for type-safe contract interactions. Wagmi and Viem integration. Efficient data fetching with automatic caching. Real-time event subscriptions. Optimized RPC calls leveraging Mantle throughput.
 
-**Mantle Viem Integration:**
-- Type-safe contract interactions using Wagmi and Viem
-- Efficient data fetching with automatic caching
-- Real-time event subscriptions for instant updates
-- Optimized RPC calls leveraging Mantle's high throughput
+We use Mantle custom RPC methods. eth_getBlockRange for batch block queries. rollup_getInfo for L2 node status. Gas price optimization using Mantle GasPriceOracle. Custom API methods for performance.
 
-**Mantle Custom RPC Methods:**
-- `eth_getBlockRange` for efficient batch block queries
-- `rollup_getInfo` for L2 node status monitoring
-- Gas price optimization using Mantle's GasPriceOracle
-- Custom API methods for enhanced performance
+We use Mantle GasPriceOracle for gas optimization. L1 base fee tracking. L2 gas price optimization. Transaction cost estimation. Batch transaction support.
 
-**Chronicle Oracle Integration:**
-- Real-time price feeds for USDC, USDT, ETH, MNT on Mantle Sepolia
-- Gas-efficient oracle queries (60-80% less gas than other oracles)
-- Safe error handling with tryReadWithAge() functions
-- Data freshness validation for reliable price data
-- RWA integration ready (MockRWA contract for demo, Chronicle feeds when available)
+## Chronicle Oracle
 
-**Modular Architecture Benefits:**
-- Low gas costs enable micro-transactions for yield collection
-- High throughput supports real-time multiplayer interactions
-- Fast finality ensures instant portfolio updates
-- EVM compatibility allows seamless integration with existing tooling
+Uses Chronicle Oracle for price feeds on Mantle Sepolia. 60 to 80 percent less gas than other oracles. Critical for frequent yield calculations. Property value updates cost less.
 
-**Best Mantle Integration Potential** 🏆
+Schnorr-based architecture ensures secure price feeds. Data freshness validation with 3-hour default threshold. tryReadWithAge functions prevent reverts. Graceful fallbacks if oracle data is stale.
 
-- Advanced use of Mantle's modular architecture
-- Optimized gas usage for frequent yield claims
-- Real-time event indexing leveraging Mantle's high throughput
-- Cross-chain RWA asset bridging capabilities
-- Custom RPC method utilization for performance
-- Chronicle Oracle integration for reliable price feeds
-- Gas-efficient oracle queries leveraging Chronicle's Schnorr-based architecture
+Chronicle Oracle addresses on Mantle Sepolia:
+- USDC/USD: 0x9Dd500569A6e77ECdDE7694CDc2E58ac587768D0
+- USDT/USD: 0xD671F5F7c2fb6f75439641C36a578842f5b376A9
+- ETH/USD: 0xa6896dCf3f5Dc3c29A5bD3a788D6b7e901e487D8
+- MNT/USD: 0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307
 
-All smart contracts deployed and verified on Mantle Sepolia Testnet. All interactions optimized for Mantle's low-fee, high-performance environment.
+Backend fetches real-time prices for USDC, USDT, ETH, and MNT. Price feeds used for yield calculations and property valuations. RWA property values fetched from Chronicle when configured. Falls back to contract queries if Chronicle oracle not available.
 
-**Chronicle Oracle Integration:**
-- USDC/USD: `0x9Dd500569A6e77ECdDE7694CDc2E58ac587768D0`
-- USDT/USD: `0xD671F5F7c2fb6f75439641C36a578842f5b376A9`
-- ETH/USD: `0xa6896dCf3f5Dc3c29A5bD3a788D6b7e901e487D8`
-- MNT/USD: `0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307`
+## MockRWA
 
-All oracle addresses configured for Mantle Sepolia Testnet. Chronicle integration provides gas-efficient (60-80% less gas) and reliable price feeds using IChronicle interface with safe error handling.
+Uses MockRWA for demo and testing. Allows testing RWA linking without real tokenized assets. Perfect for hackathons and demos. Developers test property linking without deploying real RWA contracts. Easy to mint test properties to different addresses.
+
+MockRWA implements ERC-721 standard. Replaced with any real RWA contract following the same interface. Real RWA platforms require KYC and compliance. MockRWA allows immediate testing and demos.
+
+Frontend checks for NEXT_PUBLIC_ORACLE_RWA_ADDRESS environment variable. If set, uses oracle-based RWA contract. If not set, falls back to MockRWA contract. Backend uses Chronicle Oracle for RWA property values when CHRONICLE_RWA_PROPERTY_ORACLE is configured. System handles both mock and real RWA contracts.
 
 ## Technical Excellence
 
 Web-based gameplay. No downloads. No Unity. No plugins. Works in any browser. Mobile responsive. Touch controls. Keyboard support. Smooth animations. Property visualization. Yield charts. Real-time leaderboard. RWA integration. Smart contract rewards. Mantle network integration. Next.js frontend. NestJS backend. Socket.io real-time. Pixi.js rendering.
-
-**Best UX / Demo Potential** 🎨
-
-- Intuitive property management interface
-- Real-time portfolio visualization
-- Smooth animations and transitions
-- Mobile-responsive design
-- Seamless wallet integration
-- Clear onboarding flow
-- Interactive city map view
 
 ## Getting Started
 
@@ -176,7 +146,7 @@ Backend: See backend README for setup. Run API server. Configure contract addres
 
 Mantle Sepolia Testnet:
 
-TYCOON Token (GameToken): 0x3334f87178AD0f33e61009777a3dFa1756e9c23f
+TYCOON Token: 0x3334f87178AD0f33e61009777a3dFa1756e9c23f
 
 Property NFT: 0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c
 
@@ -188,9 +158,9 @@ Quest System: 0x89f72227168De554A28874aA79Bcb6f0E8e2227C
 
 Token Swap: 0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E
 
-View contracts on Mantle Explorer: https://explorer.sepolia.mantle.xyz
+MockRWA: 0xDF1D8Bce49E57f12e78e5881bcFE2f546e7A5a45
 
-**Deployer Address:** 0xd2df53D9791e98Db221842Dd085F4144014BBE2a
+View contracts on Mantle Explorer: https://explorer.sepolia.mantle.xyz
 
 ## Documentation
 
@@ -199,27 +169,6 @@ View contracts on Mantle Explorer: https://explorer.sepolia.mantle.xyz
 [Frontend README](frontend/README.md): Frontend setup and feature documentation.
 
 [Backend README](backend/README.md): Backend setup and API documentation.
-
-## Deployment Details
-
-All contracts deployed to Mantle Sepolia Testnet using Foundry.
-
-**How We Deployed:**
-- Used Foundry forge create command
-- Deployed contracts individually to ensure proper constructor arguments
-- Compiled with Solidity 0.8.24 and OpenZeppelin v5
-- All contracts linked together with proper dependencies
-- Gas optimized with 200 optimizer runs
-
-**What We Deployed:**
-- GameToken: ERC-20 token for in-game currency (TYCOON)
-- PropertyNFT: ERC-721 contract for property ownership
-- YieldDistributor: Distributes yield rewards to property owners
-- Marketplace: Property trading marketplace
-- QuestSystem: Investment quest and achievement system
-- TokenSwap: MNT to TYCOON token swap
-
-See [DEPLOYED_ADDRESSES.md](DEPLOYED_ADDRESSES.md) for complete deployment process and evidence.
 
 ## Built for Mantle Global Hackathon 2025
 

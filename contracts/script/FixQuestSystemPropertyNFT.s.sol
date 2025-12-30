@@ -26,7 +26,7 @@ contract FixQuestSystemPropertyNFT is Script {
         
         // Check if QuestSystem has setPropertyNFT function
         // If not, we'll need to redeploy with correct address
-        address currentPropertyNFT = questSystem.propertyNFT();
+        address currentPropertyNFT = address(questSystem.propertyNFT());
         console.log("Current PropertyNFT in QuestSystem:", currentPropertyNFT);
         
         if (currentPropertyNFT != newPropertyNFTAddress) {
@@ -40,6 +40,7 @@ contract FixQuestSystemPropertyNFT is Script {
         vm.stopBroadcast();
     }
 }
+
 
 
 

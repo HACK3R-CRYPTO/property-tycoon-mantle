@@ -6,6 +6,27 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "./PropertyNFT.sol";
 import "./GameToken.sol";
 
+// Interface for RWA contracts (MockRWA or real RWA)
+interface IRWA {
+    function getRWAProperty(uint256 tokenId) external view returns (
+        string memory name,
+        uint256 value,
+        uint256 monthlyYield,
+        string memory location,
+        uint256 createdAt,
+        bool isActive
+    );
+    function getYieldRate(uint256 tokenId) external view returns (uint256);
+    function properties(uint256 tokenId) external view returns (
+        string memory name,
+        uint256 value,
+        uint256 monthlyYield,
+        string memory location,
+        uint256 createdAt,
+        bool isActive
+    );
+}
+
 contract YieldDistributor is ReentrancyGuard, Ownable {
     PropertyNFT public propertyNFT;
     GameToken public gameToken;
@@ -92,7 +113,57 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
     
     function calculateYield(uint256 propertyId) public view returns (uint256) {
         PropertyNFT.Property memory prop = propertyNFT.getProperty(propertyId);
-        if (prop.value == 0 || prop.yieldRate == 0) return 0;
+        
+        // Determine which value and yieldRate to use
+        uint256 value;
+        uint256 yieldRate;
+        
+        // Check if property is linked to RWA
+        if (prop.rwaContract != address(0) && prop.rwaTokenId > 0) {
+            // Try to fetch RWA data
+            try IRWA(prop.rwaContract).getRWAProperty(prop.rwaTokenId) returns (
+                string memory,
+                uint256 rwaValue,
+                uint256,
+                string memory,
+                uint256,
+                bool isActive
+            ) {
+                // Only use RWA data if RWA is active and has valid value
+                if (isActive && rwaValue > 0) {
+                    value = rwaValue;
+                    // Get yield rate from RWA contract
+                    try IRWA(prop.rwaContract).getYieldRate(prop.rwaTokenId) returns (uint256 rwaYieldRate) {
+                        if (rwaYieldRate > 0) {
+                            yieldRate = rwaYieldRate;
+                        } else {
+                            // Fallback to property yieldRate if RWA yieldRate is 0
+                            value = prop.value;
+                            yieldRate = prop.yieldRate;
+                        }
+                    } catch {
+                        // If getYieldRate fails, fallback to property data
+                        value = prop.value;
+                        yieldRate = prop.yieldRate;
+                    }
+                } else {
+                    // RWA not active or invalid, use property data
+                    value = prop.value;
+                    yieldRate = prop.yieldRate;
+                }
+            } catch {
+                // If RWA contract call fails, fallback to property data (backward compatible)
+                value = prop.value;
+                yieldRate = prop.yieldRate;
+            }
+        } else {
+            // Not linked to RWA, use property's own data (existing behavior)
+            value = prop.value;
+            yieldRate = prop.yieldRate;
+        }
+        
+        // Validate value and yieldRate
+        if (value == 0 || yieldRate == 0) return 0;
         
         // If lastYieldUpdate is 0, use property creation time (first time)
         uint256 lastUpdate = lastYieldUpdate[propertyId];
@@ -113,7 +184,7 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
         
         // Calculate daily yield: (value * yieldRate) / (365 * 10000)
         // yieldRate is in basis points (500 = 5%)
-        uint256 dailyYield = (prop.value * prop.yieldRate) / (365 * 10000);
+        uint256 dailyYield = (value * yieldRate) / (365 * 10000);
         uint256 periods = timeSinceUpdate / YIELD_UPDATE_INTERVAL;
         
         // Cap periods to prevent overflow

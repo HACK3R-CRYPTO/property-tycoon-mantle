@@ -16,6 +16,8 @@ QuestSystem: Investment quest system. Tracks quest completion. Distributes quest
 
 TokenSwap: MNT to TYCOON token swap. Players buy TYCOON tokens with MNT. Exchange rate: 1 MNT = 100 TYCOON tokens.
 
+MockRWA: Mock Real-World Asset contract for demo and testing. Implements ERC-721 standard. Replaced with real RWA contracts in production. Simulates tokenized real estate assets.
+
 ## Prerequisites
 
 Install Foundry. Get MNT for gas fees. Have a wallet ready.
@@ -54,6 +56,7 @@ Create a `.env` file in the contracts directory:
 PRIVATE_KEY=0xyour_private_key_with_0x_prefix
 MANTLE_RPC_URL=https://rpc.sepolia.mantle.xyz
 ETHERSCAN_API_KEY=your_etherscan_api_key
+MOCK_RWA_ADDRESS=0xDF1D8Bce49E57f12e78e5881bcFE2f546e7A5a45
 ```
 
 Important notes:
@@ -92,7 +95,6 @@ Deploy contracts individually if needed:
 # Deploy GameToken
 forge create src/GameToken.sol:GameToken \
   --rpc-url https://rpc.sepolia.mantle.xyz \
-  --constructor-args "Property Tycoon Token" "TYCOON" \
   --verify
 
 # Deploy PropertyNFT
@@ -105,6 +107,11 @@ forge create src/YieldDistributor.sol:YieldDistributor \
   --rpc-url https://rpc.sepolia.mantle.xyz \
   --constructor-args <GAME_TOKEN_ADDRESS> <PROPERTY_NFT_ADDRESS> \
   --verify
+
+# Deploy MockRWA
+forge create src/MockRWA.sol:MockRWA \
+  --rpc-url https://rpc.sepolia.mantle.xyz \
+  --verify
 ```
 
 ## Deployed Contracts
@@ -115,13 +122,15 @@ GameToken: 0x3334f87178AD0f33e61009777a3dFa1756e9c23f
 
 PropertyNFT: 0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c
 
-YieldDistributor: 0xb950EE50c98cD686DA34C535955203e2CE065F88
+YieldDistributor: 0x37e425aece1e2fc89b286cf7a63a74e8c7a791c4 (Updated with RWA yield integration)
 
 Marketplace: 0x6b6b65843117C55da74Ea55C954a329659EFBeF0
 
 QuestSystem: 0x89f72227168De554A28874aA79Bcb6f0E8e2227C
 
 TokenSwap: 0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E
+
+MockRWA: 0xDF1D8Bce49E57f12e78e5881bcFE2f546e7A5a45
 
 View contracts on Mantle Explorer: https://explorer.sepolia.mantle.xyz
 
@@ -153,11 +162,13 @@ Provide RWA contract address and token ID.
 
 Property generates yield from RWA rental income.
 
+Linking property to RWA updates yield calculation automatically. YieldDistributor contract checks if property is linked to RWA. If linked, fetches RWA value and yield rate from RWA contract. Uses RWA data for yield calculation instead of property data. If RWA call fails or property not linked, falls back to property's own value and yield rate. Backward compatible with existing properties.
+
 ### Claim Yield
 
 Call `claimYield` or `batchClaimYield` function on YieldDistributor contract.
 
-Yield calculated based on property value and yield rate.
+Yield calculated based on property value and yield rate. If property linked to RWA, uses RWA value and yield rate instead. RWA yield rate calculated from RWA monthly yield and value. Automatic fallback ensures all properties generate yield correctly.
 
 Minimum 24 hours required before first claim.
 
@@ -181,28 +192,52 @@ Call quest check functions on QuestSystem contract:
 
 Rewards automatically minted to player wallet.
 
+### Mint RWA Properties for Different Addresses
+
+Use the `MintRWAForAddresses` script to distribute RWA tokens:
+
+1. Edit `script/MintRWAForAddresses.s.sol`
+2. Update the `recipients` array with target addresses
+3. Set `MOCK_RWA_ADDRESS=0xDF1D8Bce49E57f12e78e5881bcFE2f546e7A5a45` in `.env`
+4. Run:
+
+```bash
+forge script script/MintRWAForAddresses.s.sol:MintRWAForAddresses \
+  --rpc-url https://rpc.sepolia.mantle.xyz \
+  --broadcast
+```
+
+Uses MockRWA for demo and testing. Allows testing RWA linking without real tokenized assets. Perfect for hackathons and demos. Replaced with real RWA contracts in production.
+
 ## Mantle Network Benefits
 
-**Low Gas Costs:**
-- Property minting: ~0.001 MNT
-- Yield claiming: ~0.0005 MNT
-- Marketplace trading: ~0.002 MNT
-- Quest completion: ~0.001 MNT
+Property minting costs 0.001 MNT. Yield claiming costs 0.0005 MNT. Marketplace trading costs 0.002 MNT. Quest completion costs 0.001 MNT.
 
-**High Throughput:**
-- Supports real-time multiplayer interactions
-- Handles concurrent property minting
-- Processes multiple yield claims simultaneously
+Supports real-time multiplayer interactions. Handles concurrent property minting. Processes multiple yield claims simultaneously.
 
-**Fast Finality:**
-- Sub-second transaction confirmation
-- Instant portfolio updates
-- Real-time leaderboard synchronization
+Sub-second transaction confirmation. Instant portfolio updates. Real-time leaderboard synchronization.
 
-**EVM Compatibility:**
-- Standard Solidity contracts
-- Works with existing tooling
-- OpenZeppelin contracts integration
+Standard Solidity contracts. Works with existing tooling. OpenZeppelin contracts integration.
+
+## Mantle Integration in Contracts
+
+Contracts deployed on Mantle Sepolia Testnet. Optimized for Mantle's low fees and high throughput.
+
+Why Mantle for Property Tycoon:
+- Low gas costs enable frequent yield claims
+- High throughput supports real-time multiplayer
+- Fast finality ensures instant portfolio updates
+- EVM compatibility works with existing tools
+
+Contract verification uses Mantle Explorer API. Automatic verification during deployment. Manual verification supported via Etherscan API key.
+
+Gas optimization:
+- Property minting optimized for batch operations
+- Yield claiming uses minimal gas
+- Marketplace trades cost less than other chains
+- Quest completion requires minimal gas
+
+All contracts use standard Solidity patterns. OpenZeppelin contracts for security. ReentrancyGuard on all state-changing functions. SafeERC20 for token transfers.
 
 ## Testing
 
@@ -288,6 +323,17 @@ await writeContract({
 });
 ```
 
+### Link to RWA
+
+```typescript
+await writeContract({
+  address: PROPERTY_NFT_ADDRESS,
+  abi: PropertyNFTABI,
+  functionName: "linkToRWA",
+  args: [propertyTokenId, rwaContractAddress, rwaTokenId],
+});
+```
+
 ## Network Configuration
 
 Mantle Sepolia Testnet:
@@ -327,12 +373,15 @@ contracts/
 │   ├── YieldDistributor.sol
 │   ├── Marketplace.sol
 │   ├── QuestSystem.sol
-│   └── TokenSwap.sol
+│   ├── TokenSwap.sol
+│   └── MockRWA.sol
 ├── test/
 │   └── PropertyNFT.t.sol
 ├── script/
 │   ├── FreshDeploy.s.sol
-│   └── DeployAll.s.sol
+│   ├── DeployAll.s.sol
+│   ├── DeployMockRWA.s.sol
+│   └── MintRWAForAddresses.s.sol
 ├── foundry.toml
 └── README.md
 ```
@@ -373,7 +422,7 @@ After deploying new contracts:
 - Update contract addresses in frontend `.env.local`
 - Update contract addresses in source files
 - Verify all contracts on explorer
-- Test full flow: buy TYCOON, mint property, claim yield, complete quest
+- Test full flow: buy TYCOON, mint property, link RWA, claim yield, complete quest
 
 ## Support
 

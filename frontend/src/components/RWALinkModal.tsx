@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
 import { X, Building2, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -76,14 +76,27 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
   const [selectedTokenId, setSelectedTokenId] = useState<number | null>(null);
   const [availableTokens, setAvailableTokens] = useState<RWAToken[]>([]);
   const [loading, setLoading] = useState(false);
+  const { address } = useAccount();
 
   // Write contract for linking
   const { writeContract, data: hash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  // Load available RWA tokens (we know 5 tokens were minted during deployment)
+  // Determine which RWA contract to use (oracle-based or fallback to MockRWA)
+  const getRWAContract = () => {
+    // Check for oracle-based RWA contract first (from CONTRACTS)
+    if (CONTRACTS.OracleRWA && CONTRACTS.OracleRWA !== '0x0000000000000000000000000000000000000000') {
+      return CONTRACTS.OracleRWA;
+    }
+    // Fallback to MockRWA
+    return CONTRACTS.MockRWA;
+  };
+
+  // Load available RWA tokens (filtered by current user's ownership)
   useEffect(() => {
-    if (!isOpen || !CONTRACTS.MockRWA || CONTRACTS.MockRWA === '0x0000000000000000000000000000000000000000') {
+    const rwaContract = getRWAContract();
+    
+    if (!isOpen || !rwaContract || rwaContract === '0x0000000000000000000000000000000000000000' || !address) {
       setAvailableTokens([]);
       return;
     }
@@ -98,12 +111,12 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
           return;
         }
         
-        // Check tokens 0-4 (we know 5 tokens were minted during deployment, starting from 0)
-        for (let i = 0; i < 5; i++) {
+        // Check tokens 0-19 (covers initial tokens and newly minted tokens)
+        for (let i = 0; i < 20; i++) {
           try {
             // First check if token exists by checking ownerOf
             const owner = await publicClient.readContract({
-              address: CONTRACTS.MockRWA,
+              address: rwaContract,
               abi: MOCK_RWA_ABI,
               functionName: 'ownerOf',
               args: [BigInt(i)],
@@ -112,9 +125,17 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
             // If token doesn't exist, ownerOf will revert, so skip it
             if (!owner) continue;
 
+            // IMPORTANT: Only show RWA tokens owned by the current user
+            const ownerLower = (owner as string).toLowerCase();
+            const userAddressLower = address.toLowerCase();
+            if (ownerLower !== userAddressLower) {
+              console.log(`Skipping RWA token ${i}: owned by ${owner}, not by user ${address}`);
+              continue;
+            }
+
             // Try to read property data
             const propertyData = await publicClient.readContract({
-              address: CONTRACTS.MockRWA,
+              address: rwaContract,
               abi: MOCK_RWA_ABI,
               functionName: 'properties',
               args: [BigInt(i)],
@@ -126,6 +147,7 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
               value: propertyData[1] as bigint,
               yield: propertyData[2] as bigint,
               location: propertyData[3] as string,
+              isOwned: true,
             });
           } catch (error) {
             // If token doesn't exist or can't read, skip it
@@ -134,6 +156,7 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
         }
         
         setAvailableTokens(tokens);
+        console.log(`✅ Loaded ${tokens.length} RWA tokens owned by user ${address} from ${rwaContract === CONTRACTS.MockRWA ? 'MockRWA (fallback)' : 'Oracle RWA'}`);
       } catch (error) {
         console.error('Failed to load RWA tokens:', error);
       } finally {
@@ -142,28 +165,54 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
     };
 
     loadTokens();
-  }, [isOpen]);
+  }, [isOpen, address]);
 
   // Handle successful transaction
   useEffect(() => {
-    if (isSuccess) {
-      onSuccess?.();
-      onClose();
+    if (isSuccess && hash) {
+      console.log('✅ RWA link transaction confirmed!');
+      console.log(`   Transaction hash: ${hash}`);
+      console.log(`   Property #${propertyTokenId} is now linked to RWA token #${selectedTokenId}`);
+      console.log(`   Yield calculation will now use RWA value and yield rate`);
+      console.log(`   Refresh the page or wait a few seconds to see updated yield`);
+      
+      // Wait a bit for blockchain state to update, then reload
+      setTimeout(() => {
+        onSuccess?.();
+        onClose();
+      }, 3000);
     }
-  }, [isSuccess, onSuccess, onClose]);
+  }, [isSuccess, hash, onSuccess, onClose, propertyTokenId, selectedTokenId]);
 
   const handleLink = () => {
-    if (!selectedTokenId || !CONTRACTS.MockRWA) return;
+    const rwaContract = getRWAContract();
+    if (!selectedTokenId || !rwaContract) {
+      console.error('Cannot link: missing RWA contract or token ID');
+      return;
+    }
 
     try {
+      console.log(`🔗 Attempting to link property ${propertyTokenId} to RWA:`, {
+        rwaContract,
+        rwaTokenId: selectedTokenId,
+        propertyTokenId,
+      });
+      
       writeContract({
         address: CONTRACTS.PropertyNFT,
         abi: PROPERTY_NFT_ABI,
         functionName: 'linkToRWA',
-        args: [BigInt(propertyTokenId), CONTRACTS.MockRWA, BigInt(selectedTokenId)],
+        args: [BigInt(propertyTokenId), rwaContract, BigInt(selectedTokenId)],
       });
+      
+      console.log(`✅ Link transaction submitted! Waiting for confirmation...`);
+      console.log(`   Property: #${propertyTokenId}`);
+      console.log(`   RWA Contract: ${rwaContract}`);
+      console.log(`   RWA Token: #${selectedTokenId}`);
+      console.log(`   After confirmation, property will use RWA yield automatically`);
     } catch (error) {
-      console.error('Failed to link RWA:', error);
+      console.error('❌ Failed to link RWA:', error);
+      alert('Failed to link property to RWA. Check console for details.');
     }
   };
 
@@ -185,6 +234,16 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
         <div className="p-4 overflow-y-auto max-h-[calc(90vh-120px)]">
           <p className="text-sm text-gray-400 mb-4">
             Select a Real-World Asset (RWA) token to link to your property. This connects your in-game property to a tokenized real-world asset.
+            {getRWAContract() !== CONTRACTS.MockRWA && (
+              <span className="block mt-2 text-emerald-400 text-xs">
+                Using Oracle-based RWA contract
+              </span>
+            )}
+            {getRWAContract() === CONTRACTS.MockRWA && (
+              <span className="block mt-2 text-yellow-400 text-xs">
+                Using MockRWA (fallback) - configure NEXT_PUBLIC_ORACLE_RWA_ADDRESS to use oracle
+              </span>
+            )}
           </p>
 
           {loading ? (
@@ -214,13 +273,18 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
                         )}
                         {token.value && (
                           <p className="text-xs text-emerald-400 mt-1">
-                            Value: {formatEther(token.value)} ETH
+                            Value: ${(Number(formatEther(token.value))).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </p>
                         )}
-                        {token.yield && (
-                          <p className="text-xs text-blue-400 mt-1">
-                            Monthly Yield: {formatEther(token.yield)} ETH
-                          </p>
+                        {token.yield && token.value && (
+                          <>
+                            <p className="text-xs text-blue-400 mt-1">
+                              Monthly: ${(Number(formatEther(token.yield))).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </p>
+                            <p className="text-xs text-purple-400 mt-1 font-semibold">
+                              APY: {((Number(formatEther(token.yield)) * 12 / Number(formatEther(token.value))) * 100).toFixed(2)}%
+                            </p>
+                          </>
                         )}
                       </div>
                       {selectedTokenId === token.tokenId && (

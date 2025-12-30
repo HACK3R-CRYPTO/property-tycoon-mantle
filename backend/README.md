@@ -1,6 +1,6 @@
 # Property Tycoon Backend
 
-NestJS backend for Property Tycoon. Manages properties. Distributes yield. Handles marketplace. Tracks quests. Updates leaderboards. Real-time updates via Socket.io. Mantle SDK integration. Oracle price feeds.
+NestJS backend for Property Tycoon. Manages properties. Distributes yield. Handles marketplace. Tracks quests. Updates leaderboards. Real-time updates via Socket.io. Mantle SDK integration. Chronicle Oracle price feeds.
 
 ## What This Backend Does
 
@@ -41,6 +41,10 @@ YIELD_DISTRIBUTOR_ADDRESS=0xb950EE50c98cD686DA34C535955203e2CE065F88
 MARKETPLACE_ADDRESS=0x6b6b65843117C55da74Ea55C954a329659EFBeF0
 QUEST_SYSTEM_ADDRESS=0x89f72227168De554A28874aA79Bcb6f0E8e2227C
 TOKEN_SWAP_ADDRESS=0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E
+MOCK_RWA_ADDRESS=0xDF1D8Bce49E57f12e78e5881bcFE2f546e7A5a45
+
+# Chronicle Oracle (Optional)
+CHRONICLE_RWA_PROPERTY_ORACLE=0xYourChronicleOracleAddress
 
 # Private Key (for contract interactions)
 PRIVATE_KEY=your_private_key_here
@@ -60,12 +64,14 @@ Important notes:
 Start PostgreSQL using Docker:
 
 ```bash
+cd property-tycoon-mantle
 docker-compose up -d postgres
 ```
 
 Initialize database:
 
 ```bash
+cd backend
 npm run db:init
 ```
 
@@ -169,36 +175,69 @@ POST `/api/guilds/:id/join` - Join guild
 
 ## Mantle Integration
 
-Backend leverages Mantle's modular architecture for advanced blockchain operations:
+Backend uses multiple Mantle tools for advanced blockchain operations.
 
-**Mantle SDK Service:**
-- Cross-chain messaging for asset bridging
-- Deposit and withdrawal estimation
-- Message status tracking
-- L1 to L2 asset transfers for RWA tokenization
+### Mantle SDK Integration
 
-**Mantle API Service:**
-- Custom RPC method calls (`eth_getBlockRange`)
-- Rollup information queries (`rollup_getInfo`)
-- Gas price optimization using Mantle's GasPriceOracle
-- Enhanced performance through custom API methods
+Uses @mantleio/sdk package for cross-chain operations. CrossChainMessenger handles L1 to L2 asset bridging. Deposit and withdrawal estimation for gas optimization. Message status tracking for reliable cross-chain operations. L1 to L2 asset transfers for RWA tokenization.
 
-**Mantle Gas Service:**
-- Gas price optimization for frequent transactions
-- Batch transaction support
-- Cost estimation for yield claims
+Implementation:
+- MantleSdkService initializes CrossChainMessenger
+- Connects to L1 and L2 providers
+- Tracks message status for cross-chain transfers
+- Estimates gas for deposits and withdrawals
+- Monitors L1 and L2 block numbers
 
-**Oracle Service:**
-- Chronicle Oracle integration for price feeds (Mantle Sepolia)
-- USDC/USDT/ETH/MNT price tracking via Chronicle
-- IChronicle interface implementation (tryReadWithAge for safe queries)
-- Data freshness validation (3-hour default threshold)
-- Gas-efficient queries (60-80% less gas than other oracles)
-- RWA property value fetching (Chronicle + MockRWA fallback)
-- RWA yield rate calculation (Chronicle + contract query fallback)
-- Error handling with graceful fallbacks
+Why we use it: Enables RWA assets to bridge from Ethereum mainnet to Mantle L2. Reduces costs for large asset transfers. Provides reliable cross-chain messaging.
 
-### Event Indexing
+### Mantle API Service
+
+Uses Mantle custom RPC methods for efficient data queries. eth_getBlockRange fetches multiple blocks in one call. rollup_getInfo monitors L2 node status. Reduces RPC calls by 90 percent for event indexing.
+
+Implementation:
+- MantleApiService calls custom RPC methods
+- eth_getBlockRange for batch block queries
+- rollup_getInfo for node sync status
+- L1 and L2 block number tracking
+- L2 transaction index monitoring
+
+Why we use it: Event indexing requires many block queries. Standard RPC needs one call per block. Mantle custom methods fetch 100 blocks in one call. Reduces backend load and improves performance.
+
+### Mantle Gas Service
+
+Uses Mantle GasPriceOracle for gas optimization. Tracks L1 base fee and L2 gas price. Estimates transaction costs accurately. Optimizes batch transactions.
+
+Implementation:
+- MantleGasService queries GasPriceOracle contract
+- Gets L1 base fee for cross-chain operations
+- Gets L2 gas price for local transactions
+- Estimates L1 fees for transaction data
+- Checks node sync status before transactions
+
+Why we use it: Yield claims happen frequently. Gas optimization saves costs. Accurate estimates prevent failed transactions. Batch operations require cost estimation.
+
+Files:
+- `src/mantle/mantle-sdk.service.ts` - CrossChainMessenger integration
+- `src/mantle/mantle-api.service.ts` - Custom RPC method calls
+- `src/mantle/mantle-gas.service.ts` - GasPriceOracle integration
+
+## Chronicle Oracle Integration
+
+Uses Chronicle Oracle for price feeds on Mantle Sepolia. 60 to 80 percent less gas than other oracles. Critical for frequent yield calculations. Property value updates cost less.
+
+Backend fetches real-time prices for USDC, USDT, ETH, and MNT. Price feeds used for yield calculations and property valuations. RWA property values fetched from Chronicle when configured. Falls back to contract queries if Chronicle oracle not available.
+
+YieldDistributor contract uses RWA data for yield calculation. If property linked to RWA, contract fetches RWA value and yield rate. Uses RWA data instead of property data for yield calculation. Automatic fallback to property data if RWA not linked or unavailable. All yield calculations happen on-chain via YieldDistributor contract.
+
+Chronicle Oracle addresses on Mantle Sepolia:
+- USDC/USD: 0x9Dd500569A6e77ECdDE7694CDc2E58ac587768D0
+- USDT/USD: 0xD671F5F7c2fb6f75439641C36a578842f5b376A9
+- ETH/USD: 0xa6896dCf3f5Dc3c29A5bD3a788D6b7e901e487D8
+- MNT/USD: 0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307
+
+Schnorr-based architecture ensures secure price feeds. Data freshness validation with 3-hour default threshold. tryReadWithAge functions prevent reverts. Graceful fallbacks if oracle data is stale.
+
+## Event Indexing
 
 Backend listens to contract events and syncs database automatically:
 

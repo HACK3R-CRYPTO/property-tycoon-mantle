@@ -90,7 +90,11 @@ export function PropertyDetails({
 
               {property.rwaContract ? (
                 <div className="p-3 bg-emerald-900/20 rounded-lg border border-emerald-500/30">
-                  <p className="text-xs text-emerald-400 mb-1">Linked to RWA</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <LinkIcon className="w-4 h-4 text-emerald-400" />
+                    <p className="text-xs text-emerald-400 font-semibold">✅ Linked to RWA - Using RWA Yield</p>
+                  </div>
+                  <p className="text-xs text-gray-300 mb-1">Yield calculated from RWA value and yield rate</p>
                   <p className="text-sm text-white font-mono truncate">{property.rwaContract}</p>
                   {property.rwaTokenId && (
                     <p className="text-xs text-gray-400">Token ID: {property.rwaTokenId}</p>

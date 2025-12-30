@@ -50,11 +50,17 @@ export class PropertiesService {
     
     if (!property) return null;
     
-    // Convert BigInt values to strings for JSON serialization
+    // Convert BigInt values to strings/numbers for JSON serialization
     return {
       ...property,
       value: property.value?.toString() || property.value,
       totalYieldEarned: property.totalYieldEarned?.toString() || property.totalYieldEarned,
+      rwaTokenId: property.rwaTokenId !== null && property.rwaTokenId !== undefined 
+        ? (typeof property.rwaTokenId === 'bigint' ? Number(property.rwaTokenId) : property.rwaTokenId)
+        : undefined,
+      tokenId: property.tokenId !== null && property.tokenId !== undefined
+        ? (typeof property.tokenId === 'bigint' ? Number(property.tokenId) : property.tokenId)
+        : property.tokenId,
     };
   }
 
@@ -79,11 +85,17 @@ export class PropertiesService {
       .from(schema.properties)
       .where(eq(schema.properties.ownerId, ownerId));
     
-    // Convert BigInt values to strings for JSON serialization
+    // Convert BigInt values to strings/numbers for JSON serialization
     return properties.map(prop => ({
       ...prop,
       value: prop.value?.toString() || prop.value,
       totalYieldEarned: prop.totalYieldEarned?.toString() || prop.totalYieldEarned,
+      rwaTokenId: prop.rwaTokenId !== null && prop.rwaTokenId !== undefined 
+        ? (typeof prop.rwaTokenId === 'bigint' ? Number(prop.rwaTokenId) : prop.rwaTokenId)
+        : undefined,
+      tokenId: prop.tokenId !== null && prop.tokenId !== undefined
+        ? (typeof prop.tokenId === 'bigint' ? Number(prop.tokenId) : prop.tokenId)
+        : prop.tokenId,
     }));
   }
 
@@ -199,11 +211,17 @@ export class PropertiesService {
       properties = ownedProperties;
     }
 
-    // Convert BigInt values to strings for JSON serialization
+    // Convert BigInt values to strings/numbers for JSON serialization
     return properties.map(prop => ({
       ...prop,
       value: prop.value?.toString() || prop.value,
       totalYieldEarned: prop.totalYieldEarned?.toString() || prop.totalYieldEarned,
+      rwaTokenId: prop.rwaTokenId !== null && prop.rwaTokenId !== undefined 
+        ? (typeof prop.rwaTokenId === 'bigint' ? Number(prop.rwaTokenId) : prop.rwaTokenId)
+        : undefined,
+      tokenId: prop.tokenId !== null && prop.tokenId !== undefined
+        ? (typeof prop.tokenId === 'bigint' ? Number(prop.tokenId) : prop.tokenId)
+        : prop.tokenId,
     }));
   }
 

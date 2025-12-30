@@ -170,8 +170,53 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
               // This shows players what's accumulating, even though claimable yield requires 24 hours
               // This creates anticipation and engagement while respecting the daily yield mechanic
               if (timeElapsedSeconds > 0) {
-                const propertyValue = BigInt(property.value.toString());
-                const yieldRate = property.yieldRate || 500;
+                let propertyValue = BigInt(property.value.toString());
+                let yieldRate = property.yieldRate || 500;
+                let yieldSource = 'PROPERTY';
+                
+                // Check if property is linked to RWA - use RWA data for yield calculation
+                if (property.rwaContract && property.rwaTokenId) {
+                  try {
+                    // Create RWA contract instance
+                    const rwaAbi = [
+                      'function getRWAProperty(uint256) external view returns (string name, uint256 value, uint256 monthlyYield, string location, uint256 propertyType, bool isActive)',
+                      'function getYieldRate(uint256) external view returns (uint256)',
+                    ];
+                    const rwaContract = new ethers.Contract(
+                      property.rwaContract,
+                      rwaAbi,
+                      this.contractsService.getProvider(),
+                    );
+                    
+                    // Fetch RWA property data
+                    const rwaProperty = await rwaContract.getRWAProperty(property.rwaTokenId);
+                    const rwaYieldRate = await rwaContract.getYieldRate(property.rwaTokenId);
+                    
+                    const rwaValue = BigInt(rwaProperty.value.toString());
+                    const rwaYieldRateNum = Number(rwaYieldRate.toString());
+                    const rwaIsActive = rwaProperty.isActive;
+                    
+                    if (rwaIsActive && rwaValue > BigInt(0) && rwaYieldRateNum > 0) {
+                      propertyValue = rwaValue;
+                      yieldRate = rwaYieldRateNum;
+                      yieldSource = 'RWA';
+                      this.logger.debug(`Property ${property.tokenId}: Using RWA data for yield calculation`, {
+                        rwaContract: property.rwaContract,
+                        rwaTokenId: property.rwaTokenId,
+                        rwaValue: rwaValue.toString(),
+                        rwaYieldRate: rwaYieldRateNum,
+                      });
+                    } else {
+                      this.logger.warn(`Property ${property.tokenId}: RWA linked but inactive or invalid, using property data`, {
+                        rwaIsActive,
+                        rwaValue: rwaValue.toString(),
+                        rwaYieldRate: rwaYieldRateNum,
+                      });
+                    }
+                  } catch (error) {
+                    this.logger.warn(`Property ${property.tokenId}: Failed to fetch RWA data, using property data: ${error.message}`);
+                  }
+                }
                 
                 // Calculate daily yield: (value * yieldRate) / (365 * 10000)
                 // Then calculate per-second yield for real-time accumulation display
@@ -183,7 +228,10 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
                 // This is for display only - actual claimable yield requires 24 hours (contract enforces this)
                 const maxSeconds = 365 * secondsPerDay;
                 const secondsToCalculate = Math.min(timeElapsedSeconds, maxSeconds);
-                totalYield += yieldPerSecond * BigInt(Math.floor(secondsToCalculate));
+                const propertyYield = yieldPerSecond * BigInt(Math.floor(secondsToCalculate));
+                totalYield += propertyYield;
+                
+                this.logger.debug(`Property ${property.tokenId} estimated yield: ${propertyYield.toString()} wei (${ethers.utils.formatEther(propertyYield.toString())} TYCOON) - Source: ${yieldSource}`);
               }
             }
           }
@@ -230,8 +278,53 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
           // The contract enforces the 24-hour requirement - this is just for display/engagement
           if (timeElapsedSeconds > 0) {
             // Property value is stored as string (NUMERIC), convert to BigInt
-            const propertyValue = BigInt(property.value.toString());
-            const yieldRate = property.yieldRate || 500; // Default to 5% (500 basis points)
+            let propertyValue = BigInt(property.value.toString());
+            let yieldRate = property.yieldRate || 500; // Default to 5% (500 basis points)
+            let yieldSource = 'PROPERTY';
+            
+            // Check if property is linked to RWA - use RWA data for yield calculation
+            if (property.rwaContract && property.rwaTokenId) {
+              try {
+                // Create RWA contract instance
+                const rwaAbi = [
+                  'function getRWAProperty(uint256) external view returns (string name, uint256 value, uint256 monthlyYield, string location, uint256 propertyType, bool isActive)',
+                  'function getYieldRate(uint256) external view returns (uint256)',
+                ];
+                const rwaContract = new ethers.Contract(
+                  property.rwaContract,
+                  rwaAbi,
+                  this.contractsService.getProvider(),
+                );
+                
+                // Fetch RWA property data
+                const rwaProperty = await rwaContract.getRWAProperty(property.rwaTokenId);
+                const rwaYieldRate = await rwaContract.getYieldRate(property.rwaTokenId);
+                
+                const rwaValue = BigInt(rwaProperty.value.toString());
+                const rwaYieldRateNum = Number(rwaYieldRate.toString());
+                const rwaIsActive = rwaProperty.isActive;
+                
+                if (rwaIsActive && rwaValue > BigInt(0) && rwaYieldRateNum > 0) {
+                  propertyValue = rwaValue;
+                  yieldRate = rwaYieldRateNum;
+                  yieldSource = 'RWA';
+                  this.logger.debug(`Property ${propertyId}: Using RWA data for yield calculation`, {
+                    rwaContract: property.rwaContract,
+                    rwaTokenId: property.rwaTokenId,
+                    rwaValue: rwaValue.toString(),
+                    rwaYieldRate: rwaYieldRateNum,
+                  });
+                } else {
+                  this.logger.warn(`Property ${propertyId}: RWA linked but inactive or invalid, using property data`, {
+                    rwaIsActive,
+                    rwaValue: rwaValue.toString(),
+                    rwaYieldRate: rwaYieldRateNum,
+                  });
+                }
+              } catch (error) {
+                this.logger.warn(`Property ${propertyId}: Failed to fetch RWA data, using property data: ${error.message}`);
+              }
+            }
             
             // Calculate daily yield: (value * yieldRate) / (365 * 10000)
             // Then calculate per-second yield for real-time accumulation display
@@ -244,6 +337,8 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
             const maxSeconds = 365 * secondsPerDay;
             const secondsToCalculate = Math.min(timeElapsedSeconds, maxSeconds);
             yieldAmount = yieldPerSecond * BigInt(Math.floor(secondsToCalculate));
+            
+            this.logger.debug(`Property ${propertyId} estimated yield: ${yieldAmount.toString()} wei (${ethers.utils.formatEther(yieldAmount.toString())} TYCOON) - Source: ${yieldSource}`);
           }
         }
       }

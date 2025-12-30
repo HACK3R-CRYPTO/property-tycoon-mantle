@@ -104,18 +104,35 @@ export default function GamePage() {
                   ? BigInt(prop.totalYieldEarned)
                   : BigInt(prop.totalYieldEarned?.toString() || '0');
                 
-                // ALWAYS fetch createdAt from contract (source of truth)
-                // Backend createdAt may be incorrect, so we trust the blockchain
+                // ALWAYS fetch property data from contract (source of truth)
+                // This includes createdAt, rwaContract, and rwaTokenId
+                // Backend data may be stale, so we trust the blockchain
                 let createdAt: Date | undefined = undefined;
+                let rwaContract: string | undefined = undefined;
+                let rwaTokenId: number | undefined = undefined;
+                
                 try {
                   const propData = await readContract(config, {
                     address: CONTRACTS.PropertyNFT,
                     abi: PROPERTY_NFT_ABI,
                     functionName: 'getProperty',
                     args: [BigInt(prop.tokenId)],
-                  }) as { createdAt: bigint };
+                  }) as { 
+                    createdAt: bigint;
+                    rwaContract: `0x${string}`;
+                    rwaTokenId: bigint;
+                  };
+                  
                   const createdAtTimestamp = Number(propData.createdAt);
                   createdAt = new Date(createdAtTimestamp * 1000);
+                  
+                  // Fetch RWA link data from contract (source of truth)
+                  if (propData.rwaContract && 
+                      propData.rwaContract !== '0x0000000000000000000000000000000000000000') {
+                    rwaContract = propData.rwaContract;
+                    rwaTokenId = Number(propData.rwaTokenId);
+                    console.log(`🔗 Property #${prop.tokenId}: Linked to RWA ${rwaContract}, token ${rwaTokenId}`);
+                  }
                   
                   // Calculate time remaining until yield becomes claimable (24 hours requirement)
                   const YIELD_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
@@ -124,13 +141,15 @@ export default function GamePage() {
                   const hoursRemaining = timeRemainingMs / (1000 * 60 * 60);
                   const isClaimable = timeElapsedMs >= YIELD_UPDATE_INTERVAL_MS;
                   
-                  console.log(`📅 Property #${prop.tokenId}: Contract createdAt (source of truth):`, {
+                  console.log(`📅 Property #${prop.tokenId}: Contract data (source of truth):`, {
                     contractTimestamp: createdAtTimestamp,
                     contractDate: createdAt.toISOString(),
                     elapsedHours: (timeElapsedMs / (1000 * 60 * 60)).toFixed(2),
                     elapsedDays: (timeElapsedMs / (1000 * 60 * 60 * 24)).toFixed(2),
                     hoursUntilClaimable: isClaimable ? '0 (READY!)' : hoursRemaining.toFixed(2),
                     isClaimable: isClaimable,
+                    rwaContract: rwaContract || 'Not linked',
+                    rwaTokenId: rwaTokenId || 'N/A',
                     note: 'Yield requires 24 hours (YIELD_UPDATE_INTERVAL) before becoming claimable',
                   });
                   
@@ -145,12 +164,25 @@ export default function GamePage() {
                       });
                     }
                   }
+                  
+                  // Check if RWA link differs between backend and contract
+                  if (rwaContract && (prop.rwaContract !== rwaContract || prop.rwaTokenId !== rwaTokenId)) {
+                    console.warn(`⚠️ Property #${prop.tokenId}: RWA link differs between backend and contract!`, {
+                      backendRWA: prop.rwaContract || 'Not linked',
+                      contractRWA: rwaContract,
+                      backendTokenId: prop.rwaTokenId || 'N/A',
+                      contractTokenId: rwaTokenId,
+                      note: 'Using contract data (source of truth)',
+                    });
+                  }
                 } catch (error) {
-                  console.warn(`Failed to fetch createdAt from contract for property ${prop.tokenId}:`, error);
+                  console.warn(`Failed to fetch property data from contract for property ${prop.tokenId}:`, error);
                   // Fallback to backend if contract fetch fails
                   if (prop.createdAt) {
                     createdAt = new Date(prop.createdAt);
                   }
+                  rwaContract = prop.rwaContract || undefined;
+                  rwaTokenId = prop.rwaTokenId || undefined;
                 }
                 
                 return {
@@ -163,8 +195,8 @@ export default function GamePage() {
                   createdAt: createdAt,
                   x: prop.x ?? (index % 10),
                   y: prop.y ?? Math.floor(index / 10),
-                  rwaContract: prop.rwaContract || undefined,
-                  rwaTokenId: prop.rwaTokenId || undefined,
+                  rwaContract: rwaContract, // Use contract data (source of truth)
+                  rwaTokenId: rwaTokenId, // Use contract data (source of truth)
                   isOwned: true,
                 };
               })
@@ -295,11 +327,38 @@ export default function GamePage() {
             console.log(`💰 Total claimable yield: ${totalClaimable.toString()} wei (${Number(totalClaimable) / 1e18} TYCOON)`);
             
             // Calculate estimated yield from blockchain data (real-time) - WITH VERIFICATION
+            // IMPORTANT: Uses RWA data when property is linked to RWA
             let totalPending = BigInt(0);
             const now = Date.now();
             
             console.log('🔍 YIELD CALCULATION VERIFICATION:');
             const YIELD_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours (from YieldDistributor.sol line 17)
+            
+            // RWA ABI for fetching RWA data (matches MockRWA.sol struct)
+            // Use 'properties' public mapping instead of 'getRWAProperty' for better viem compatibility
+            const RWA_ABI = [
+              {
+                inputs: [{ name: '', type: 'uint256' }],
+                name: 'properties',
+                outputs: [
+                  { name: 'name', type: 'string' },
+                  { name: 'value', type: 'uint256' },
+                  { name: 'monthlyYield', type: 'uint256' },
+                  { name: 'location', type: 'string' },
+                  { name: 'createdAt', type: 'uint256' },
+                  { name: 'isActive', type: 'bool' },
+                ],
+                stateMutability: 'view',
+                type: 'function',
+              },
+              {
+                inputs: [{ name: 'tokenId', type: 'uint256' }],
+                name: 'getYieldRate',
+                outputs: [{ name: '', type: 'uint256' }],
+                stateMutability: 'view',
+                type: 'function',
+              },
+            ] as const;
             
             for (const prop of mappedProperties) {
               if (prop.createdAt) {
@@ -312,10 +371,62 @@ export default function GamePage() {
                 const isClaimable = timeElapsedMs >= YIELD_UPDATE_INTERVAL_MS;
                 
                 if (timeElapsedSeconds > 0) {
-                  const yieldRateBigInt = BigInt(Math.floor(prop.yieldRate));
+                  let valueToUse = prop.value;
+                  let yieldRateToUse = prop.yieldRate;
+                  let yieldSource = 'PROPERTY';
+                  
+                  // Check if property is linked to RWA - use RWA data for yield calculation
+                  if (prop.rwaContract && prop.rwaContract !== '0x0000000000000000000000000000000000000000' && prop.rwaTokenId !== undefined) {
+                    try {
+                      const publicClient = getPublicClient(config);
+                      if (publicClient) {
+                        // Fetch RWA property data using 'properties' public mapping (more reliable with viem)
+                        const rwaProperty = await publicClient.readContract({
+                          address: prop.rwaContract as `0x${string}`,
+                          abi: RWA_ABI,
+                          functionName: 'properties',
+                          args: [BigInt(prop.rwaTokenId)],
+                        }) as [string, bigint, bigint, string, bigint, boolean];
+                        
+                        // Fetch RWA yield rate
+                        const rwaYieldRate = await publicClient.readContract({
+                          address: prop.rwaContract as `0x${string}`,
+                          abi: RWA_ABI,
+                          functionName: 'getYieldRate',
+                          args: [BigInt(prop.rwaTokenId)],
+                        }) as bigint;
+                        
+                        const [rwaName, rwaValue, rwaMonthlyYield, rwaLocation, rwaCreatedAt, rwaIsActive] = rwaProperty;
+                        
+                        if (rwaIsActive && rwaValue > BigInt(0) && rwaYieldRate > BigInt(0)) {
+                          valueToUse = rwaValue;
+                          yieldRateToUse = Number(rwaYieldRate);
+                          yieldSource = 'RWA';
+                          console.log(`✅ Property #${prop.tokenId}: Using RWA data for yield calculation`, {
+                            rwaContract: prop.rwaContract,
+                            rwaTokenId: prop.rwaTokenId,
+                            rwaName,
+                            rwaValue: `${Number(rwaValue) / 1e18} TYCOON`,
+                            rwaYieldRate: `${Number(rwaYieldRate) / 100}% APY`,
+                            rwaIsActive,
+                          });
+                        } else {
+                          console.warn(`⚠️ Property #${prop.tokenId}: RWA linked but inactive or invalid, using property data`, {
+                            rwaIsActive,
+                            rwaValue: rwaValue.toString(),
+                            rwaYieldRate: rwaYieldRate.toString(),
+                          });
+                        }
+                      }
+                    } catch (error) {
+                      console.warn(`⚠️ Property #${prop.tokenId}: Failed to fetch RWA data, using property data:`, error);
+                    }
+                  }
+                  
+                  const yieldRateBigInt = BigInt(Math.floor(yieldRateToUse));
                   // Daily yield formula: (value * yieldRate) / (365 * 10000)
                   // yieldRate is in basis points (500 = 5% APY)
-                  const dailyYield = (prop.value * yieldRateBigInt) / BigInt(365 * 10000);
+                  const dailyYield = (valueToUse * yieldRateBigInt) / BigInt(365 * 10000);
                   const secondsPerDay = 86400;
                   const yieldPerSecond = dailyYield / BigInt(secondsPerDay);
                   const maxSeconds = 365 * secondsPerDay;
@@ -325,16 +436,19 @@ export default function GamePage() {
                   
                   // Verification logging
                   console.log(`  Property #${prop.tokenId} (${prop.propertyType}):`, {
-                    value: `${Number(prop.value) / 1e18} TYCOON`,
-                    yieldRate: `${prop.yieldRate / 100}% APY`,
+                    yieldSource: yieldSource,
+                    value: `${Number(valueToUse) / 1e18} TYCOON ${yieldSource === 'RWA' ? '(from RWA)' : '(from property)'}`,
+                    yieldRate: `${yieldRateToUse / 100}% APY ${yieldSource === 'RWA' ? '(from RWA)' : '(from property)'}`,
                     createdAt: prop.createdAt.toISOString(),
                     elapsed: `${timeElapsedDays.toFixed(2)} days (${timeElapsedHours.toFixed(2)} hours)`,
                     hoursUntilClaimable: isClaimable ? '0 (READY!)' : `${hoursRemaining.toFixed(2)} hours`,
                     isClaimable: isClaimable,
                     dailyYield: `${Number(dailyYield) / 1e18} TYCOON/day`,
                     estimatedYield: `${Number(propertyEstimatedYield) / 1e18} TYCOON`,
-                    formula: `(${Number(prop.value) / 1e18} × ${prop.yieldRate / 100}%) / 365 days × ${timeElapsedDays.toFixed(2)} days`,
-                    note: 'Contract requires 24 hours (YIELD_UPDATE_INTERVAL) before yield becomes claimable',
+                    formula: `(${Number(valueToUse) / 1e18} × ${yieldRateToUse / 100}%) / 365 days × ${timeElapsedDays.toFixed(2)} days`,
+                    note: yieldSource === 'RWA' 
+                      ? '✅ Using RWA yield (real rental income)' 
+                      : 'Contract requires 24 hours (YIELD_UPDATE_INTERVAL) before yield becomes claimable',
                   });
                 }
               }
@@ -976,24 +1090,97 @@ export default function GamePage() {
         // Force re-render of YieldDisplay by updating timestamp
         setYieldUpdateTimestamp(Date.now());
         
-        // Update estimated yield (calculate from backend data)
-        // Use current properties state to calculate estimated yield
-        setProperties((currentProperties) => {
+        // Update estimated yield (calculate from backend data with RWA support)
+        // Calculate asynchronously since we need to fetch RWA data
+        (async () => {
+          // Use current properties state - if empty, wait for properties to load
+          const currentProperties = properties;
+          if (!currentProperties || currentProperties.length === 0) {
+            console.log('⚠️ WebSocket: No properties loaded yet, skipping yield calculation');
+            return;
+          }
+          
           let totalEstimated = BigInt(0);
-          currentProperties.forEach((prop) => {
+          
+          // RWA ABI for fetching RWA data
+          const RWA_ABI = [
+            {
+              inputs: [{ name: '', type: 'uint256' }],
+              name: 'properties',
+              outputs: [
+                { name: 'name', type: 'string' },
+                { name: 'value', type: 'uint256' },
+                { name: 'monthlyYield', type: 'uint256' },
+                { name: 'location', type: 'string' },
+                { name: 'createdAt', type: 'uint256' },
+                { name: 'isActive', type: 'bool' },
+              ],
+              stateMutability: 'view',
+              type: 'function',
+            },
+            {
+              inputs: [{ name: 'tokenId', type: 'uint256' }],
+              name: 'getYieldRate',
+              outputs: [{ name: '', type: 'uint256' }],
+              stateMutability: 'view',
+              type: 'function',
+            },
+          ] as const;
+          
+          // Calculate estimated yield for each property (with RWA support)
+          for (const prop of currentProperties) {
             const propData = data.properties.find((p) => p.tokenId === prop.tokenId);
             if (propData && prop.createdAt) {
+              let valueToUse = prop.value;
+              let yieldRateToUse = prop.yieldRate;
+              
+              // Check if property is linked to RWA - use RWA data for yield calculation
+              if (prop.rwaContract && prop.rwaContract !== '0x0000000000000000000000000000000000000000' && prop.rwaTokenId !== undefined) {
+                try {
+                  const publicClient = getPublicClient(config);
+                  if (publicClient) {
+                    // Fetch RWA property data
+                    const rwaProperty = await publicClient.readContract({
+                      address: prop.rwaContract as `0x${string}`,
+                      abi: RWA_ABI,
+                      functionName: 'properties',
+                      args: [BigInt(prop.rwaTokenId)],
+                    }) as [string, bigint, bigint, string, bigint, boolean];
+                    
+                    // Fetch RWA yield rate
+                    const rwaYieldRate = await publicClient.readContract({
+                      address: prop.rwaContract as `0x${string}`,
+                      abi: RWA_ABI,
+                      functionName: 'getYieldRate',
+                      args: [BigInt(prop.rwaTokenId)],
+                    }) as bigint;
+                    
+                    const [rwaName, rwaValue, rwaMonthlyYield, rwaLocation, rwaCreatedAt, rwaIsActive] = rwaProperty;
+                    
+                    if (rwaIsActive && rwaValue > BigInt(0) && rwaYieldRate > BigInt(0)) {
+                      valueToUse = rwaValue;
+                      yieldRateToUse = Number(rwaYieldRate);
+                      console.log(`✅ WebSocket: Property #${prop.tokenId} using RWA yield (${Number(rwaValue) / 1e18} TYCOON, ${Number(rwaYieldRate) / 100}% APY)`);
+                    }
+                  }
+                } catch (error) {
+                  // If RWA fetch fails, use property data
+                  console.warn(`⚠️ Property #${prop.tokenId}: Failed to fetch RWA data in WebSocket update, using property data:`, error);
+                }
+              }
+              
               // Calculate estimated yield: dailyYield × (timeElapsedHours / 24)
-              const dailyYield = (prop.value * BigInt(prop.yieldRate)) / BigInt(365 * 10000);
+              const dailyYield = (valueToUse * BigInt(yieldRateToUse)) / BigInt(365 * 10000);
               const hoursElapsed = propData.timeElapsedHours;
               const daysElapsed = hoursElapsed / 24;
               const estimatedYield = (dailyYield * BigInt(Math.floor(daysElapsed * 100))) / BigInt(100);
               totalEstimated += estimatedYield;
             }
-          });
+          }
+          
           setTotalPendingYield(totalEstimated);
-          return currentProperties; // Return unchanged properties
-        });
+          console.log(`✅ WebSocket: Updated estimated yield to ${totalEstimated.toString()} wei (${Number(totalEstimated) / 1e18} TYCOON)`);
+        })();
         
         console.log('✅ Updated yield data from backend WebSocket:', {
           claimable: claimable.toString(),
@@ -1412,7 +1599,11 @@ export default function GamePage() {
           propertyTokenId={selectedProperty.tokenId}
           onSuccess={() => {
             // Reload properties to get updated RWA info
-            loadProperties();
+            console.log('🔄 RWA linked successfully, reloading properties...');
+            // Force reload after a short delay to ensure on-chain data is updated
+            setTimeout(() => {
+              loadProperties();
+            }, 2000);
           }}
         />
       )}

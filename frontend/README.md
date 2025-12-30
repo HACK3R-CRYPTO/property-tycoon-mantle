@@ -34,6 +34,10 @@ NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS=0xb950EE50c98cD686DA34C535955203e2CE065F88
 NEXT_PUBLIC_MARKETPLACE_ADDRESS=0x6b6b65843117C55da74Ea55C954a329659EFBeF0
 NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS=0x89f72227168De554A28874aA79Bcb6f0E8e2227C
 NEXT_PUBLIC_TOKEN_SWAP_ADDRESS=0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E
+NEXT_PUBLIC_MOCK_RWA_ADDRESS=0xDF1D8Bce49E57f12e78e5881bcFE2f546e7A5a45
+
+# Oracle RWA Contract (Optional - uses MockRWA if not set)
+NEXT_PUBLIC_ORACLE_RWA_ADDRESS=0xYourOracleRWAAddress
 
 # Backend API
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
@@ -67,107 +71,6 @@ npm run build
 npm start
 ```
 
-## Project Structure
-
-```
-frontend/
-├── src/
-│   ├── app/
-│   │   ├── game/
-│   │   │   └── page.tsx              # Main game page
-│   │   ├── leaderboard/
-│   │   │   └── page.tsx              # Leaderboard
-│   │   └── layout.tsx                # Root layout
-│   ├── components/
-│   │   ├── WalletConnect.tsx         # Wallet connection
-│   │   ├── GlobalChat.tsx            # Real-time chat
-│   │   ├── UserProfile.tsx           # User profile settings
-│   │   ├── Quests.tsx                # Quest system
-│   │   ├── Marketplace.tsx           # Property marketplace
-│   │   ├── Guilds.tsx                # Guild system
-│   │   └── game/
-│   │       ├── CityView.tsx          # City map visualization
-│   │       ├── PropertyCard.tsx      # Property display
-│   │       ├── YieldDisplay.tsx      # Yield dashboard
-│   │       └── BuildMenu.tsx         # Property minting
-│   ├── hooks/
-│   │   └── useChat.ts                # Chat hook with WebSocket
-│   ├── lib/
-│   │   ├── contracts.ts              # Contract ABIs and addresses
-│   │   ├── api.ts                    # Backend API client
-│   │   └── mantle-viem.ts           # Mantle Viem configuration
-│   └── config/
-│       └── wagmi.ts                  # Wagmi configuration
-├── public/
-│   └── abis/                         # Contract ABIs
-├── package.json
-├── next.config.ts
-└── README.md
-```
-
-## Contract Addresses
-
-Current deployed contracts on Mantle Sepolia Testnet:
-
-TYCOON Token: 0x3334f87178AD0f33e61009777a3dFa1756e9c23f
-
-Property NFT: 0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c
-
-Yield Distributor: 0xb950EE50c98cD686DA34C535955203e2CE065F88
-
-Marketplace: 0x6b6b65843117C55da74Ea55C954a329659EFBeF0
-
-Quest System: 0x89f72227168De554A28874aA79Bcb6f0E8e2227C
-
-Token Swap: 0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E
-
-Update these in source files if contracts are redeployed.
-
-## Mantle Network Integration
-
-Property Tycoon uses Mantle Network for all blockchain interactions. Frontend leverages Mantle's high throughput and low fees for seamless user experience.
-
-### Features
-
-Real-time portfolio updates without refreshing.
-
-Live yield accumulation tracking.
-
-Instant leaderboard updates via WebSocket.
-
-Property minting with optimized gas costs.
-
-Yield claiming with micro-transaction support.
-
-### Implementation
-
-Mantle Viem Configuration (`src/lib/mantle-viem.ts`):
-- Uses Wagmi hooks for contract interactions
-- Type-safe contract calls with Viem
-- Automatic caching for efficient data fetching
-- Real-time event subscriptions for instant updates
-- Optimized RPC calls leveraging Mantle's high throughput
-
-Contract Interactions (`src/lib/contracts.ts`):
-- Property NFT minting and management
-- Yield claiming and distribution
-- Marketplace trading
-- Quest completion and rewards
-- Token swapping (MNT to TYCOON)
-
-WebSocket Integration (`src/hooks/useChat.ts`):
-- Real-time chat messaging
-- Portfolio update notifications
-- Leaderboard position changes
-- Yield accumulation updates
-
-### Mantle-Specific Optimizations
-
-- **Low Gas Costs**: Frequent yield claims are affordable on Mantle
-- **High Throughput**: Real-time multiplayer interactions supported
-- **Fast Finality**: Instant portfolio updates
-- **EVM Compatibility**: Seamless integration with existing tooling
-
 ## Key Features
 
 ### Buy TYCOON Tokens
@@ -193,6 +96,14 @@ Automatic approval flow.
 Balance checks prevent insufficient funds.
 
 Property appears on city map instantly.
+
+### Link to RWA
+
+Connect property to tokenized real estate:
+- Select RWA contract (Oracle-based or MockRWA)
+- View only RWA tokens you own
+- Link property to RWA token
+- Property generates real yield from rental income
 
 ### Claim Yield
 
@@ -268,6 +179,61 @@ Share tips and strategies.
 
 Build community.
 
+## Mantle Network Integration
+
+Frontend uses Mantle Viem for type-safe blockchain interactions.
+
+### Mantle Viem Integration
+
+Uses @mantleio/viem package for Mantle chain configuration. Pre-configured Mantle and Mantle Sepolia Testnet chains. Type-safe contract interactions with Wagmi hooks. Efficient data fetching with automatic caching. Real-time event subscriptions for instant updates.
+
+Implementation:
+- `src/lib/mantle-viem.ts` configures Wagmi with Mantle chains
+- Uses mantle and mantleSepoliaTestnet from @mantleio/viem/chains
+- Fallback RPC URLs for reliability
+- Timeout handling for network requests
+- SSR support for Next.js
+
+Why we use it: Mantle Viem provides official chain configurations. Ensures correct network parameters. Type-safe interactions prevent errors. Automatic caching reduces RPC calls.
+
+Features:
+- Multiple RPC fallbacks for reliability
+- Automatic retry on network errors
+- Optimized for Mantle's high throughput
+- Real-time event subscriptions
+- Type-safe contract calls
+
+Contract interactions include:
+- Property NFT minting and management
+- Yield claiming and distribution
+- Marketplace trading
+- Quest completion and rewards
+- Token swapping (MNT to TYCOON)
+- RWA linking with Oracle support
+
+Files:
+- `src/lib/mantle-viem.ts` - Mantle Viem configuration
+- `src/lib/contracts.ts` - Contract ABIs and addresses
+- `src/config/wagmi.ts` - Wagmi configuration
+
+## Real-Time Features
+
+Portfolio updates instantly without refreshing.
+
+Live yield accumulation tracking.
+
+Instant leaderboard updates via WebSocket.
+
+Property minting with optimized gas costs.
+
+Yield claiming with micro-transaction support.
+
+WebSocket integration via Socket.io:
+- Real-time chat messaging
+- Portfolio update notifications
+- Leaderboard position changes
+- Yield accumulation updates
+
 ## Technology Stack
 
 Framework: Next.js 15 (App Router)
@@ -290,40 +256,44 @@ Rendering: Pixi.js (city map)
 
 Notifications: React Hot Toast
 
-## Environment Variables
+## Project Structure
 
-Create `.env.local` for custom configuration:
-
-```env
-# Contract Addresses (Mantle Sepolia Testnet)
-NEXT_PUBLIC_PROPERTY_NFT_ADDRESS=0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c
-NEXT_PUBLIC_GAME_TOKEN_ADDRESS=0x3334f87178AD0f33e61009777a3dFa1756e9c23f
-NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS=0xb950EE50c98cD686DA34C535955203e2CE065F88
-NEXT_PUBLIC_MARKETPLACE_ADDRESS=0x6b6b65843117C55da74Ea55C954a329659EFBeF0
-NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS=0x89f72227168De554A28874aA79Bcb6f0E8e2227C
-NEXT_PUBLIC_TOKEN_SWAP_ADDRESS=0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E
-
-# Backend API
-NEXT_PUBLIC_API_URL=http://localhost:3001/api
-
-# Network Configuration
-NEXT_PUBLIC_MANTLE_CHAIN_ID=5003
-NEXT_PUBLIC_MANTLE_RPC_URL=https://rpc.sepolia.mantle.xyz
-
-# Reown AppKit
-NEXT_PUBLIC_PROJECT_ID=your_reown_project_id_here
 ```
-
-**Note:** Contract addresses are also hardcoded in the source files as a fallback, so the app works even without `.env.local`.
-
-## Mobile Responsiveness
-
-App is fully responsive. Works on desktop, tablet, and mobile devices.
-
-Mobile detection uses:
-- Screen width (responsive breakpoints)
-- Touch device capabilities
-- Viewport optimization
+frontend/
+├── src/
+│   ├── app/
+│   │   ├── game/
+│   │   │   └── page.tsx              # Main game page
+│   │   ├── leaderboard/
+│   │   │   └── page.tsx              # Leaderboard
+│   │   └── layout.tsx                # Root layout
+│   ├── components/
+│   │   ├── WalletConnect.tsx         # Wallet connection
+│   │   ├── GlobalChat.tsx            # Real-time chat
+│   │   ├── UserProfile.tsx           # User profile settings
+│   │   ├── Quests.tsx                # Quest system
+│   │   ├── Marketplace.tsx           # Property marketplace
+│   │   ├── Guilds.tsx                # Guild system
+│   │   ├── RWALinkModal.tsx         # RWA linking modal
+│   │   └── game/
+│   │       ├── CityView.tsx          # City map visualization
+│   │       ├── PropertyCard.tsx      # Property display
+│   │       ├── YieldDisplay.tsx      # Yield dashboard
+│   │       └── BuildMenu.tsx         # Property minting
+│   ├── hooks/
+│   │   └── useChat.ts                # Chat hook with WebSocket
+│   ├── lib/
+│   │   ├── contracts.ts              # Contract ABIs and addresses
+│   │   ├── api.ts                    # Backend API client
+│   │   └── mantle-viem.ts           # Mantle Viem configuration
+│   └── config/
+│       └── wagmi.ts                  # Wagmi configuration
+├── public/
+│   └── abis/                         # Contract ABIs
+├── package.json
+├── next.config.ts
+└── README.md
+```
 
 ## Troubleshooting
 
@@ -363,6 +333,12 @@ Leaderboard not updating:
 - Check network tab for WebSocket connections
 - Refresh page if connection lost
 
+RWA linking not working:
+- Verify you own RWA tokens (check MockRWA contract)
+- Check RWA contract address is correct
+- Ensure property is not already linked
+- Check browser console for errors
+
 ## Browser Support
 
 Chrome or Edge (recommended)
@@ -384,6 +360,7 @@ Update contract addresses in source files:
 Verify all contract interactions work:
 - Buy TYCOON tokens
 - Mint properties
+- Link to RWA
 - Claim yield
 - Trade properties
 - Complete quests

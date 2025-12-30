@@ -157,6 +157,33 @@ export class OracleService {
   }
 
   /**
+   * Calculate yield amount based on property value, yield rate, and time period
+   * @param propertyValue Property value in wei (18 decimals)
+   * @param yieldRate Annual yield rate as percentage (e.g., 5.0 for 5% APY)
+   * @param days Number of days to calculate yield for
+   * @returns Yield amount in wei (18 decimals)
+   */
+  async calculateYieldAmount(
+    propertyValue: bigint,
+    yieldRate: number,
+    days: number,
+  ): Promise<bigint> {
+    // Convert yield rate from percentage to decimal (e.g., 5.0% -> 0.05)
+    const yieldRateDecimal = yieldRate / 100;
+    
+    // Calculate annual yield: propertyValue * yieldRateDecimal
+    const annualYield = (propertyValue * BigInt(Math.floor(yieldRateDecimal * 1e18))) / BigInt(1e18);
+    
+    // Calculate yield for the given number of days: annualYield * (days / 365)
+    // Use 1e18 for precision in division
+    const daysBigInt = BigInt(Math.floor(days * 1e18));
+    const daysInYear = BigInt(365 * 1e18);
+    const yieldAmount = (annualYield * daysBigInt) / daysInYear;
+    
+    return yieldAmount;
+  }
+
+  /**
    * Get RWA property value from Chronicle Oracle
    * Chronicle provides RWA data feeds including property values
    * Falls back to contract query if Chronicle oracle not configured
@@ -196,5 +223,14 @@ export class OracleService {
         this.logger.warn('RWA contract query failed', contractError);
       }
       
-      // Option 3: Fallback to mock value (for demo)
-2``
+      // Option 3: Fallback to default value (for demo)
+      // Return a default property value if all queries fail
+      this.logger.warn(`All RWA property value queries failed for contract ${rwaContract}, token ${tokenId}. Returning default value.`);
+      return BigInt(0); // Return 0 as fallback
+    } catch (error) {
+      this.logger.error(`Failed to get RWA property value for ${rwaContract}, token ${tokenId}`, error);
+      // Return 0 as fallback on any error
+      return BigInt(0);
+    }
+  }
+}
