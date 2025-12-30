@@ -146,7 +146,7 @@ All smart contracts deployed and verified on Mantle Sepolia Testnet. All interac
 - USDC/USD: `0x9Dd500569A6e77ECdDE7694CDc2E58ac587768D0`
 - USDT/USD: `0xD671F5F7c2fb6f75439641C36a578842f5b376A9`
 - ETH/USD: `0xa6896dCf3f5Dc3c29A5bD3a788D6b7e901e487D8`
-- MNT/USD: `0xe200dbc48e13339D9Da71f321d42Feb3B890Bc4e`
+- MNT/USD: `0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307`
 
 All oracle addresses configured for Mantle Sepolia Testnet. Chronicle integration provides gas-efficient (60-80% less gas) and reliable price feeds using IChronicle interface with safe error handling.
 

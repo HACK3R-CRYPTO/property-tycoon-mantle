@@ -37,6 +37,7 @@ export const CONTRACTS = {
   Marketplace: (process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || '0x6b6b65843117C55da74Ea55C954a329659EFBeF0') as Address,
   QuestSystem: (process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS || '0x89f72227168De554A28874aA79Bcb6f0E8e2227C') as Address,
   TokenSwap: (process.env.NEXT_PUBLIC_TOKEN_SWAP_ADDRESS || '0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E') as Address,
+  MockRWA: (process.env.NEXT_PUBLIC_MOCK_RWA_ADDRESS || '0xDF1D8Bce49E57f12e78e5881bcFE2f546e7A5a45') as Address,
 } as const;
 
 // Fallback inline ABIs for critical functions (used until dynamic ABIs load)
@@ -119,6 +120,17 @@ export const PROPERTY_NFT_ABI = [
     name: 'ownerOf',
     outputs: [{ name: '', type: 'address' }],
     stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'rwaContract', type: 'address' },
+      { name: 'rwaTokenId', type: 'uint256' },
+    ],
+    name: 'linkToRWA',
+    outputs: [],
+    stateMutability: 'nonpayable',
     type: 'function',
   },
 ] as const;

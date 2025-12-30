@@ -12,7 +12,7 @@ export class OracleService {
     USDC: process.env.CHRONICLE_USDC_ORACLE || '0x9Dd500569A6e77ECdDE7694CDc2E58ac587768D0', // USDC/USD on Mantle Sepolia
     USDT: process.env.CHRONICLE_USDT_ORACLE || '0xD671F5F7c2fb6f75439641C36a578842f5b376A9', // USDT/USD on Mantle Sepolia
     ETH: process.env.CHRONICLE_ETH_ORACLE || '0xa6896dCf3f5Dc3c29A5bD3a788D6b7e901e487D8', // ETH/USD on Mantle Sepolia
-    MNT: process.env.CHRONICLE_MNT_ORACLE || '0xe200dbc48e13339D9Da71f321d42Feb3B890Bc4e', // MNT/USD on Mantle Sepolia
+    MNT: process.env.CHRONICLE_MNT_ORACLE || '0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307', // MNT/USD on Mantle Sepolia
   };
 
   // Chronicle Oracle ABI (IChronicle interface)
@@ -197,99 +197,4 @@ export class OracleService {
       }
       
       // Option 3: Fallback to mock value (for demo)
-      this.logger.warn('Using fallback mock RWA property value - configure Chronicle oracle or use MockRWA contract');
-      return BigInt(1000000 * 10**18); // 1M in wei (18 decimals)
-    } catch (error) {
-      this.logger.error('Failed to get RWA property value', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Get RWA yield rate from Chronicle Oracle
-   * Chronicle provides yield rate feeds for RWAs
-   */
-  async getRWAYieldRate(rwaContract: string, tokenId: string): Promise<number> {
-    try {
-      // Try Chronicle's RWA yield rate oracle
-      const chronicleYieldOracle = process.env.CHRONICLE_RWA_YIELD_ORACLE;
-      
-      if (chronicleYieldOracle && chronicleYieldOracle !== '0x...' && chronicleYieldOracle !== '0x') {
-        try {
-          const { price } = await this.getPrice(chronicleYieldOracle);
-          // Chronicle may return basis points (500 = 5%) or percentage (5 = 5%)
-          // Adjust based on Chronicle's format - typically basis points
-          const yieldRate = Number(price) / 100; // Convert basis points to percentage
-          this.logger.log(`Got RWA yield rate from Chronicle Oracle: ${yieldRate}%`);
-          return yieldRate;
-        } catch (chronicleError) {
-          this.logger.warn('Chronicle yield oracle failed, falling back to contract query', chronicleError);
-        }
-      }
-      
-      // Fallback: Query RWA contract for yield rate
-      try {
-        const rwaContractInstance = new ethers.Contract(
-          rwaContract,
-          ['function getYieldRate(uint256) external view returns (uint256)'],
-          this.provider,
-        );
-        
-        const yieldRateBasisPoints = await rwaContractInstance.getYieldRate(tokenId);
-        const yieldRate = Number(yieldRateBasisPoints) / 100; // Convert basis points to percentage
-        this.logger.log(`Got RWA yield rate from contract: ${yieldRate}%`);
-        return yieldRate;
-      } catch (contractError) {
-        this.logger.warn('RWA contract yield query failed', contractError);
-      }
-      
-      // Fallback: Use default yield rate based on property type
-      return await this.getPropertyYieldRate('Residential'); // Default 5%
-    } catch (error) {
-      this.logger.error('Failed to get RWA yield rate', error);
-      return 5.0; // Default fallback
-    }
-  }
-  
-  /**
-   * Verify RWA token using Chronicle's Proof of Asset (PoA)
-   * Chronicle PoA provides cryptographic attestations for tokenized assets
-   */
-  async verifyRWAToken(rwaContract: string, tokenId: string): Promise<boolean> {
-    try {
-      // Chronicle's PoA oracle verifies that RWA tokens are backed by real assets
-      // This provides cryptographic proof and continuous audit trail
-      
-      // Implementation depends on Chronicle's PoA API/contract
-      // For now, return true if contract exists and token is valid
-      const code = await this.provider.getCode(rwaContract);
-      if (!code || code === '0x') {
-        return false;
-      }
-      
-      // Check if token exists (basic validation)
-      // Full PoA verification would require Chronicle's PoA oracle
-      this.logger.log(`Basic RWA token verification passed for ${rwaContract}:${tokenId}`);
-      this.logger.warn('Full Chronicle PoA verification not yet implemented - configure Chronicle PoA oracle');
-      
-      return true;
-    } catch (error) {
-      this.logger.error('Failed to verify RWA token', error);
-      return false;
-    }
-  }
-
-  /**
-   * Calculate yield amount for a property
-   */
-  async calculateYieldAmount(
-    propertyValue: bigint,
-    yieldRate: number,
-    days: number = 1,
-  ): Promise<bigint> {
-    // Calculate daily yield: (value * rate / 100) / 365
-    const dailyYield = (propertyValue * BigInt(Math.floor(yieldRate * 100))) / BigInt(36500);
-    return dailyYield * BigInt(days);
-  }
-}
-
+2``
