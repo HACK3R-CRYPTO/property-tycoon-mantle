@@ -189,9 +189,14 @@ Backend leverages Mantle's modular architecture for advanced blockchain operatio
 - Cost estimation for yield claims
 
 **Oracle Service:**
-- Chronicle Oracle integration for price feeds
-- USDC/USDT/ETH/MNT price tracking
-- Yield calculation based on real-time prices
+- Chronicle Oracle integration for price feeds (Mantle Sepolia)
+- USDC/USDT/ETH/MNT price tracking via Chronicle
+- IChronicle interface implementation (tryReadWithAge for safe queries)
+- Data freshness validation (3-hour default threshold)
+- Gas-efficient queries (60-80% less gas than other oracles)
+- RWA property value fetching (Chronicle + MockRWA fallback)
+- RWA yield rate calculation (Chronicle + contract query fallback)
+- Error handling with graceful fallbacks
 
 ### Event Indexing
 

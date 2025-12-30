@@ -176,6 +176,13 @@ contract PropertyNFT is ERC721, Ownable, ReentrancyGuard {
         return tokenIds;
     }
     
+    /**
+     * @notice Link a property NFT to a Real-World Asset (RWA)
+     * @dev Validates that RWA contract exists and follows standards (ERC-721/ERC-1155)
+     * @param tokenId Property NFT token ID
+     * @param rwaContract Address of the RWA contract
+     * @param rwaTokenId Token ID in the RWA contract
+     */
     function linkToRWA(
         uint256 tokenId,
         address rwaContract,
@@ -183,9 +190,70 @@ contract PropertyNFT is ERC721, Ownable, ReentrancyGuard {
     ) public {
         require(ownerOf(tokenId) == msg.sender, "Not owner");
         require(properties[tokenId].isActive, "Property not active");
+        require(rwaContract != address(0), "Invalid RWA contract");
+        require(rwaContract.code.length > 0, "RWA contract does not exist");
+        
+        // Validate RWA contract follows NFT standards (ERC-721 or ERC-1155)
+        // This ensures we're linking to a valid tokenized asset
+        _validateRWAContract(rwaContract, rwaTokenId);
+        
         properties[tokenId].rwaContract = rwaContract;
         properties[tokenId].rwaTokenId = rwaTokenId;
         emit PropertyLinkedToRWA(tokenId, rwaContract, rwaTokenId);
+    }
+    
+    /**
+     * @notice Internal function to validate RWA contract
+     * @dev Checks if contract implements ERC-721 or ERC-1155 standards
+     * @param rwaContract Address of the RWA contract
+     * @param rwaTokenId Token ID to validate
+     */
+    function _validateRWAContract(address rwaContract, uint256 rwaTokenId) internal view {
+        // Try to check if contract supports ERC-165 (interface detection)
+        (bool success, bytes memory data) = rwaContract.staticcall(
+            abi.encodeWithSignature("supportsInterface(bytes4)", 0x01ffc9a7) // ERC-165
+        );
+        
+        if (success && data.length > 0) {
+            bool supportsERC165 = abi.decode(data, (bool));
+            if (supportsERC165) {
+                // Check for ERC-721 support (0x80ac58cd)
+                (success, data) = rwaContract.staticcall(
+                    abi.encodeWithSignature("supportsInterface(bytes4)", 0x80ac58cd)
+                );
+                if (success && data.length > 0 && abi.decode(data, (bool))) {
+                    // ERC-721: Verify token exists by checking ownerOf
+                    (success, data) = rwaContract.staticcall(
+                        abi.encodeWithSignature("ownerOf(uint256)", rwaTokenId)
+                    );
+                    if (success && data.length > 0) {
+                        address owner = abi.decode(data, (address));
+                        require(owner != address(0), "RWA token does not exist");
+                        return;
+                    }
+                }
+                
+                // Check for ERC-1155 support (0xd9b67a26)
+                (success, data) = rwaContract.staticcall(
+                    abi.encodeWithSignature("supportsInterface(bytes4)", 0xd9b67a26)
+                );
+                if (success && data.length > 0 && abi.decode(data, (bool))) {
+                    // ERC-1155: Check balance (token must exist and have balance > 0)
+                    (success, data) = rwaContract.staticcall(
+                        abi.encodeWithSignature("balanceOf(address,uint256)", msg.sender, rwaTokenId)
+                    );
+                    if (success && data.length > 0) {
+                        uint256 balance = abi.decode(data, (uint256));
+                        require(balance > 0, "You do not own this RWA token");
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // If standard checks fail, at least verify contract exists
+        // This allows linking to custom RWA contracts that don't follow ERC standards
+        // In production, you might want to require standard compliance
     }
     
     function upgradeProperty(

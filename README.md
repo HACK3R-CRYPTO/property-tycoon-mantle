@@ -117,6 +117,13 @@ Property Tycoon leverages Mantle's modular architecture and advanced tooling for
 - Gas price optimization using Mantle's GasPriceOracle
 - Custom API methods for enhanced performance
 
+**Chronicle Oracle Integration:**
+- Real-time price feeds for USDC, USDT, ETH, MNT on Mantle Sepolia
+- Gas-efficient oracle queries (60-80% less gas than other oracles)
+- Safe error handling with tryReadWithAge() functions
+- Data freshness validation for reliable price data
+- RWA integration ready (MockRWA contract for demo, Chronicle feeds when available)
+
 **Modular Architecture Benefits:**
 - Low gas costs enable micro-transactions for yield collection
 - High throughput supports real-time multiplayer interactions
@@ -130,8 +137,18 @@ Property Tycoon leverages Mantle's modular architecture and advanced tooling for
 - Real-time event indexing leveraging Mantle's high throughput
 - Cross-chain RWA asset bridging capabilities
 - Custom RPC method utilization for performance
+- Chronicle Oracle integration for reliable price feeds
+- Gas-efficient oracle queries leveraging Chronicle's Schnorr-based architecture
 
 All smart contracts deployed and verified on Mantle Sepolia Testnet. All interactions optimized for Mantle's low-fee, high-performance environment.
+
+**Chronicle Oracle Integration:**
+- USDC/USD: `0x9Dd500569A6e77ECdDE7694CDc2E58ac587768D0`
+- USDT/USD: `0xD671F5F7c2fb6f75439641C36a578842f5b376A9`
+- ETH/USD: `0xa6896dCf3f5Dc3c29A5bD3a788D6b7e901e487D8`
+- MNT/USD: `0xe200dbc48e13339D9Da71f321d42Feb3B890Bc4e`
+
+All oracle addresses configured for Mantle Sepolia Testnet. Chronicle integration provides gas-efficient (60-80% less gas) and reliable price feeds using IChronicle interface with safe error handling.
 
 ## Technical Excellence
 
@@ -207,46 +224,3 @@ See [DEPLOYED_ADDRESSES.md](DEPLOYED_ADDRESSES.md) for complete deployment proce
 ## Built for Mantle Global Hackathon 2025
 
 Property Tycoon built for Mantle Global Hackathon 2025. Play to earn mechanics. Real yield from RWA. Smart contract rewards. Mantle integration. RWA tokenization. Multiplayer features. Web-based gameplay. Contracts deployed and verified. Ready for users. Production quality code.
-
-### Hackathon Track Alignment
-
-**Primary Track: RWA / RealFi** 🏅
-- Tokenization of real estate assets
-- Compliant yield distribution mechanisms
-- On-chain ownership verification
-- Transparent yield tracking
-- KYC-ready architecture
-
-**Secondary Track: GameFi & Social** 🎮
-- Consumer-facing property management game
-- Token incentive design (TYCOON tokens)
-- User retention through quests and leaderboards
-- Social features (guilds, chat, portfolio visits)
-- Real-time multiplayer interactions
-
-**Award Potential:**
-- ✅ Best Mantle Integration (advanced modular architecture usage)
-- ✅ Best UX / Demo (smooth, intuitive interface)
-- ✅ Community Choice (engaging multiplayer experience)
-
-### Key Differentiators
-
-1. **Real Yield from RWA**: Not just game tokens - actual USDC/USDT from tokenized real estate
-2. **Advanced Mantle Integration**: Leverages modular architecture, custom RPC methods, optimized gas
-3. **Production-Ready**: Full-stack application with real-time updates, event indexing, WebSocket support
-4. **User-Friendly**: Intuitive UI, clear onboarding, mobile-responsive design
-5. **Comprehensive Features**: Property management, marketplace, quests, guilds, chat, leaderboards
-
-### Demo Highlights
-
-- Connect wallet and buy tokens in seconds
-- Mint property NFT with one click
-- Link property to RWA for real yield
-- Claim yield rewards (USDC/USDT)
-- Complete investment quests
-- Trade properties on marketplace
-- Join guilds and chat with players
-- View real-time leaderboard updates
-- Visit other players' portfolios
-
-All features work seamlessly on Mantle Network with low fees and instant updates.
