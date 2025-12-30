@@ -78,9 +78,9 @@ Powered by Mantle Network. Backend emits events via smart contracts when propert
 
 Properties linked to tokenized real estate. Each property NFT backed by real-world asset. Real yield from actual rental income. Transparent distribution on-chain. Verifiable ownership. Compliant with regulations. KYC flow for RWA investments. Fractional ownership supported. Multiple properties per RWA. Yield distributed proportionally.
 
-Linking property to RWA updates yield calculation. YieldDistributor contract checks if property is linked to RWA. If linked, uses RWA value and yield rate for yield calculation. If not linked, uses property's own value and yield rate. Automatic fallback ensures backward compatibility. All existing linked properties benefit immediately.
+Linking property to RWA updates yield calculation. YieldDistributor contract checks if property is linked to RWA. If linked, uses RWA value and yield rate for yield calculation. If not linked, uses property's own value and yield rate. Automatic fallback ensures backward compatibility. All existing linked properties benefit immediately. Frontend and backend also use RWA data for estimated yield calculations. Estimated yield display updates in real time using RWA value and yield rate when property is linked.
 
-Uses MockRWA contract for demo and testing. ERC-721 compatible. Replaced with real RWA contracts in production. Chronicle Oracle integration ready for RWA property values. Frontend supports both oracle-based and MockRWA contracts.
+**Note:** Currently using MockRWA contract for this demo. Chronicle Oracle integration is fully implemented and ready for production use, but we are using MockRWA for demo and testing purposes. MockRWA is ERC-721 compatible and can be replaced with real RWA contracts in production. Frontend supports both oracle-based and MockRWA contracts. To use real Chronicle Oracle RWA, configure the appropriate environment variables.
 
 ## Yield Distribution
 
@@ -120,15 +120,17 @@ Chronicle Oracle addresses on Mantle Sepolia:
 - ETH/USD: 0xa6896dCf3f5Dc3c29A5bD3a788D6b7e901e487D8
 - MNT/USD: 0xCE0F753FDEEE2D0EC5F1ba086bD7d5087C20c307
 
-Backend fetches real-time prices for USDC, USDT, ETH, and MNT. Price feeds used for yield calculations and property valuations. RWA property values fetched from Chronicle when configured. Falls back to contract queries if Chronicle oracle not available.
+Backend fetches real-time prices for USDC, USDT, ETH, and MNT. Price feeds used for yield calculations and property valuations. RWA property values can be fetched from Chronicle when configured. Falls back to contract queries if Chronicle oracle not available.
+
+**Note:** Chronicle Oracle integration is implemented and ready for production use. For this demo, we are using MockRWA contract instead of real Chronicle Oracle RWA data. To use real Chronicle Oracle RWA, configure `CHRONICLE_RWA_PROPERTY_ORACLE` environment variable in backend and `NEXT_PUBLIC_ORACLE_RWA_ADDRESS` in frontend.
 
 ## MockRWA
 
-Uses MockRWA for demo and testing. Allows testing RWA linking without real tokenized assets. Perfect for hackathons and demos. Developers test property linking without deploying real RWA contracts. Easy to mint test properties to different addresses.
+**Currently using MockRWA for this demo.** Uses MockRWA for demo and testing purposes. Allows testing RWA linking without real tokenized assets. Perfect for hackathons and demos. Developers test property linking without deploying real RWA contracts. Easy to mint test properties to different addresses.
 
 MockRWA implements ERC-721 standard. Replaced with any real RWA contract following the same interface. Real RWA platforms require KYC and compliance. MockRWA allows immediate testing and demos.
 
-Frontend checks for NEXT_PUBLIC_ORACLE_RWA_ADDRESS environment variable. If set, uses oracle-based RWA contract. If not set, falls back to MockRWA contract. Backend uses Chronicle Oracle for RWA property values when CHRONICLE_RWA_PROPERTY_ORACLE is configured. System handles both mock and real RWA contracts.
+**Note:** Chronicle Oracle integration is fully implemented and ready for production. For this demo, we are using MockRWA instead of real Chronicle Oracle RWA data. Frontend checks for NEXT_PUBLIC_ORACLE_RWA_ADDRESS environment variable. If set, uses oracle-based RWA contract. If not set, falls back to MockRWA contract. Backend uses Chronicle Oracle for RWA property values when CHRONICLE_RWA_PROPERTY_ORACLE is configured. System handles both mock and real RWA contracts seamlessly.
 
 ## Technical Excellence
 
@@ -150,7 +152,7 @@ TYCOON Token: 0x3334f87178AD0f33e61009777a3dFa1756e9c23f
 
 Property NFT: 0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c
 
-Yield Distributor: 0xb950EE50c98cD686DA34C535955203e2CE065F88
+Yield Distributor: 0x37e425aece1e2fc89b286cf7a63a74e8c7a791c4
 
 Marketplace: 0x6b6b65843117C55da74Ea55C954a329659EFBeF0
 

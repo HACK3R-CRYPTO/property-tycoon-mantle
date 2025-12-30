@@ -30,7 +30,7 @@ Create `.env.local` file:
 # Contract Addresses (Mantle Sepolia Testnet)
 NEXT_PUBLIC_PROPERTY_NFT_ADDRESS=0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c
 NEXT_PUBLIC_GAME_TOKEN_ADDRESS=0x3334f87178AD0f33e61009777a3dFa1756e9c23f
-NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS=0xb950EE50c98cD686DA34C535955203e2CE065F88
+NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS=0x37e425aece1e2fc89b286cf7a63a74e8c7a791c4
 NEXT_PUBLIC_MARKETPLACE_ADDRESS=0x6b6b65843117C55da74Ea55C954a329659EFBeF0
 NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS=0x89f72227168De554A28874aA79Bcb6f0E8e2227C
 NEXT_PUBLIC_TOKEN_SWAP_ADDRESS=0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E
@@ -104,6 +104,8 @@ Connect property to tokenized real estate:
 - View only RWA tokens you own
 - Link property to RWA token
 - Property generates real yield from rental income
+- Estimated yield calculation uses RWA value and yield rate
+- Yield display updates in real time with RWA data
 
 ### Claim Yield
 

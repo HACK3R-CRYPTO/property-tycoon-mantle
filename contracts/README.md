@@ -8,7 +8,7 @@ GameToken: ERC20 token for payments and rewards. Players use TYCOON tokens to mi
 
 PropertyNFT: ERC721 NFT contract. Players mint property NFTs by spending TYCOON tokens. Each property is a unique NFT. Properties can be linked to RWA contracts.
 
-YieldDistributor: Distributes yield to property owners. Calculates yield based on property value and yield rate. Handles single and batch yield claims. Distributes TYCOON tokens as rewards.
+YieldDistributor: Distributes yield to property owners. Calculates yield based on property value and yield rate. If property is linked to RWA, uses RWA value and yield rate for calculation. Handles single and batch yield claims. Distributes TYCOON tokens as rewards.
 
 Marketplace: Property trading marketplace. Players list properties for sale. Other players buy properties. Prices set in TYCOON tokens. Handles property transfers.
 
@@ -16,7 +16,7 @@ QuestSystem: Investment quest system. Tracks quest completion. Distributes quest
 
 TokenSwap: MNT to TYCOON token swap. Players buy TYCOON tokens with MNT. Exchange rate: 1 MNT = 100 TYCOON tokens.
 
-MockRWA: Mock Real-World Asset contract for demo and testing. Implements ERC-721 standard. Replaced with real RWA contracts in production. Simulates tokenized real estate assets.
+MockRWA: Mock Real-World Asset contract for demo and testing. **Currently used for this demo instead of real Chronicle Oracle RWA.** Implements ERC-721 standard. Replaced with real RWA contracts in production. Simulates tokenized real estate assets. Chronicle Oracle integration is ready but not actively used in this demo.
 
 ## Prerequisites
 
@@ -162,7 +162,7 @@ Provide RWA contract address and token ID.
 
 Property generates yield from RWA rental income.
 
-Linking property to RWA updates yield calculation automatically. YieldDistributor contract checks if property is linked to RWA. If linked, fetches RWA value and yield rate from RWA contract. Uses RWA data for yield calculation instead of property data. If RWA call fails or property not linked, falls back to property's own value and yield rate. Backward compatible with existing properties.
+Linking property to RWA updates yield calculation automatically. YieldDistributor contract checks if property is linked to RWA. If linked, fetches RWA value and yield rate from RWA contract using IRWA interface. Uses RWA data for yield calculation instead of property data. Property generates real yield from RWA rental income. Yield calculation now dynamically uses the linked RWA's value and yield rate. If RWA call fails or property not linked, falls back to property's own value and yield rate. Backward compatible with existing properties. All yield calculations happen on-chain via YieldDistributor contract.
 
 ### Claim Yield
 

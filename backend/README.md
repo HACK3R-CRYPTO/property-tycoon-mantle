@@ -37,7 +37,7 @@ L1_RPC_URL=https://eth.llamarpc.com
 # Contract Addresses (Mantle Sepolia Testnet)
 PROPERTY_NFT_ADDRESS=0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c
 GAME_TOKEN_ADDRESS=0x3334f87178AD0f33e61009777a3dFa1756e9c23f
-YIELD_DISTRIBUTOR_ADDRESS=0xb950EE50c98cD686DA34C535955203e2CE065F88
+YIELD_DISTRIBUTOR_ADDRESS=0x37e425aece1e2fc89b286cf7a63a74e8c7a791c4
 MARKETPLACE_ADDRESS=0x6b6b65843117C55da74Ea55C954a329659EFBeF0
 QUEST_SYSTEM_ADDRESS=0x89f72227168De554A28874aA79Bcb6f0E8e2227C
 TOKEN_SWAP_ADDRESS=0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E
@@ -229,6 +229,8 @@ Backend fetches real-time prices for USDC, USDT, ETH, and MNT. Price feeds used 
 
 YieldDistributor contract uses RWA data for yield calculation. If property linked to RWA, contract fetches RWA value and yield rate. Uses RWA data instead of property data for yield calculation. Automatic fallback to property data if RWA not linked or unavailable. All yield calculations happen on-chain via YieldDistributor contract.
 
+Backend yield service also uses RWA data for estimated yield calculations. When property is linked to RWA, backend fetches RWA value and yield rate from blockchain. Uses RWA data for pending yield calculations. Falls back to property data if RWA fetch fails. BigInt values are properly serialized to numbers for JSON responses.
+
 Chronicle Oracle addresses on Mantle Sepolia:
 - USDC/USD: 0x9Dd500569A6e77ECdDE7694CDc2E58ac587768D0
 - USDT/USD: 0xD671F5F7c2fb6f75439641C36a578842f5b376A9
@@ -248,6 +250,10 @@ Backend listens to contract events and syncs database automatically:
 - `QuestCompleted` - Quest completed by player
 
 Events are indexed in real-time and broadcast via WebSocket to frontend.
+
+## BigInt Serialization
+
+Backend properly handles BigInt values in JSON responses. All property methods convert BigInt fields (tokenId, rwaTokenId, totalYieldEarned) to numbers or strings before returning. This prevents "Do not know how to serialize a BigInt" errors when sending data to frontend.
 
 ## WebSocket Events
 
