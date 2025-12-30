@@ -219,7 +219,15 @@ export class LeaderboardService {
     try {
       // Get the current PropertyNFT contract address to ensure we only query the new contract
       const propertyNFTAddress = this.contractsService.propertyNFT.address;
+      const expectedPropertyNFT = process.env.PROPERTY_NFT_ADDRESS || '0xe1fF4f5f79D843208A0c70a0634a0CE4F034D697';
       this.logger.log(`Using PropertyNFT contract: ${propertyNFTAddress}`);
+      this.logger.log(`Expected PropertyNFT: ${expectedPropertyNFT}`);
+      
+      // Verify we're using the correct PropertyNFT contract
+      if (propertyNFTAddress.toLowerCase() !== expectedPropertyNFT.toLowerCase()) {
+        this.logger.error(`PropertyNFT address mismatch! Using ${propertyNFTAddress}, expected ${expectedPropertyNFT}`);
+        throw new Error('PropertyNFT address mismatch - using wrong contract');
+      }
       
       // First, discover property owners from blockchain events (chunk queries to avoid RPC limit)
       const discoveredOwners = new Set<string>();
@@ -227,9 +235,9 @@ export class LeaderboardService {
         this.logger.log('Discovering property owners from blockchain events (new contract only)...');
         const currentBlock = await this.contractsService.getProvider().getBlockNumber();
         
-        // Start from a recent block (e.g., last 100k blocks) to avoid querying old contract events
-        // Or query from deployment block if we know it
-        const fromBlock = Math.max(0, currentBlock - 100000); // Last 100k blocks
+        // Query from block 0 to ensure we get all properties from the new contract
+        // The PropertyNFT contract address filter ensures we only get events from the new contract
+        const fromBlock = 0;
         const chunkSize = 10000; // RPC limit
         
         for (let i = fromBlock; i <= currentBlock; i += chunkSize) {
