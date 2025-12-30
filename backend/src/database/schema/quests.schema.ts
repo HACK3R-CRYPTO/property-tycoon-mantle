@@ -1,4 +1,4 @@
-import { pgTable, uuid, bigint, timestamp, boolean, varchar, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, bigint, timestamp, boolean, varchar, integer, numeric } from 'drizzle-orm/pg-core';
 import { users } from './users.schema';
 
 export const quests = pgTable('quests', {
@@ -6,7 +6,7 @@ export const quests = pgTable('quests', {
   questId: bigint('quest_id', { mode: 'number' }).notNull().unique(),
   name: varchar('name', { length: 200 }).notNull(),
   description: varchar('description', { length: 1000 }),
-  rewardAmount: bigint('reward_amount', { mode: 'bigint' }).notNull(),
+  rewardAmount: numeric('reward_amount').notNull(), // Use NUMERIC to handle large values
   requiredProperties: integer('required_properties').notNull(),
   requiredPropertyType: varchar('required_property_type', { length: 50 }),
   active: boolean('active').default(true).notNull(),

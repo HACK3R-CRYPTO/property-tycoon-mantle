@@ -34,3 +34,4 @@ npm run dev
 # Cleanup function (if you want to add it)
 # trap "kill $BACKEND_PID; docker-compose down; exit" INT TERM
 
+

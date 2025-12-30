@@ -31,12 +31,12 @@ if (typeof window !== 'undefined') {
 
 // Contract addresses (Mantle Sepolia Testnet)
 export const CONTRACTS = {
-  PropertyNFT: (process.env.NEXT_PUBLIC_PROPERTY_NFT_ADDRESS || '0xe1fF4f5f79D843208A0c70a0634a0CE4F034D697') as Address,
-  GameToken: (process.env.NEXT_PUBLIC_GAME_TOKEN_ADDRESS || '0x7a809e1B20e3956eDD263e04244d98D82Fb7F711') as Address,
-  YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0xaeDF1F2cDD6f06bcf00aFacf51a4F6af328630F4') as Address,
-  Marketplace: (process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || '0xaeDF1F2cDD6f06bcf00aFacf51a4F6af328630F4') as Address,
-  QuestSystem: (process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS || '0x1A9890B59E7DD74dA063adB3f9f6262379fE5c2A') as Address,
-  TokenSwap: (process.env.NEXT_PUBLIC_TOKEN_SWAP_ADDRESS || '0xd3EB32149C505e67dE96d854B7AC4345dFE69f2e') as Address,
+  PropertyNFT: (process.env.NEXT_PUBLIC_PROPERTY_NFT_ADDRESS || '0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c') as Address,
+  GameToken: (process.env.NEXT_PUBLIC_GAME_TOKEN_ADDRESS || '0x3334f87178AD0f33e61009777a3dFa1756e9c23f') as Address,
+  YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0xb950EE50c98cD686DA34C535955203e2CE065F88') as Address,
+  Marketplace: (process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || '0x6b6b65843117C55da74Ea55C954a329659EFBeF0') as Address,
+  QuestSystem: (process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS || '0x89f72227168De554A28874aA79Bcb6f0E8e2227C') as Address,
+  TokenSwap: (process.env.NEXT_PUBLIC_TOKEN_SWAP_ADDRESS || '0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E') as Address,
 } as const;
 
 // Fallback inline ABIs for critical functions (used until dynamic ABIs load)
@@ -232,10 +232,38 @@ export const MARKETPLACE_ABI = [
 
 export const QUEST_SYSTEM_ABI = [
   {
-    inputs: [{ name: 'questType', type: 'uint256' }],
-    name: 'claimQuestReward',
+    inputs: [{ name: 'player', type: 'address' }],
+    name: 'checkFirstPropertyQuest',
     outputs: [],
     stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'player', type: 'address' }],
+    name: 'checkDiversifyPortfolioQuest',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'player', type: 'address' }],
+    name: 'checkPropertyMogulQuest',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'player', type: 'address' }],
+    name: 'checkRWAPioneerQuest',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'player', type: 'address' }, { name: 'questType', type: 'uint8' }],
+    name: 'hasCompletedQuest',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
     type: 'function',
   },
 ] as const;
@@ -289,10 +317,20 @@ export async function getOwnerProperties(owner: Address): Promise<bigint[]> {
       }) as bigint[];
       
       console.log(`✅ Successfully fetched ${result.length} properties`);
-      return result;
+      return result || [];
     } catch (error: any) {
       lastError = error;
-      console.warn(`⚠️ Attempt ${attempt} failed:`, error.message || error);
+      const errorMessage = error.message || error.toString();
+      console.warn(`⚠️ Attempt ${attempt} failed:`, errorMessage);
+      
+      // If it's a revert error and user might have no properties, return empty array
+      if (errorMessage.includes('revert') || errorMessage.includes('execution reverted')) {
+        // Check if it's because user has no properties (shouldn't revert, but handle gracefully)
+        if (attempt === maxRetries) {
+          console.log('⚠️ getOwnerProperties reverted - user may have no properties yet, returning empty array');
+          return [];
+        }
+      }
       
       // If it's a network error, wait before retrying
       if (attempt < maxRetries && (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('HTTP'))) {

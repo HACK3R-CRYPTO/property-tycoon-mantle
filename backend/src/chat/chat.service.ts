@@ -10,6 +10,7 @@ export interface ChatMessageDto {
   userId: string;
   walletAddress: string;
   username?: string;
+  avatar?: string;
   message: string;
   createdAt: Date;
 }
@@ -52,11 +53,15 @@ export class ChatService {
       })
       .returning();
 
+    // Generate avatar URL using dicebear (using wallet address as seed)
+    const avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.walletAddress}`;
+
     const messageDto = {
       id: chatMessage.id,
       userId: user.id,
       walletAddress: user.walletAddress,
       username: user.username || undefined,
+      avatar: avatarUrl,
       message: chatMessage.message,
       createdAt: chatMessage.createdAt,
     };
@@ -82,14 +87,22 @@ export class ChatService {
       .orderBy(desc(schema.chatMessages.createdAt))
       .limit(limit);
 
-    return messages.map((msg) => ({
-      id: msg.id,
-      userId: msg.userId,
-      walletAddress: msg.walletAddress || '',
-      username: msg.username || undefined,
-      message: msg.message,
-      createdAt: msg.createdAt,
-    }));
+    return messages.map((msg) => {
+      // Generate avatar URL using dicebear (using wallet address as seed)
+      const avatarUrl = msg.walletAddress 
+        ? `https://api.dicebear.com/7.x/avataaars/svg?seed=${msg.walletAddress}`
+        : undefined;
+
+      return {
+        id: msg.id,
+        userId: msg.userId,
+        walletAddress: msg.walletAddress || '',
+        username: msg.username || undefined,
+        avatar: avatarUrl,
+        message: msg.message,
+        createdAt: msg.createdAt,
+      };
+    });
   }
 }
 

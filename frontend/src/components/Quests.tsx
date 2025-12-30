@@ -1,13 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { Target, CheckCircle, Circle, Trophy, TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
+import { CONTRACTS, QUEST_SYSTEM_ABI } from '@/lib/contracts'
 
 interface Quest {
   id: string
+  questId?: number // Numeric quest ID (0-4)
   title: string
   description: string
   reward: bigint
@@ -18,38 +21,167 @@ interface Quest {
 }
 
 export function Quests() {
+  const { address } = useAccount()
   const [quests, setQuests] = useState<Quest[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [claimingQuestId, setClaimingQuestId] = useState<string | null>(null)
+  
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  })
 
   useEffect(() => {
     loadQuests()
-  }, [])
+  }, [address])
+
+  useEffect(() => {
+    if (isSuccess && claimingQuestId) {
+      // Quest claimed successfully, reload quests
+      loadQuests()
+      setClaimingQuestId(null)
+    }
+  }, [isSuccess, claimingQuestId])
 
   const loadQuests = async () => {
     setIsLoading(true)
     try {
-      const data = await api.get('/quests')
-      setQuests(data)
-    } catch (error) {
+      // Pass wallet address to get quests with progress
+      const url = address ? `/quests?address=${address}` : '/quests'
+      const data = await api.get(url)
+      
+      if (!Array.isArray(data)) {
+        console.error('Invalid quest data format:', data)
+        setQuests([])
+        return
+      }
+      
+      // Map backend data to frontend format
+      const formattedQuests = data.map((q: any) => {
+        // Handle reward - backend returns as string
+        let reward: bigint
+        try {
+          if (typeof q.reward === 'bigint') {
+            reward = q.reward
+          } else if (typeof q.reward === 'string') {
+            reward = BigInt(q.reward || '0')
+          } else if (q.rewardAmount) {
+            reward = BigInt(q.rewardAmount.toString() || '0')
+          } else {
+            reward = BigInt('0')
+          }
+        } catch (e) {
+          console.warn('Error parsing reward for quest:', q, e)
+          reward = BigInt('0')
+        }
+        
+        return {
+          id: q.id || q.questId?.toString() || '',
+          questId: q.questId, // Store the numeric quest ID (0-4)
+          title: q.title || q.name || 'Unknown Quest',
+          description: q.description || '',
+          reward,
+          progress: q.progress || 0,
+          target: q.target || q.requiredProperties || 1,
+          completed: q.completed || false,
+          type: q.type || 'properties',
+        }
+      })
+      
+      console.log(`✅ Loaded ${formattedQuests.length} quests`)
+      setQuests(formattedQuests)
+      
+      // Sync quest progress from contract if user is connected
+      if (address) {
+        try {
+          await api.get(`/quests/sync-progress/${address}`)
+        } catch (error) {
+          console.warn('Failed to sync quest progress:', error)
+        }
+      }
+    } catch (error: any) {
       console.error('Failed to load quests:', error)
+      console.error('Error details:', error.response?.data || error.message)
+      setQuests([])
     } finally {
       setIsLoading(false)
     }
   }
 
-  const claimReward = async (questId: string) => {
+  const claimReward = async (questId: string, questType: number) => {
+    if (!address) {
+      console.error('Wallet not connected')
+      return
+    }
+
     try {
-      await api.post(`/quests/${questId}/claim`)
-      loadQuests()
+      setClaimingQuestId(questId)
+      
+      // Map quest type to contract function name
+      let functionName: string
+      switch (questType) {
+        case 0: // FirstProperty
+          functionName = 'checkFirstPropertyQuest'
+          break
+        case 1: // DiversifyPortfolio
+          functionName = 'checkDiversifyPortfolioQuest'
+          break
+        case 3: // PropertyMogul
+          functionName = 'checkPropertyMogulQuest'
+          break
+        case 4: // RWAPioneer
+          functionName = 'checkRWAPioneerQuest'
+          break
+        default:
+          console.error(`Quest type ${questType} not supported for claiming`)
+          setClaimingQuestId(null)
+          return
+      }
+
+      // Call the contract function directly
+      writeContract({
+        address: CONTRACTS.QuestSystem,
+        abi: QUEST_SYSTEM_ABI,
+        functionName: functionName as any,
+        args: [address],
+      })
     } catch (error) {
       console.error('Failed to claim reward:', error)
+      setClaimingQuestId(null)
     }
   }
 
-  const formatValue = (value: bigint) => {
-    const amount = Number(value) / 1e18
-    if (amount < 1) return amount.toFixed(4)
-    return amount.toFixed(2)
+  const formatValue = (value: bigint | string | number) => {
+    try {
+      // Handle different input types
+      let bigIntValue: bigint
+      if (typeof value === 'bigint') {
+        bigIntValue = value
+      } else if (typeof value === 'string') {
+        bigIntValue = BigInt(value)
+      } else if (typeof value === 'number') {
+        bigIntValue = BigInt(value)
+      } else {
+        return '0.00'
+      }
+      
+      // Convert from wei to TYCOON (divide by 1e18)
+      const divisor = BigInt('1000000000000000000') // 1e18
+      const quotient = bigIntValue / divisor
+      const remainder = bigIntValue % divisor
+      const decimalPart = Number(remainder) / Number(divisor)
+      const amount = Number(quotient) + decimalPart
+      
+      if (isNaN(amount) || !isFinite(amount)) {
+        return '0.00'
+      }
+      
+      if (amount < 1) return amount.toFixed(4)
+      return amount.toFixed(2)
+    } catch (error) {
+      console.error('Error formatting value:', error, value)
+      return '0.00'
+    }
   }
 
   const getQuestIcon = (type: string) => {
@@ -121,13 +253,26 @@ export function Quests() {
                       </div>
                     </div>
                   </div>
-                  {quest.completed && (
+                  {quest.completed ? (
+                    <div className="text-xs text-green-400 font-semibold">✓ Completed</div>
+                  ) : (
                     <Button
-                      onClick={() => claimReward(quest.id)}
+                      onClick={() => {
+                        // Use questId from backend (0-4) or infer from quest data
+                        const questType = quest.questId ?? 
+                          (quest.title?.includes('First') ? 0 :
+                           quest.title?.includes('Diversify') ? 1 :
+                           quest.title?.includes('Mogul') ? 3 :
+                           quest.title?.includes('RWA') ? 4 : 0)
+                        claimReward(quest.id, questType)
+                      }}
+                      disabled={isPending || isConfirming || claimingQuestId === quest.id}
                       size="sm"
-                      className="bg-yellow-500 hover:bg-yellow-600 text-black"
+                      className="bg-yellow-500 hover:bg-yellow-600 text-black disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Claim
+                      {isPending || isConfirming || claimingQuestId === quest.id
+                        ? 'Checking...'
+                        : 'Check & Claim'}
                     </Button>
                   )}
                 </div>
@@ -139,5 +284,6 @@ export function Quests() {
     </div>
   )
 }
+
 
 

@@ -12,6 +12,7 @@ import { QuestsModule } from './quests/quests.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { ChatModule } from './chat/chat.module';
 import { GuildsModule } from './guilds/guilds.module';
+import { UsersModule } from './users/users.module';
 import { WebsocketGateway } from './websocket/websocket.gateway';
 import { EventsModule } from './events/events.module';
 
@@ -28,6 +29,7 @@ import { EventsModule } from './events/events.module';
     LeaderboardModule,
     ChatModule,
     GuildsModule,
+    UsersModule,
     EventsModule,
   ],
   controllers: [AppController],

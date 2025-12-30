@@ -73,15 +73,73 @@ async function initDatabase() {
 
       CREATE TABLE IF NOT EXISTS quests (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        quest_id INTEGER NOT NULL UNIQUE,
+        quest_id BIGINT NOT NULL UNIQUE,
         name VARCHAR(200) NOT NULL,
-        description TEXT,
-        reward_amount BIGINT NOT NULL,
-        required_properties INTEGER DEFAULT 0,
-        active BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
+        description VARCHAR(1000),
+        reward_amount NUMERIC NOT NULL,
+        required_properties INTEGER DEFAULT 0 NOT NULL,
+        required_property_type VARCHAR(50),
+        active BOOLEAN DEFAULT true NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       );
+      
+      -- Alter reward_amount from BIGINT to NUMERIC if it exists as BIGINT
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'quests' 
+          AND column_name = 'reward_amount' 
+          AND data_type = 'bigint'
+        ) THEN
+          ALTER TABLE quests ALTER COLUMN reward_amount TYPE NUMERIC USING reward_amount::text::numeric;
+        END IF;
+      END $$;
+      
+      -- Add required_property_type column if it doesn't exist
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'quests' 
+          AND column_name = 'required_property_type'
+        ) THEN
+          ALTER TABLE quests ADD COLUMN required_property_type VARCHAR(50);
+        END IF;
+      END $$;
+      
+      -- Alter quest_id to BIGINT if it's INTEGER (handle existing data)
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'quests' 
+          AND column_name = 'quest_id' 
+          AND data_type = 'integer'
+        ) THEN
+          -- First drop the unique constraint if it exists
+          ALTER TABLE quests DROP CONSTRAINT IF EXISTS quests_quest_id_key;
+          -- Then alter the column type
+          ALTER TABLE quests ALTER COLUMN quest_id TYPE BIGINT USING quest_id::bigint;
+          -- Re-add the unique constraint
+          ALTER TABLE quests ADD CONSTRAINT quests_quest_id_key UNIQUE (quest_id);
+        END IF;
+      END $$;
+      
+      -- Ensure required_properties has NOT NULL constraint
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'quests' 
+          AND column_name = 'required_properties' 
+          AND is_nullable = 'YES'
+        ) THEN
+          ALTER TABLE quests ALTER COLUMN required_properties SET NOT NULL;
+          ALTER TABLE quests ALTER COLUMN required_properties SET DEFAULT 0;
+        END IF;
+      END $$;
 
       CREATE TABLE IF NOT EXISTS quest_progress (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

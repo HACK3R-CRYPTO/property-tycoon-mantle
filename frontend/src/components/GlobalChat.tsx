@@ -117,9 +117,13 @@ export function GlobalChat({ isOpen, onClose }: GlobalChatProps) {
                       <div className={`flex gap-3 max-w-[85%] ${msg.isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                         {!msg.isMe && (
                           <Avatar className="w-8 h-8 border border-white/20">
-                            <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-xs text-white">
-                              {msg.username?.[0] || msg.walletAddress.slice(2, 3).toUpperCase()}
-                            </AvatarFallback>
+                            {msg.avatar ? (
+                              <img src={msg.avatar} alt={msg.username || msg.walletAddress} className="w-full h-full" />
+                            ) : (
+                              <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-xs text-white">
+                                {msg.username?.[0] || msg.walletAddress.slice(2, 3).toUpperCase()}
+                              </AvatarFallback>
+                            )}
                           </Avatar>
                         )}
                         <div className={`space-y-1 ${msg.isMe ? 'items-end' : 'items-start'} flex flex-col`}>

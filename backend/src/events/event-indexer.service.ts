@@ -5,7 +5,7 @@ import { ContractsService } from '../contracts/contracts.service';
 import { DATABASE_CONNECTION } from '../database/database.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../database/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { MantleApiService } from '../mantle/mantle-api.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
@@ -918,11 +918,82 @@ export class EventIndexerService implements OnModuleInit {
     reward: string,
   ) {
     try {
-      // Update quest progress in database
-      // This is handled by the quests service, but we log it here
       this.logger.log(`Quest completed: player=${player}, type=${questType}, reward=${reward}`);
+      
+      // Get or create user
+      let [user] = await this.db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.walletAddress, player.toLowerCase()))
+        .limit(1);
+
+      if (!user) {
+        [user] = await this.db
+          .insert(schema.users)
+          .values({
+            walletAddress: player.toLowerCase(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .returning();
+      }
+
+      // Get quest by questId (questType is the enum value 0-4)
+      const questTypeNum = Number(questType);
+      const [quest] = await this.db
+        .select()
+        .from(schema.quests)
+        .where(eq(schema.quests.questId, questTypeNum))
+        .limit(1);
+
+      if (!quest) {
+        this.logger.warn(`Quest ${questTypeNum} not found in database`);
+        return;
+      }
+
+      // Update or create quest progress
+      const [existingProgress] = await this.db
+        .select()
+        .from(schema.questProgress)
+        .where(
+          and(
+            eq(schema.questProgress.userId, user.id),
+            eq(schema.questProgress.questId, quest.id)
+          )
+        )
+        .limit(1);
+
+      if (existingProgress) {
+        // Update existing progress
+        await this.db
+          .update(schema.questProgress)
+          .set({
+            completed: true,
+            rewardClaimed: true, // Quest completion means reward was minted
+            completedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.questProgress.id, existingProgress.id));
+      } else {
+        // Create new progress entry
+        await this.db.insert(schema.questProgress).values({
+          questId: quest.id,
+          userId: user.id,
+          completed: true,
+          progress: 100,
+          rewardClaimed: true,
+          completedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      // Update leaderboard
+      await this.leaderboardService.updateLeaderboard(user.id);
+
+      this.logger.log(`Quest progress updated for user ${player}, quest ${questTypeNum}`);
     } catch (error) {
-      this.logger.error(`Error handling QuestCompleted: ${error.message}`);
+      this.logger.error(`Error handling QuestCompleted: ${error.message}`, error.stack);
     }
   }
 

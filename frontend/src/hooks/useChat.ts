@@ -9,6 +9,7 @@ export interface ChatMessage {
   id: string;
   walletAddress: string;
   username?: string;
+  avatar?: string;
   message: string;
   createdAt: string;
   isMe?: boolean;

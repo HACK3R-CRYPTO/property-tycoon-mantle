@@ -9,13 +9,14 @@ import { BuildMenu } from '@/components/game/BuildMenu';
 import { YieldDisplay } from '@/components/game/YieldDisplay';
 import { PropertyDetails } from '@/components/game/PropertyDetails';
 import { GlobalChat } from '@/components/GlobalChat';
+import { UserProfile } from '@/components/UserProfile';
 import { WalletConnect } from '@/components/WalletConnect';
 import { GameGuide } from '@/components/game/GameGuide';
 import { Guilds } from '@/components/Guilds';
 import { Marketplace } from '@/components/Marketplace';
 import { Quests } from '@/components/Quests';
 import { TokenPurchase } from '@/components/TokenPurchase';
-import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target, Coins } from 'lucide-react';
+import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target, Coins, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import Link from 'next/link';
@@ -47,6 +48,7 @@ export default function GamePage() {
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [showBuildMenu, setShowBuildMenu] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showGuilds, setShowGuilds] = useState(false);
   const [showMarketplace, setShowMarketplace] = useState(false);
@@ -1138,6 +1140,15 @@ export default function GamePage() {
               Quests
             </Button>
             <WalletConnect />
+            {isConnected && (
+              <Button
+                onClick={() => setShowProfile(true)}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                <User className="w-4 h-4 mr-2" />
+                Profile
+              </Button>
+            )}
             <Button
               onClick={() => setShowChat(true)}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -1389,6 +1400,9 @@ export default function GamePage() {
         />
       )}
 
+      {/* User Profile */}
+      {showProfile && <UserProfile isOpen={showProfile} onClose={() => setShowProfile(false)} />}
+      
       {/* Global Chat */}
       <GlobalChat isOpen={showChat} onClose={() => setShowChat(false)} />
       

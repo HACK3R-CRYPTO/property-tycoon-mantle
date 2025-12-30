@@ -31,3 +31,4 @@ WHERE user_id IN (
 --   LOWER('0x32D9a9b9e241Da421f34786De0B39fD34D1EfeA8')
 -- );
 
+

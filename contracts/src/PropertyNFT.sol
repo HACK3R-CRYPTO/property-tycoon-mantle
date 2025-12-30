@@ -53,6 +53,14 @@ contract PropertyNFT is ERC721, Ownable, ReentrancyGuard {
     }
     
     /**
+     * @notice Set property cost for a property type (for existing deployments)
+     * @dev Only owner can call this - allows initializing propertyCosts after deployment
+     */
+    function setPropertyCost(PropertyType propertyType, uint256 cost) public onlyOwner {
+        propertyCosts[propertyType] = cost;
+    }
+    
+    /**
      * @notice Purchase and mint a property by paying TYCOON tokens
      * @param propertyType The type of property to purchase
      * @param value The property value (used for yield calculation)

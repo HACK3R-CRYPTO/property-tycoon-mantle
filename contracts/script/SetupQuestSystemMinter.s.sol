@@ -33,3 +33,4 @@ contract SetupQuestSystemMinter is Script {
     }
 }
 
+
