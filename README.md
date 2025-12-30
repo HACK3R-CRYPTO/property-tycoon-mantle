@@ -2,6 +2,8 @@
 
 Build property empires. Earn real yield. Own your portfolio. Real-time updates powered by Mantle Network.
 
+**Built for Mantle Global Hackathon 2025** 🏆
+
 ## What You Get
 
 You build property portfolios. You manage properties. You earn real yield from RWA-backed assets. Top tycoons win more. Your properties stay on blockchain. Your yield stays in your wallet. Portfolio updates instantly without refreshing. No waiting. No polling. Pure real-time property management. See other players. Visit their portfolios. Trade properties. Join neighborhoods. Compete on leaderboards. All in real time.
@@ -12,7 +14,7 @@ Connect your wallet. Buy TYCOON tokens with MNT. One-time purchase to get starte
 
 ## Your First Property
 
-Step one: Connect your wallet. Use MetaMask or WalletConnect. Switch to Mantle Testnet. Get test tokens from faucet.
+Step one: Connect your wallet. Use MetaMask or WalletConnect. Switch to Mantle Sepolia Testnet. Get test tokens from faucet.
 
 Step two: Buy TYCOON tokens. One-time purchase to get started. Send MNT to swap contract. One MNT buys 100 TYCOON tokens. Buy enough for your first property. Buy more later if you want to expand. No recurring payments. No subscriptions.
 
@@ -60,7 +62,7 @@ Marketplace connects players. Browse properties for sale. See seller information
 
 Quest system rewards players. Complete investment challenges. Diversify your portfolio. Optimize your yield. Earn bonus rewards. Unlock achievements. Track progress in real time. Claim rewards when completed.
 
-Global chat connects everyone. Talk with all players. Share tips and strategies. Announce property sales. Discuss market trends. Real-time messaging. Build community.
+Global chat connects everyone. Talk with all players. Share tips and strategies. Announce property sales. Discuss market trends. Real-time messaging. Build community. Usernames and avatars for personalized experience.
 
 ## Real-Time Features
 
@@ -71,6 +73,13 @@ Powered by Mantle Network. Backend emits events via smart contracts when propert
 ## RWA Integration
 
 Properties linked to tokenized real estate. Each property NFT backed by real-world asset. Real yield from actual rental income. Transparent distribution on-chain. Verifiable ownership. Compliant with regulations. KYC flow for RWA investments. Fractional ownership supported. Multiple properties per RWA. Yield distributed proportionally.
+
+**Perfect fit for RWA / RealFi Track** 🏅
+
+- Tokenization of real estate assets
+- Compliant yield distribution mechanisms
+- On-chain ownership verification
+- Transparent yield tracking
 
 ## Yield Distribution
 
@@ -114,11 +123,29 @@ Property Tycoon leverages Mantle's modular architecture and advanced tooling for
 - Fast finality ensures instant portfolio updates
 - EVM compatibility allows seamless integration with existing tooling
 
+**Best Mantle Integration Potential** 🏆
+
+- Advanced use of Mantle's modular architecture
+- Optimized gas usage for frequent yield claims
+- Real-time event indexing leveraging Mantle's high throughput
+- Cross-chain RWA asset bridging capabilities
+- Custom RPC method utilization for performance
+
 All smart contracts deployed and verified on Mantle Sepolia Testnet. All interactions optimized for Mantle's low-fee, high-performance environment.
 
 ## Technical Excellence
 
 Web-based gameplay. No downloads. No Unity. No plugins. Works in any browser. Mobile responsive. Touch controls. Keyboard support. Smooth animations. Property visualization. Yield charts. Real-time leaderboard. RWA integration. Smart contract rewards. Mantle network integration. Next.js frontend. NestJS backend. Socket.io real-time. Pixi.js rendering.
+
+**Best UX / Demo Potential** 🎨
+
+- Intuitive property management interface
+- Real-time portfolio visualization
+- Smooth animations and transitions
+- Mobile-responsive design
+- Seamless wallet integration
+- Clear onboarding flow
+- Interactive city map view
 
 ## Getting Started
 
@@ -143,8 +170,6 @@ Marketplace: 0x6b6b65843117C55da74Ea55C954a329659EFBeF0
 Quest System: 0x89f72227168De554A28874aA79Bcb6f0E8e2227C
 
 Token Swap: 0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E
-
-View contracts on Mantle Explorer: https://explorer.sepolia.mantle.xyz
 
 View contracts on Mantle Explorer: https://explorer.sepolia.mantle.xyz
 
@@ -175,9 +200,53 @@ All contracts deployed to Mantle Sepolia Testnet using Foundry.
 - YieldDistributor: Distributes yield rewards to property owners
 - Marketplace: Property trading marketplace
 - QuestSystem: Investment quest and achievement system
+- TokenSwap: MNT to TYCOON token swap
 
-See [DEPLOYMENT_DETAILS.md](DEPLOYMENT_DETAILS.md) for complete deployment process and evidence.
+See [DEPLOYED_ADDRESSES.md](DEPLOYED_ADDRESSES.md) for complete deployment process and evidence.
 
-## Built for Hackathon
+## Built for Mantle Global Hackathon 2025
 
 Property Tycoon built for Mantle Global Hackathon 2025. Play to earn mechanics. Real yield from RWA. Smart contract rewards. Mantle integration. RWA tokenization. Multiplayer features. Web-based gameplay. Contracts deployed and verified. Ready for users. Production quality code.
+
+### Hackathon Track Alignment
+
+**Primary Track: RWA / RealFi** 🏅
+- Tokenization of real estate assets
+- Compliant yield distribution mechanisms
+- On-chain ownership verification
+- Transparent yield tracking
+- KYC-ready architecture
+
+**Secondary Track: GameFi & Social** 🎮
+- Consumer-facing property management game
+- Token incentive design (TYCOON tokens)
+- User retention through quests and leaderboards
+- Social features (guilds, chat, portfolio visits)
+- Real-time multiplayer interactions
+
+**Award Potential:**
+- ✅ Best Mantle Integration (advanced modular architecture usage)
+- ✅ Best UX / Demo (smooth, intuitive interface)
+- ✅ Community Choice (engaging multiplayer experience)
+
+### Key Differentiators
+
+1. **Real Yield from RWA**: Not just game tokens - actual USDC/USDT from tokenized real estate
+2. **Advanced Mantle Integration**: Leverages modular architecture, custom RPC methods, optimized gas
+3. **Production-Ready**: Full-stack application with real-time updates, event indexing, WebSocket support
+4. **User-Friendly**: Intuitive UI, clear onboarding, mobile-responsive design
+5. **Comprehensive Features**: Property management, marketplace, quests, guilds, chat, leaderboards
+
+### Demo Highlights
+
+- Connect wallet and buy tokens in seconds
+- Mint property NFT with one click
+- Link property to RWA for real yield
+- Claim yield rewards (USDC/USDT)
+- Complete investment quests
+- Trade properties on marketplace
+- Join guilds and chat with players
+- View real-time leaderboard updates
+- Visit other players' portfolios
+
+All features work seamlessly on Mantle Network with low fees and instant updates.
