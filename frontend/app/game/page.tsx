@@ -11,6 +11,7 @@ import { PropertyDetails } from '@/components/game/PropertyDetails';
 import { GlobalChat } from '@/components/GlobalChat';
 import { UserProfile } from '@/components/UserProfile';
 import { WalletConnect } from '@/components/WalletConnect';
+import { RWALinkModal } from '@/components/RWALinkModal';
 import { GameGuide } from '@/components/game/GameGuide';
 import { Guilds } from '@/components/Guilds';
 import { Marketplace } from '@/components/Marketplace';
@@ -56,6 +57,7 @@ export default function GamePage() {
   const [showTokenPurchase, setShowTokenPurchase] = useState(false);
   const [showSellProperty, setShowSellProperty] = useState(false);
   const [propertyToSell, setPropertyToSell] = useState<Property | null>(null);
+  const [showRWALink, setShowRWALink] = useState(false);
   const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0)); // Real-time estimated yield
   const [claimableYield, setClaimableYield] = useState<bigint>(BigInt(0)); // On-chain claimable yield (24-hour requirement)
   const [propertyClaimableYields, setPropertyClaimableYields] = useState<Map<number, bigint>>(new Map()); // Claimable yield per property
@@ -1389,13 +1391,28 @@ export default function GamePage() {
             }
           }}
           onLinkRWA={() => {
-            // TODO: Implement RWA linking
-            console.log('Link to RWA');
+            setShowRWALink(true);
           }}
           onSellProperty={() => {
             setPropertyToSell(selectedProperty);
             setShowSellProperty(true);
             setSelectedProperty(null);
+          }}
+        />
+      )}
+
+      {/* RWA Link Modal */}
+      {showRWALink && selectedProperty && (
+        <RWALinkModal
+          isOpen={showRWALink}
+          onClose={() => {
+            setShowRWALink(false);
+            setSelectedProperty(null);
+          }}
+          propertyTokenId={selectedProperty.tokenId}
+          onSuccess={() => {
+            // Reload properties to get updated RWA info
+            loadProperties();
           }}
         />
       )}
