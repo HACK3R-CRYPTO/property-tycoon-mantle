@@ -41,8 +41,8 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   const port = process.env.PORT || 3001;
-  await app.listen(port);
-  console.log(`🚀 Backend server running on: http://localhost:${port}`);
-  console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
+  await app.listen(port, '0.0.0.0'); // Listen on all interfaces for Railway
+  console.log(`🚀 Backend server running on: http://0.0.0.0:${port}`);
+  console.log(`📚 API Documentation: http://0.0.0.0:${port}/api/docs`);
 }
 bootstrap();
