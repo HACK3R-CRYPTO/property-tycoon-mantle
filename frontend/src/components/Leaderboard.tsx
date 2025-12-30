@@ -50,10 +50,15 @@ export function Leaderboard() {
     });
     
     // Also refresh periodically (every 5 seconds) to catch any missed updates
+    // Only refresh global leaderboard periodically, not guild leaderboard
+    // Guild leaderboard updates via WebSocket or manual refresh
     const refreshInterval = setInterval(() => {
-      console.log('🔄 Periodic leaderboard refresh...');
-      loadLeaderboard();
-    }, 5000);
+      if (activeTab === 'global') {
+        console.log('🔄 Periodic global leaderboard refresh...');
+        // Only refresh global leaderboard, not guild leaderboard
+        loadLeaderboard();
+      }
+    }, 30000); // Increased to 30 seconds to reduce load
     
     return () => {
       socket.off('leaderboard:updated');
