@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { CONTRACTS, PROPERTY_NFT_ABI } from '@/lib/contracts';
 import { formatEther } from 'viem';
-import { getPublicClient } from 'wagmi/actions';
+import { getPublicClient } from '@wagmi/core';
+import { wagmiConfig } from '@/lib/mantle-viem';
 
 interface RWALinkModalProps {
   isOpen: boolean;
@@ -54,8 +55,8 @@ const MOCK_RWA_ABI = [
     type: 'function',
   },
   {
-    inputs: [],
-    name: 'totalSupply',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    name: 'getYieldRate',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
     type: 'function',
@@ -76,35 +77,42 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
   const [availableTokens, setAvailableTokens] = useState<RWAToken[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Get total supply of MockRWA tokens
-  const { data: totalSupply } = useReadContract({
-    address: CONTRACTS.MockRWA,
-    abi: MOCK_RWA_ABI,
-    functionName: 'totalSupply',
-    query: { enabled: isOpen && !!CONTRACTS.MockRWA },
-  });
-
   // Write contract for linking
   const { writeContract, data: hash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  // Load available RWA tokens
+  // Load available RWA tokens (we know 5 tokens were minted during deployment)
   useEffect(() => {
-    if (!isOpen || !totalSupply || !CONTRACTS.MockRWA) return;
+    if (!isOpen || !CONTRACTS.MockRWA || CONTRACTS.MockRWA === '0x0000000000000000000000000000000000000000') {
+      setAvailableTokens([]);
+      return;
+    }
 
     const loadTokens = async () => {
       setLoading(true);
       try {
         const tokens: RWAToken[] = [];
-        const supply = Number(totalSupply);
+        const publicClient = getPublicClient(wagmiConfig);
+        if (!publicClient) {
+          setLoading(false);
+          return;
+        }
         
-        // Check tokens 1-5 (or up to totalSupply)
-        for (let i = 1; i <= Math.min(supply, 5); i++) {
+        // Check tokens 0-4 (we know 5 tokens were minted during deployment, starting from 0)
+        for (let i = 0; i < 5; i++) {
           try {
-            // Try to read property data
-            const publicClient = await getPublicClient();
-            if (!publicClient) continue;
+            // First check if token exists by checking ownerOf
+            const owner = await publicClient.readContract({
+              address: CONTRACTS.MockRWA,
+              abi: MOCK_RWA_ABI,
+              functionName: 'ownerOf',
+              args: [BigInt(i)],
+            }).catch(() => null);
 
+            // If token doesn't exist, ownerOf will revert, so skip it
+            if (!owner) continue;
+
+            // Try to read property data
             const propertyData = await publicClient.readContract({
               address: CONTRACTS.MockRWA,
               abi: MOCK_RWA_ABI,
@@ -134,7 +142,7 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
     };
 
     loadTokens();
-  }, [isOpen, totalSupply]);
+  }, [isOpen]);
 
   // Handle successful transaction
   useEffect(() => {
