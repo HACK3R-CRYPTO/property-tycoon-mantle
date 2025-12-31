@@ -1,4 +1,4 @@
-@echo off
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                @echo off
 REM Property Tycoon - Start All Services (Windows)
 REM This script starts Docker, Backend, and Frontend
 
@@ -31,6 +31,7 @@ echo 📍 API Docs: http://localhost:3001/api/docs
 echo.
 echo Press any key to exit...
 pause >nul
+
 
 
 
