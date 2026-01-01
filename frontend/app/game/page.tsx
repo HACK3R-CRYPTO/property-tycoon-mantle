@@ -83,7 +83,19 @@ export default function GamePage() {
       
       // Try to load from backend first (faster, already synced)
       try {
-        const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+        // Auto-detect production and use Railway backend if env var not set
+        const isProduction = typeof window !== 'undefined' && 
+          (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('railway.app'));
+        
+        // Priority: env var > production detection > localhost
+        let BACKEND_URL: string;
+        if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.trim() !== '') {
+          BACKEND_URL = process.env.NEXT_PUBLIC_API_URL;
+        } else if (isProduction) {
+          BACKEND_URL = 'https://property-tycoon-mantle-production.up.railway.app/api';
+        } else {
+          BACKEND_URL = 'http://localhost:3001/api';
+        }
         const response = await fetch(`${BACKEND_URL}/properties/owner/${address}`, {
           signal: AbortSignal.timeout(5000), // 5 second timeout
         });
@@ -848,7 +860,19 @@ export default function GamePage() {
       
       // Try backend for additional data (optional, non-blocking)
       try {
-        const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+        // Auto-detect production and use Railway backend if env var not set
+        const isProduction = typeof window !== 'undefined' && 
+          (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('railway.app'));
+        
+        // Priority: env var > production detection > localhost
+        let BACKEND_URL: string;
+        if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.trim() !== '') {
+          BACKEND_URL = process.env.NEXT_PUBLIC_API_URL;
+        } else if (isProduction) {
+          BACKEND_URL = 'https://property-tycoon-mantle-production.up.railway.app/api';
+        } else {
+          BACKEND_URL = 'http://localhost:3001/api';
+        }
         const yieldResponse = await fetch(`${BACKEND_URL}/yield/pending/${address}`, {
           signal: AbortSignal.timeout(2000), // 2 second timeout (non-blocking)
         });
@@ -1106,9 +1130,19 @@ export default function GamePage() {
   useEffect(() => {
     if (!address || !isConnected) return;
 
-    const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL 
-      ? process.env.NEXT_PUBLIC_API_URL.replace('/api', '') 
-      : 'http://localhost:3001';
+    // Auto-detect production and use Railway backend if env var not set
+    const isProduction = typeof window !== 'undefined' && 
+      (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('railway.app'));
+    
+    // Priority: env var > production detection > localhost
+    let BACKEND_URL: string;
+    if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.trim() !== '') {
+      BACKEND_URL = process.env.NEXT_PUBLIC_API_URL.replace('/api', '');
+    } else if (isProduction) {
+      BACKEND_URL = 'https://property-tycoon-mantle-production.up.railway.app';
+    } else {
+      BACKEND_URL = 'http://localhost:3001';
+    }
 
     const socket: Socket = io(BACKEND_URL, {
       transports: ['websocket', 'polling'],
