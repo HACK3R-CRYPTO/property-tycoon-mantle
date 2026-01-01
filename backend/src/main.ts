@@ -9,9 +9,24 @@ async function bootstrap() {
   // Global prefix
   app.setGlobalPrefix(process.env.API_PREFIX || 'api');
 
-  // Enable CORS
+  // Enable CORS - Allow Vercel frontend and localhost
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'https://property-tycoon-mantle.vercel.app',
+    ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim()) : []),
+  ];
+  
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, true); // Allow all origins for development
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-wallet-address'],

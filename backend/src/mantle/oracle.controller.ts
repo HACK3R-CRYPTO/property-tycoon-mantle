@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { OracleService } from './oracle.service';
 
-@Controller('api/oracle')
+@Controller('oracle')
 export class OracleController {
   constructor(private readonly oracleService: OracleService) {}
 

@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   reactCompiler: true,
+  // Add empty turbopack config to silence warning
+  turbopack: {},
   webpack: (config) => {
     // Ignore all Solana-related modules (not needed for EVM/Mantle project)
     const webpack = require('webpack');
