@@ -48,20 +48,41 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
 
   // Initialize Pixi app
   useEffect(() => {
-    if (!canvasRef.current || appRef.current) return;
+    if (!canvasRef.current || appRef.current) {
+      console.log('🚫 CityView: Skipping Pixi init', { 
+        hasCanvasRef: !!canvasRef.current, 
+        hasAppRef: !!appRef.current 
+      });
+      return;
+    }
 
     const initPixi = async () => {
-      const app = new Application();
-      await app.init({
-        width: CANVAS_WIDTH,
-        height: CANVAS_HEIGHT,
-        backgroundColor: 0x1a1a2e,
-        antialias: true,
-      });
+      console.log('🎨 CityView: Initializing Pixi.js...');
+      let app: Application;
+      try {
+        app = new Application();
+        await app.init({
+          width: CANVAS_WIDTH,
+          height: CANVAS_HEIGHT,
+          backgroundColor: 0x1a1a2e,
+          antialias: true,
+        });
 
-      if (canvasRef.current) {
-        canvasRef.current.appendChild(app.canvas);
-        appRef.current = app;
+        if (canvasRef.current) {
+          canvasRef.current.appendChild(app.canvas);
+          appRef.current = app;
+          console.log('✅ CityView: Pixi.js initialized successfully', {
+            canvasWidth: CANVAS_WIDTH,
+            canvasHeight: CANVAS_HEIGHT,
+            canvasElement: app.canvas,
+          });
+        } else {
+          console.error('❌ CityView: canvasRef.current is null after init');
+          return;
+        }
+      } catch (error) {
+        console.error('❌ CityView: Failed to initialize Pixi.js:', error);
+        return;
       }
 
       // Create layers
@@ -77,27 +98,35 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       gridLayerRef.current = gridLayer;
       propertiesLayerRef.current = propertiesLayer;
 
+      console.log('✅ CityView: Layers created', {
+        hasStage: !!stageRef.current,
+        hasGridLayer: !!gridLayerRef.current,
+        hasPropertiesLayer: !!propertiesLayerRef.current,
+      });
+
       // Draw background terrain/land tiles (always draw all tiles as empty land)
       const terrainGraphics = new Graphics();
       for (let x = 0; x < GRID_WIDTH; x++) {
         for (let y = 0; y < GRID_HEIGHT; y++) {
-          // Draw empty land tile with subtle pattern
-          terrainGraphics.beginFill(0x2d2d44, 0.6); // Darker land color
-          terrainGraphics.drawRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-          terrainGraphics.endFill();
+          // Draw empty land tile with subtle pattern (PixiJS v8 API)
+          terrainGraphics
+            .rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+            .fill({ color: 0x2d2d44, alpha: 0.6 });
           
           // Add subtle texture pattern (dots) to show it's buildable land
-          terrainGraphics.beginFill(0x3a3a55, 0.3);
-          terrainGraphics.drawCircle(x * TILE_SIZE + TILE_SIZE / 4, y * TILE_SIZE + TILE_SIZE / 4, 2);
-          terrainGraphics.drawCircle(x * TILE_SIZE + (TILE_SIZE * 3) / 4, y * TILE_SIZE + (TILE_SIZE * 3) / 4, 2);
-          terrainGraphics.endFill();
+          terrainGraphics
+            .circle(x * TILE_SIZE + TILE_SIZE / 4, y * TILE_SIZE + TILE_SIZE / 4, 2)
+            .fill({ color: 0x3a3a55, alpha: 0.3 });
+          terrainGraphics
+            .circle(x * TILE_SIZE + (TILE_SIZE * 3) / 4, y * TILE_SIZE + (TILE_SIZE * 3) / 4, 2)
+            .fill({ color: 0x3a3a55, alpha: 0.3 });
         }
       }
       gridLayer.addChild(terrainGraphics);
 
-      // Draw grid lines (more visible)
+      // Draw grid lines (more visible) - PixiJS v8 API
       const gridGraphics = new Graphics();
-      gridGraphics.lineStyle(1, 0x4a4a6e, 0.8); // More visible grid lines
+      gridGraphics.setStrokeStyle({ width: 1, color: 0x4a4a6e, alpha: 0.8 });
 
       // Vertical lines
       for (let x = 0; x <= GRID_WIDTH; x++) {
@@ -110,6 +139,8 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
         gridGraphics.moveTo(0, y * TILE_SIZE);
         gridGraphics.lineTo(CANVAS_WIDTH, y * TILE_SIZE);
       }
+      
+      gridGraphics.stroke();
 
       gridLayer.addChild(gridGraphics);
 
@@ -143,6 +174,7 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       });
 
       setSpritesLoaded(true);
+      console.log('✅ CityView: Sprites loaded, ready to render properties');
     };
 
     initPixi();
@@ -194,13 +226,28 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
 
   // Render properties (yours and other players') and selected tile
   useEffect(() => {
-    if (!propertiesLayerRef.current || !gridLayerRef.current || !spritesLoaded) return;
+    console.log('🎨 CityView: Render effect triggered', {
+      hasPropertiesLayer: !!propertiesLayerRef.current,
+      hasGridLayer: !!gridLayerRef.current,
+      spritesLoaded,
+      propertiesCount: properties.length,
+    });
+
+    if (!propertiesLayerRef.current || !gridLayerRef.current || !spritesLoaded) {
+      console.warn('⚠️ CityView: Cannot render - missing refs or sprites not loaded', {
+        hasPropertiesLayer: !!propertiesLayerRef.current,
+        hasGridLayer: !!gridLayerRef.current,
+        spritesLoaded,
+      });
+      return;
+    }
 
     // Store ref value to avoid TypeScript null checks
     const propertiesLayer = propertiesLayerRef.current;
 
     // Clear existing properties
     propertiesLayer.removeChildren();
+    console.log('🧹 CityView: Cleared existing properties');
     
 
     // Render other players' properties first (dimmer, in background)
@@ -210,26 +257,24 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       const propertyGraphics = new Graphics();
       const color = PROPERTY_COLORS[property.propertyType];
       
-      // Draw other player's property (dimmer, with border)
-      propertyGraphics.beginFill(color, 0.4); // Dimmer
-      propertyGraphics.drawRect(
-        property.x * TILE_SIZE + 2,
-        property.y * TILE_SIZE + 2,
-        TILE_SIZE - 4,
-        TILE_SIZE - 4
-      );
-      propertyGraphics.endFill();
+      // Draw other player's property (dimmer, with border) - PixiJS v8 API
+      const xPos = property.x * TILE_SIZE + 2;
+      const yPos = property.y * TILE_SIZE + 2;
+      
+      propertyGraphics
+        .rect(xPos, yPos, TILE_SIZE - 4, TILE_SIZE - 4)
+        .fill({ color, alpha: 0.4 });
       
       // Dashed border to show it's not yours
-      propertyGraphics.lineStyle(2, color, 0.6);
-      propertyGraphics.drawRect(
-        property.x * TILE_SIZE + 2,
-        property.y * TILE_SIZE + 2,
-        TILE_SIZE - 4,
-        TILE_SIZE - 4
-      );
+      propertyGraphics
+        .rect(xPos, yPos, TILE_SIZE - 4, TILE_SIZE - 4)
+        .setStrokeStyle({ width: 2, color, alpha: 0.6 })
+        .stroke();
 
-      // Property type label (smaller, dimmer)
+      // Property type label (smaller, dimmer) - Create container for Graphics + Text
+      const propertyContainer = new Container();
+      propertyContainer.addChild(propertyGraphics);
+      
       const label = new Text({
         text: property.propertyType[0],
         style: {
@@ -240,42 +285,46 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       });
       label.x = property.x * TILE_SIZE + TILE_SIZE / 2 - label.width / 2;
       label.y = property.y * TILE_SIZE + TILE_SIZE / 2 - label.height / 2;
-
-      propertyGraphics.addChild(label);
-      propertyGraphics.eventMode = 'static';
-      propertyGraphics.cursor = 'default';
-      propertyGraphics.interactiveChildren = false;
+      propertyContainer.addChild(label);
+      propertyContainer.eventMode = 'static';
+      propertyContainer.cursor = 'default';
+      propertyContainer.interactiveChildren = false;
       // Don't block clicks - let stage handle them
-      propertyGraphics.hitArea = null;
+      propertyContainer.hitArea = null;
 
-      propertiesLayer.addChild(propertyGraphics);
+      propertiesLayer.addChild(propertyContainer);
     });
 
     // Render your properties on top (bright, clickable)
+    console.log(`🎨 CityView: Rendering ${properties.length} properties`);
     properties.forEach((property) => {
       const propertyGraphics = new Graphics();
       const color = PROPERTY_COLORS[property.propertyType];
       
-      // Draw property tile (bright)
-      propertyGraphics.beginFill(color, 0.9);
-      propertyGraphics.drawRect(
-        property.x * TILE_SIZE + 2,
-        property.y * TILE_SIZE + 2,
-        TILE_SIZE - 4,
-        TILE_SIZE - 4
-      );
-      propertyGraphics.endFill();
+      const xPos = property.x * TILE_SIZE + 2;
+      const yPos = property.y * TILE_SIZE + 2;
+      
+      console.log(`🎨 CityView: Drawing property #${property.tokenId} at (${property.x}, ${property.y}) -> pixel (${xPos}, ${yPos})`, {
+        propertyType: property.propertyType,
+        color: color.toString(16),
+        tileSize: TILE_SIZE,
+      });
+      
+      // Draw property tile (bright) - PixiJS v8 API
+      propertyGraphics
+        .rect(xPos, yPos, TILE_SIZE - 4, TILE_SIZE - 4)
+        .fill({ color, alpha: 0.9 });
       
       // Bright border with glow effect
-      propertyGraphics.lineStyle(3, color, 1);
-      propertyGraphics.drawRect(
-        property.x * TILE_SIZE + 2,
-        property.y * TILE_SIZE + 2,
-        TILE_SIZE - 4,
-        TILE_SIZE - 4
-      );
+      propertyGraphics
+        .rect(xPos, yPos, TILE_SIZE - 4, TILE_SIZE - 4)
+        .setStrokeStyle({ width: 3, color, alpha: 1 })
+        .stroke();
 
-      // Property type label (bright)
+      // Property type label (bright) - Create container for Graphics + Text
+      const propertyContainer = new Container();
+      propertyContainer.addChild(propertyGraphics);
+      
       const label = new Text({
         text: property.propertyType[0],
         style: {
@@ -286,13 +335,13 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       });
       label.x = property.x * TILE_SIZE + TILE_SIZE / 2 - label.width / 2;
       label.y = property.y * TILE_SIZE + TILE_SIZE / 2 - label.height / 2;
-
-      propertyGraphics.addChild(label);
-      propertyGraphics.eventMode = 'static';
-      propertyGraphics.cursor = 'pointer';
-      propertyGraphics.interactiveChildren = false;
+      propertyContainer.addChild(label);
+      
+      propertyContainer.eventMode = 'static';
+      propertyContainer.cursor = 'pointer';
+      propertyContainer.interactiveChildren = false;
       // Set hitArea to only the property rectangle, not the full tile
-      propertyGraphics.hitArea = {
+      propertyContainer.hitArea = {
         contains: (x: number, y: number) => {
           const tileX = property.x * TILE_SIZE + 2;
           const tileY = property.y * TILE_SIZE + 2;
@@ -301,13 +350,18 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
         }
       };
       // Handle click on property
-      propertyGraphics.on('pointerdown', (e) => {
+      propertyContainer.on('pointerdown', (e) => {
         e.stopPropagation(); // Stop event from reaching stage
         onPropertyClick?.(property);
       });
 
-      propertiesLayer.addChild(propertyGraphics);
+      propertiesLayer.addChild(propertyContainer);
+      console.log(`✅ CityView: Added property #${property.tokenId} graphics to layer`, {
+        childrenCount: propertiesLayer.children.length,
+      });
     });
+    
+    console.log(`✅ CityView: Finished rendering. Total children in propertiesLayer: ${propertiesLayer.children.length}`);
       }, [properties, otherPlayersProperties, spritesLoaded, onPropertyClick]);
 
   return (
