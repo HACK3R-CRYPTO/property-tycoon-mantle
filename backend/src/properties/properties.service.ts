@@ -15,7 +15,7 @@ export class PropertiesService {
   ) {}
 
   async findAll() {
-    return this.db
+    const properties = await this.db
       .select({
         id: schema.properties.id,
         tokenId: schema.properties.tokenId,
@@ -39,6 +39,19 @@ export class PropertiesService {
       })
       .from(schema.properties)
       .leftJoin(schema.users, eq(schema.properties.ownerId, schema.users.id));
+    
+    // Convert BigInt values to strings/numbers for JSON serialization
+    return properties.map(prop => ({
+      ...prop,
+      value: prop.value?.toString() || prop.value,
+      totalYieldEarned: prop.totalYieldEarned?.toString() || prop.totalYieldEarned,
+      rwaTokenId: prop.rwaTokenId !== null && prop.rwaTokenId !== undefined 
+        ? (typeof prop.rwaTokenId === 'bigint' ? Number(prop.rwaTokenId) : prop.rwaTokenId)
+        : undefined,
+      tokenId: prop.tokenId !== null && prop.tokenId !== undefined
+        ? (typeof prop.tokenId === 'bigint' ? Number(prop.tokenId) : prop.tokenId)
+        : prop.tokenId,
+    }));
   }
 
   async findById(id: string) {
