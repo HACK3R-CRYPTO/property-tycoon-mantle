@@ -21,7 +21,9 @@ export class ChatController {
   @ApiOperation({ summary: 'Get recent chat messages' })
   @ApiResponse({ status: 200, description: 'List of chat messages' })
   async getMessages(@Query('limit') limit?: number): Promise<ChatMessageDto[]> {
-    return this.chatService.getRecentMessages(limit || 100);
+    // Allow up to 500 messages to show more chat history
+    const messageLimit = limit ? Math.min(limit, 500) : 200;
+    return this.chatService.getRecentMessages(messageLimit);
   }
 }
 

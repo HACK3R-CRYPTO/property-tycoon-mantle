@@ -19,6 +19,15 @@ export function GlobalChat({ isOpen, onClose }: GlobalChatProps) {
   const [inputValue, setInputValue] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Debug: Log messages when they change
+  useEffect(() => {
+    console.log('💬 GlobalChat - Messages updated:', {
+      count: messages.length,
+      isLoading,
+      messages: messages.slice(0, 3), // Log first 3 for debugging
+    });
+  }, [messages, isLoading]);
+
   // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {

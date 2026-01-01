@@ -634,7 +634,8 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
         const claimableBigInt = BigInt(claimableStr);
         
         // Sanity check: individual property yield should be reasonable
-        const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000'); // 1000 TYCOON
+        // Increased threshold to allow for high-value RWA properties
+        const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000000'); // 1,000,000 TYCOON
         if (claimableBigInt > MAX_REASONABLE_YIELD) {
           this.logger.warn(`Suspiciously large yield for property ${p.tokenId}: ${claimableStr} wei. Skipping.`);
           return sum;

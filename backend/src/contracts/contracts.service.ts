@@ -257,12 +257,173 @@ export class ContractsService implements OnModuleInit {
       
       return this.convertYieldResultToBigInt(result, propertyId);
     } catch (error: any) {
-      // If it's a revert (property doesn't exist or invalid), return 0 instead of throwing
+      // If it's a revert (property doesn't exist or invalid), try fallback calculation
       if (error.code === 'CALL_EXCEPTION' || error.message?.includes('revert')) {
-        this.logger.warn(`Property ${propertyId} yield calculation reverted (property may not exist or be invalid): ${error.message}`);
-        return BigInt(0);
+        this.logger.warn(`Property ${propertyId} yield calculation reverted, attempting fallback calculation: ${error.message}`);
+        
+        try {
+          // Fallback: Calculate yield manually using same logic as contract
+          return await this.calculateYieldFallback(propertyId);
+        } catch (fallbackError: any) {
+          this.logger.error(`Fallback calculation also failed for property ${propertyId}: ${fallbackError.message}`);
+          return BigInt(0);
+        }
       }
       this.logger.error(`Error calling calculateYield for property ${propertyId}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Fallback yield calculation when contract call reverts
+   * Uses same formula as YieldDistributor.calculateYield
+   */
+  private async calculateYieldFallback(propertyId: bigint): Promise<bigint> {
+    try {
+      // Get property data
+      const propData = await this.getProperty(propertyId);
+      if (!propData) {
+        this.logger.warn(`Property ${propertyId} data not found for fallback calculation`);
+        return BigInt(0);
+      }
+
+      // Determine value and yieldRate (check if linked to RWA)
+      // Helper to convert ethers.js BigNumber to BigInt
+      const toBigInt = (val: any): bigint => {
+        if (typeof val === 'bigint') return val;
+        if (val && typeof val === 'object' && '_hex' in val) {
+          return BigInt(val._hex);
+        }
+        return BigInt(val.toString());
+      };
+
+      let value: bigint;
+      let yieldRate: bigint;
+
+      // Extract property data (handle ethers.js BigNumber)
+      const propValue = toBigInt(propData.value);
+      const propYieldRate = toBigInt(propData.yieldRate);
+      const rwaContract = propData.rwaContract;
+      const rwaTokenId = propData.rwaTokenId ? toBigInt(propData.rwaTokenId) : BigInt(0);
+
+      if (rwaContract && rwaContract !== '0x0000000000000000000000000000000000000000' && rwaTokenId > BigInt(0)) {
+        try {
+          // Try to fetch RWA data
+          const rwaAbi = [
+            'function properties(uint256) external view returns (string name, uint256 value, uint256 monthlyYield, string location, uint256 createdAt, bool isActive)',
+            'function getYieldRate(uint256) external view returns (uint256)',
+          ];
+          
+          const providerToUse = this.multiRpcService ? this.multiRpcService.getProvider() : this.provider;
+          const rwaContractInstance = new ethers.Contract(rwaContract, rwaAbi, providerToUse);
+          
+          const rwaProperty = await rwaContractInstance.properties(rwaTokenId);
+          const rwaYieldRate = await rwaContractInstance.getYieldRate(rwaTokenId);
+          
+          const rwaValue = toBigInt(rwaProperty.value);
+          const rwaYieldRateBigInt = toBigInt(rwaYieldRate);
+          const rwaIsActive = rwaProperty.isActive;
+          
+          if (rwaIsActive && rwaValue > BigInt(0) && rwaYieldRateBigInt > BigInt(0)) {
+            value = rwaValue;
+            yieldRate = rwaYieldRateBigInt;
+            this.logger.log(`✅ Fallback: Property ${propertyId} using RWA data (value: ${value.toString()}, yieldRate: ${yieldRate.toString()})`);
+          } else {
+            // RWA not active or invalid, use property data
+            value = propValue;
+            yieldRate = propYieldRate;
+            this.logger.debug(`Fallback: Property ${propertyId} RWA inactive, using property data`);
+          }
+        } catch (rwaError: any) {
+          // RWA fetch failed, use property data
+          this.logger.warn(`Fallback: Failed to fetch RWA data for property ${propertyId}, using property data: ${rwaError.message}`);
+          value = propValue;
+          yieldRate = propYieldRate;
+        }
+      } else {
+        // Not linked to RWA, use property data
+        value = propValue;
+        yieldRate = propYieldRate;
+      }
+
+      // Validate value and yieldRate
+      if (value === BigInt(0) || yieldRate === BigInt(0)) {
+        this.logger.warn(`Fallback: Property ${propertyId} has invalid value or yieldRate (value: ${value.toString()}, yieldRate: ${yieldRate.toString()})`);
+        return BigInt(0);
+      }
+
+      // Get lastYieldUpdate (or use createdAt if 0)
+      let lastUpdate = BigInt(0);
+      try {
+        lastUpdate = await this.getLastYieldUpdate(propertyId);
+      } catch (error) {
+        this.logger.warn(`Fallback: Failed to get lastYieldUpdate for property ${propertyId}, will use createdAt`);
+      }
+
+      const createdAt = toBigInt(propData.createdAt);
+      const startTimestamp = lastUpdate > BigInt(0) ? lastUpdate : createdAt;
+
+      // Get current block timestamp
+      let currentBlockTimestamp = BigInt(Math.floor(Date.now() / 1000)); // Fallback to current time
+      try {
+        const providerToUse = this.multiRpcService ? this.multiRpcService.getProvider() : this.provider;
+        const block = await providerToUse.getBlock('latest');
+        currentBlockTimestamp = BigInt(block.timestamp);
+      } catch (error) {
+        this.logger.warn(`Fallback: Failed to get block timestamp, using current time`);
+      }
+
+      // Calculate time elapsed
+      let timeSinceUpdate = currentBlockTimestamp - startTimestamp;
+      if (timeSinceUpdate < BigInt(0)) {
+        this.logger.warn(`Fallback: Negative time elapsed for property ${propertyId}, using 0`);
+        timeSinceUpdate = BigInt(0);
+      }
+
+      // Cap to 365 days (same as contract)
+      const maxTime = BigInt(365 * 24 * 60 * 60); // 365 days in seconds
+      if (timeSinceUpdate > maxTime) {
+        timeSinceUpdate = maxTime;
+      }
+
+      // Get YIELD_UPDATE_INTERVAL
+      let yieldUpdateInterval = BigInt(86400); // Default 1 day
+      try {
+        yieldUpdateInterval = await this.getYieldUpdateInterval();
+      } catch (error) {
+        this.logger.warn(`Fallback: Failed to get YIELD_UPDATE_INTERVAL, using default 86400 seconds`);
+      }
+
+      // If less than 24 hours, return pendingYield (which is 0 for new properties)
+      if (timeSinceUpdate < yieldUpdateInterval) {
+        this.logger.debug(`Fallback: Property ${propertyId} time elapsed (${timeSinceUpdate.toString()}s) < interval (${yieldUpdateInterval.toString()}s), returning 0`);
+        return BigInt(0);
+      }
+
+      // Calculate daily yield: (value * yieldRate) / (365 * 10000)
+      const dailyYield = (value * yieldRate) / BigInt(365 * 10000);
+
+      // Calculate periods
+      let periods = timeSinceUpdate / yieldUpdateInterval;
+      if (periods > BigInt(365)) {
+        periods = BigInt(365);
+      }
+
+      // Calculate total yield: pendingYield + (dailyYield * periods)
+      // pendingYield is 0 for new properties, so: dailyYield * periods
+      const totalYield = dailyYield * periods;
+
+      this.logger.log(`✅ Fallback: Calculated yield for property ${propertyId}: ${totalYield.toString()} wei (${Number(totalYield) / 1e18} TYCOON)`, {
+        value: value.toString(),
+        yieldRate: yieldRate.toString(),
+        timeSinceUpdate: timeSinceUpdate.toString(),
+        periods: periods.toString(),
+        dailyYield: dailyYield.toString(),
+      });
+
+      return totalYield;
+    } catch (error: any) {
+      this.logger.error(`Fallback calculation failed for property ${propertyId}: ${error.message}`);
       throw error;
     }
   }
@@ -296,8 +457,8 @@ export class ContractsService implements OnModuleInit {
             const resultStr = resultBigInt.toString();
             
             // Validate immediately after conversion - check for corrupted values
-            // Normal yield should be < 1000 TYCOON = 1e21 wei = ~21 decimal digits
-            if (resultStr.length > 25) {
+            // Normal yield should be < 1,000,000 TYCOON = 1e24 wei = ~24 decimal digits (allows for high-value RWA properties)
+            if (resultStr.length > 28) {
               this.logger.error(`Property ${propertyId}: Hex value converts to corrupted number (${resultStr.length} digits). Hex: ${hexValue}. Contract state appears corrupted. Returning 0.`);
               return BigInt(0);
             }
@@ -360,9 +521,10 @@ export class ContractsService implements OnModuleInit {
         resultBigInt = BigInt(resultStr);
       }
       
-      // Sanity check: yield should be reasonable (< 1000 TYCOON = 1e21 wei)
+      // Sanity check: yield should be reasonable (< 1,000,000 TYCOON = 1e24 wei)
       // If larger, it's likely corrupted (string concatenation bug)
-      const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000'); // 1000 TYCOON
+      // Increased threshold to allow for high-value RWA properties
+      const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000000'); // 1,000,000 TYCOON
       if (resultBigInt > MAX_REASONABLE_YIELD) {
         this.logger.error(`Corrupted yield value for property ${propertyId}: ${resultBigInt.toString()} wei. Returning 0.`);
         return BigInt(0);

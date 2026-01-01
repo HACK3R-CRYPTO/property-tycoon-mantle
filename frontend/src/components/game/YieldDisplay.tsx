@@ -29,7 +29,7 @@ export function YieldDisplay({ totalPendingYield, totalYieldEarned, claimableYie
   
   const formatValue = (value: bigint) => {
     // Validate value first - if suspiciously large, return 0
-    const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000'); // 1000 TYCOON
+    const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000000'); // 1,000,000 TYCOON (allows for high-value RWA properties)
     if (value > MAX_REASONABLE_YIELD) {
       console.warn('⚠️ formatValue: Suspiciously large value detected, returning 0:', value.toString());
       return '0.0000';

@@ -292,15 +292,126 @@ export default function GamePage() {
                   isClaimable,
                 });
                 
-                // Get claimable yield
-                const yieldPromise = calculateYield(BigInt(prop.tokenId));
-                const timeoutPromise = new Promise<bigint>((resolve) => {
-                  setTimeout(() => resolve(BigInt(0)), 2000); // 2 second timeout
-                });
-                const yieldAmount = await Promise.race([yieldPromise, timeoutPromise]);
-                const claimable = typeof yieldAmount === 'bigint' ? yieldAmount : BigInt(yieldAmount?.toString() || '0');
+                // Get claimable yield with better error handling and fallback calculation
+                let claimable = BigInt(0);
+                try {
+                  const yieldPromise = calculateYield(BigInt(prop.tokenId));
+                  const timeoutPromise = new Promise<bigint>((_, reject) => {
+                    setTimeout(() => reject(new Error('calculateYield timeout')), 10000); // 10 second timeout
+                  });
+                  const yieldAmount = await Promise.race([yieldPromise, timeoutPromise]);
+                  claimable = typeof yieldAmount === 'bigint' ? yieldAmount : BigInt(yieldAmount?.toString() || '0');
+                  console.log(`📊 Property #${prop.tokenId} claimable yield from contract: ${claimable.toString()} wei (${Number(claimable) / 1e18} TYCOON)`);
+                } catch (error: any) {
+                  const errorMsg = error?.message || error?.toString() || 'Unknown error';
+                  const isRevert = errorMsg.includes('revert') || errorMsg.includes('execution reverted');
+                  const isRWAError = errorMsg.includes('RWA') || errorMsg.includes('Token does not exist');
+                  
+                  console.error(`❌ Failed to calculate yield for property #${prop.tokenId}:`, {
+                    error: errorMsg,
+                    isRevert,
+                    isRWAError,
+                    propertyLinkedToRWA: !!(prop.rwaContract && prop.rwaTokenId),
+                    rwaContract: prop.rwaContract,
+                    rwaTokenId: prop.rwaTokenId,
+                    note: isRWAError ? 'RWA contract call may be failing - using fallback calculation' : 'Contract call failed - using fallback calculation',
+                  });
+                  
+                  // Fallback: Calculate yield manually using same logic as contract
+                  // No threshold blocking - any amount > 0 is claimable per contract
+                  if (isClaimable && prop.createdAt) {
+                    try {
+                      // Fetch RWA data if property is linked to RWA
+                      let valueToUse = prop.value;
+                      let yieldRateToUse = prop.yieldRate;
+                      
+                      if (prop.rwaContract && prop.rwaContract !== '0x0000000000000000000000000000000000000000' && prop.rwaTokenId !== undefined) {
+                        try {
+                          const publicClient = getPublicClient(config);
+                          if (publicClient) {
+                            const RWA_ABI = [
+                              {
+                                inputs: [{ name: '', type: 'uint256' }],
+                                name: 'properties',
+                                outputs: [
+                                  { name: 'name', type: 'string' },
+                                  { name: 'value', type: 'uint256' },
+                                  { name: 'monthlyYield', type: 'uint256' },
+                                  { name: 'location', type: 'string' },
+                                  { name: 'createdAt', type: 'uint256' },
+                                  { name: 'isActive', type: 'bool' },
+                                ],
+                                stateMutability: 'view',
+                                type: 'function',
+                              },
+                              {
+                                inputs: [{ name: 'tokenId', type: 'uint256' }],
+                                name: 'getYieldRate',
+                                outputs: [{ name: '', type: 'uint256' }],
+                                stateMutability: 'view',
+                                type: 'function',
+                              },
+                            ] as const;
+                            
+                            const rwaProperty = await publicClient.readContract({
+                              address: prop.rwaContract as `0x${string}`,
+                              abi: RWA_ABI,
+                              functionName: 'properties',
+                              args: [BigInt(prop.rwaTokenId)],
+                            }) as [string, bigint, bigint, string, bigint, boolean];
+                            
+                            const rwaYieldRate = await publicClient.readContract({
+                              address: prop.rwaContract as `0x${string}`,
+                              abi: RWA_ABI,
+                              functionName: 'getYieldRate',
+                              args: [BigInt(prop.rwaTokenId)],
+                            }) as bigint;
+                            
+                            const [rwaName, rwaValue, rwaMonthlyYield, rwaLocation, rwaCreatedAt, rwaIsActive] = rwaProperty;
+                            
+                            if (rwaIsActive && rwaValue > BigInt(0) && rwaYieldRate > BigInt(0)) {
+                              valueToUse = rwaValue;
+                              yieldRateToUse = Number(rwaYieldRate);
+                              console.log(`✅ Fallback: Property #${prop.tokenId} using RWA data (${Number(rwaValue) / 1e18} TYCOON, ${Number(rwaYieldRate) / 100}% APY)`);
+                            }
+                          }
+                        } catch (rwaError) {
+                          console.warn(`⚠️ Fallback: Failed to fetch RWA data for property #${prop.tokenId}, using property data`);
+                        }
+                      }
+                      
+                      // Calculate yield using contract's formula
+                      // dailyYield = (value * yieldRate) / (365 * 10000)
+                      const yieldRateBigInt = BigInt(Math.floor(yieldRateToUse));
+                      const dailyYield = (valueToUse * yieldRateBigInt) / BigInt(365 * 10000);
+                      
+                      // periods = timeElapsed / YIELD_UPDATE_INTERVAL
+                      // timeElapsed is already a BigInt from above
+                      const periods = timeElapsed / yieldUpdateInterval;
+                      
+                      // Cap periods to 365 (same as contract)
+                      const periodsCapped = periods > BigInt(365) ? BigInt(365) : periods;
+                      
+                      // claimable = pendingYield + (dailyYield * periods)
+                      // pendingYield is 0 for new properties, so: claimable = dailyYield * periods
+                      claimable = dailyYield * periodsCapped;
+                      
+                      console.log(`✅ Fallback: Calculated claimable yield for property #${prop.tokenId}: ${claimable.toString()} wei (${Number(claimable) / 1e18} TYCOON)`, {
+                        value: `${Number(valueToUse) / 1e18} TYCOON`,
+                        yieldRate: `${yieldRateToUse / 100}% APY`,
+                        dailyYield: `${Number(dailyYield) / 1e18} TYCOON`,
+                        periods: periodsCapped.toString(),
+                        timeElapsedHours: timeElapsedHours.toFixed(2),
+                      });
+                    } catch (fallbackError) {
+                      console.error(`❌ Fallback calculation also failed for property #${prop.tokenId}:`, fallbackError);
+                      claimable = BigInt(0);
+                    }
+                  } else {
+                    console.warn(`⚠️ Property #${prop.tokenId}: Not claimable yet (${hoursRemaining}h ${minutesRemaining}m remaining), skipping fallback calculation`);
+                  }
+                }
                 claimableYieldsMap.set(prop.tokenId, claimable);
-                console.log(`📊 Property #${prop.tokenId} claimable yield: ${claimable.toString()} wei (${Number(claimable) / 1e18} TYCOON)`);
                 return claimable;
               } catch (error) {
                 claimableYieldsMap.set(prop.tokenId, BigInt(0));
@@ -312,8 +423,8 @@ export default function GamePage() {
             totalClaimable = claimableYields.reduce((sum, y) => sum + y, BigInt(0));
             
             // Validate totalClaimable before setting (prevent showing corrupted values)
-            // Max reasonable yield: 1000 TYCOON = 1e21 wei
-            const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000');
+            // Max reasonable yield: 1,000,000 TYCOON = 1e24 wei (allows for high-value RWA properties)
+            const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000000'); // 1,000,000 TYCOON
             if (totalClaimable > MAX_REASONABLE_YIELD) {
               console.warn('⚠️ Total claimable yield is suspiciously large, resetting to 0:', totalClaimable.toString());
               setClaimableYield(BigInt(0));
@@ -670,14 +781,16 @@ export default function GamePage() {
       const claimablePromises = validProperties.map(async (prop) => {
         try {
           const yieldPromise = calculateYield(BigInt(prop.tokenId));
-          const timeoutPromise = new Promise<bigint>((resolve) => {
-            setTimeout(() => resolve(BigInt(0)), 2000);
+          const timeoutPromise = new Promise<bigint>((_, reject) => {
+            setTimeout(() => reject(new Error('calculateYield timeout')), 10000); // 10 second timeout
           });
           const yieldAmount = await Promise.race([yieldPromise, timeoutPromise]);
           const claimable = typeof yieldAmount === 'bigint' ? yieldAmount : BigInt(yieldAmount?.toString() || '0');
+          console.log(`📊 Property #${prop.tokenId} claimable yield from contract: ${claimable.toString()} wei (${Number(claimable) / 1e18} TYCOON)`);
           claimableYieldsMap.set(prop.tokenId, claimable);
           return claimable;
-        } catch (error) {
+        } catch (error: any) {
+          console.error(`❌ Failed to calculate yield for property #${prop.tokenId}:`, error?.message || error);
           claimableYieldsMap.set(prop.tokenId, BigInt(0));
           return BigInt(0);
         }
@@ -1062,34 +1175,175 @@ export default function GamePage() {
         
         // Update claimable yield from backend (more reliable than blockchain calls)
         const claimable = BigInt(data.totalClaimableYield || '0');
+        const currentClaimable = claimableYield; // Get current claimable yield from state
+        
+        console.log(`💰 WebSocket: Received claimable yield from backend: ${claimable.toString()} wei (${Number(claimable) / 1e18} TYCOON)`, {
+          totalClaimableYield: data.totalClaimableYield,
+          propertiesCount: data.properties.length,
+          claimableProperties: data.properties.filter(p => BigInt(p.claimableYield || '0') > BigInt(0)).length,
+          currentFrontendClaimable: currentClaimable.toString(),
+          note: claimable === BigInt(0) ? 'Backend returned 0 (contract may be reverting) - will preserve frontend fallback if available' : 'Backend has valid yield',
+        });
         
         // Validate claimable yield from backend (prevent showing corrupted values)
-        const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000'); // 1000 TYCOON
+        const MAX_REASONABLE_YIELD = BigInt('1000000000000000000000000'); // 1,000,000 TYCOON (allows for high-value RWA properties)
         if (claimable > MAX_REASONABLE_YIELD) {
           console.warn('⚠️ Backend returned suspiciously large claimable yield, resetting to 0:', claimable.toString());
-          setClaimableYield(BigInt(0));
-        } else {
+          // Don't overwrite if we have a valid frontend calculation
+          if (currentClaimable === BigInt(0) || currentClaimable > MAX_REASONABLE_YIELD) {
+            setClaimableYield(BigInt(0));
+          }
+        } else if (claimable > BigInt(0)) {
+          // Backend has valid yield - use it
           setClaimableYield(claimable);
+          console.log(`✅ WebSocket: Claimable yield updated successfully to ${Number(claimable) / 1e18} TYCOON`);
+        } else {
+          // Backend returned 0 (contract likely reverting)
+          // Only update if frontend also has 0 (no fallback calculation yet)
+          // Otherwise, preserve the frontend's fallback calculation
+          if (currentClaimable === BigInt(0)) {
+            console.log(`⚠️ WebSocket: Backend returned 0, frontend also has 0 - keeping 0`);
+            setClaimableYield(BigInt(0));
+          } else {
+            console.log(`✅ WebSocket: Backend returned 0 (contract reverting), but preserving frontend fallback calculation: ${Number(currentClaimable) / 1e18} TYCOON`);
+            // Don't update - keep the frontend's fallback calculation
+          }
         }
         
         // Update property claimable yields map
+        // If backend returns 0, recalculate fallback in real-time
         const newClaimableYieldsMap = new Map<number, bigint>();
         const newTimeRemainingMap = new Map<number, { hours: number; minutes: number; isClaimable: boolean }>();
         
-        data.properties.forEach((prop) => {
-          newClaimableYieldsMap.set(prop.tokenId, BigInt(prop.claimableYield || '0'));
-          newTimeRemainingMap.set(prop.tokenId, {
-            hours: prop.hoursRemaining,
-            minutes: prop.minutesRemaining,
-            isClaimable: prop.isClaimable,
+        // Recalculate fallback yields if backend returned 0 (contract reverting)
+        const needsFallbackRecalculation = claimable === BigInt(0) && data.properties.some(p => BigInt(p.claimableYield || '0') === BigInt(0));
+        
+        if (needsFallbackRecalculation) {
+          console.log('🔄 WebSocket: Backend returned 0, recalculating fallback yields in real-time...');
+        }
+        
+        // Process each property and recalculate fallback if needed (async IIFE)
+        (async () => {
+          const fallbackPromises = data.properties.map(async (prop) => {
+            const backendYield = BigInt(prop.claimableYield || '0');
+            let finalYield = backendYield;
+            
+            // If backend returned 0 and property is claimable, recalculate fallback
+            if (backendYield === BigInt(0) && prop.isClaimable && needsFallbackRecalculation) {
+              try {
+                // Find the property in current properties state
+                const currentProp = properties.find(p => p.tokenId === prop.tokenId);
+                if (currentProp && currentProp.createdAt) {
+                  // Calculate fallback yield using same logic as loadProperties
+                  let valueToUse = currentProp.value;
+                  let yieldRateToUse = currentProp.yieldRate;
+                  
+                  // Fetch RWA data if property is linked to RWA
+                  if (currentProp.rwaContract && currentProp.rwaContract !== '0x0000000000000000000000000000000000000000' && currentProp.rwaTokenId !== undefined) {
+                    try {
+                      const publicClient = getPublicClient(config);
+                      if (publicClient) {
+                        const RWA_ABI = [
+                          {
+                            inputs: [{ name: '', type: 'uint256' }],
+                            name: 'properties',
+                            outputs: [
+                              { name: 'name', type: 'string' },
+                              { name: 'value', type: 'uint256' },
+                              { name: 'monthlyYield', type: 'uint256' },
+                              { name: 'location', type: 'string' },
+                              { name: 'createdAt', type: 'uint256' },
+                              { name: 'isActive', type: 'bool' },
+                            ],
+                            stateMutability: 'view',
+                            type: 'function',
+                          },
+                          {
+                            inputs: [{ name: 'tokenId', type: 'uint256' }],
+                            name: 'getYieldRate',
+                            outputs: [{ name: '', type: 'uint256' }],
+                            stateMutability: 'view',
+                            type: 'function',
+                          },
+                        ] as const;
+                        
+                        const rwaProperty = await publicClient.readContract({
+                          address: currentProp.rwaContract as `0x${string}`,
+                          abi: RWA_ABI,
+                          functionName: 'properties',
+                          args: [BigInt(currentProp.rwaTokenId)],
+                        }) as [string, bigint, bigint, string, bigint, boolean];
+                        
+                        const rwaYieldRate = await publicClient.readContract({
+                          address: currentProp.rwaContract as `0x${string}`,
+                          abi: RWA_ABI,
+                          functionName: 'getYieldRate',
+                          args: [BigInt(currentProp.rwaTokenId)],
+                        }) as bigint;
+                        
+                        const [rwaName, rwaValue, rwaMonthlyYield, rwaLocation, rwaCreatedAt, rwaIsActive] = rwaProperty;
+                        
+                        if (rwaIsActive && rwaValue > BigInt(0) && rwaYieldRate > BigInt(0)) {
+                          valueToUse = rwaValue;
+                          yieldRateToUse = Number(rwaYieldRate);
+                        }
+                      }
+                    } catch (rwaError) {
+                      // Use property data if RWA fetch fails
+                    }
+                  }
+                  
+                  // Calculate yield using contract's formula
+                  const yieldRateBigInt = BigInt(Math.floor(yieldRateToUse));
+                  const dailyYield = (valueToUse * yieldRateBigInt) / BigInt(365 * 10000);
+                  
+                  // Calculate periods from time elapsed (use backend's time data)
+                  const timeElapsedSeconds = prop.timeElapsedSeconds;
+                  const yieldUpdateIntervalSeconds = data.yieldUpdateIntervalSeconds || 86400;
+                  const periods = BigInt(Math.floor(timeElapsedSeconds / yieldUpdateIntervalSeconds));
+                  const periodsCapped = periods > BigInt(365) ? BigInt(365) : periods;
+                  
+                  finalYield = dailyYield * periodsCapped;
+                  
+                  if (finalYield > BigInt(0)) {
+                    console.log(`✅ WebSocket: Recalculated fallback yield for property #${prop.tokenId}: ${Number(finalYield) / 1e18} TYCOON (real-time update, no refresh needed)`);
+                  }
+                }
+              } catch (fallbackError) {
+                console.warn(`⚠️ WebSocket: Fallback recalculation failed for property #${prop.tokenId}:`, fallbackError);
+              }
+            } else if (backendYield > BigInt(0)) {
+              // Backend has valid yield - use it
+              console.log(`✅ WebSocket: Property #${prop.tokenId} using backend yield: ${Number(backendYield) / 1e18} TYCOON`);
+            }
+            
+            newClaimableYieldsMap.set(prop.tokenId, finalYield);
+            newTimeRemainingMap.set(prop.tokenId, {
+              hours: prop.hoursRemaining,
+              minutes: prop.minutesRemaining,
+              isClaimable: prop.isClaimable,
+            });
           });
-        });
-        
-        setPropertyClaimableYields(newClaimableYieldsMap);
-        (window as any).propertyTimeRemaining = newTimeRemainingMap;
-        
-        // Force re-render of YieldDisplay by updating timestamp
-        setYieldUpdateTimestamp(Date.now());
+          
+          // Wait for all fallback calculations to complete
+          await Promise.all(fallbackPromises);
+          
+          // Calculate total claimable yield from updated map
+          const totalClaimableFromMap = Array.from(newClaimableYieldsMap.values()).reduce((sum, y) => sum + y, BigInt(0));
+          
+          // Update state
+          setPropertyClaimableYields(newClaimableYieldsMap);
+          (window as any).propertyTimeRemaining = newTimeRemainingMap;
+          
+          // Update total claimable yield (use recalculated total if backend was 0)
+          if (needsFallbackRecalculation && totalClaimableFromMap > BigInt(0)) {
+            setClaimableYield(totalClaimableFromMap);
+            console.log(`✅ WebSocket: Updated total claimable yield to ${Number(totalClaimableFromMap) / 1e18} TYCOON (from real-time fallback recalculation)`);
+          }
+          
+          // Force re-render of YieldDisplay by updating timestamp
+          setYieldUpdateTimestamp(Date.now());
+        })();
         
         // Update estimated yield (calculate from backend data with RWA support)
         // Calculate asynchronously since we need to fetch RWA data

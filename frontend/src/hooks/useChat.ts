@@ -26,19 +26,40 @@ export function useChat() {
   const [isSending, setIsSending] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
-  // Load initial messages
+  // Load initial messages (load even without address to view chat)
   useEffect(() => {
     const loadMessages = async () => {
       try {
+        console.log('📥 Loading chat messages from:', '/chat/messages?limit=50');
         const data = await api.get('/chat/messages?limit=50');
+        console.log('📨 Received chat messages:', data);
+        
+        // Ensure data is an array
+        if (!Array.isArray(data)) {
+          console.error('❌ Invalid response format - expected array, got:', typeof data, data);
+          setMessages([]);
+          setIsLoading(false);
+          return;
+        }
+        
         const formatted = data.map((msg: any) => ({
-          ...msg,
-          isMe: msg.walletAddress?.toLowerCase() === address?.toLowerCase(),
+          id: msg.id,
+          walletAddress: msg.walletAddress || '',
+          username: msg.username,
+          avatar: msg.avatar,
+          message: msg.message || '',
+          createdAt: msg.createdAt || new Date().toISOString(),
+          isMe: address ? msg.walletAddress?.toLowerCase() === address.toLowerCase() : false,
         }));
-        setMessages(formatted.reverse()); // Reverse to show newest at bottom
+        
+        // Reverse to show newest at bottom
+        setMessages(formatted.reverse());
         setIsLoading(false);
-      } catch (error) {
-        console.error('Failed to load messages:', error);
+        console.log(`✅ Loaded ${formatted.length} chat messages`, formatted);
+      } catch (error: any) {
+        console.error('❌ Failed to load messages:', error);
+        console.error('Error details:', error.message, error.stack);
+        setMessages([]);
         setIsLoading(false);
       }
     };
