@@ -17,7 +17,11 @@ export const DATABASE_CONNECTION = 'DATABASE_CONNECTION';
           configService.get<string>('DATABASE_URL') ||
           'postgresql://postgres:password@localhost:5432/property_tycoon';
 
-        const client = postgres(connectionString);
+        // Railway PostgreSQL requires SSL
+        const isProduction = process.env.NODE_ENV === 'production' || connectionString.includes('railway');
+        const client = postgres(connectionString, {
+          ssl: isProduction ? 'require' : false,
+        });
         return drizzle(client, { schema });
       },
       inject: [ConfigService],
