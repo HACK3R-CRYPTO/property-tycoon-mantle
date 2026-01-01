@@ -20,7 +20,7 @@ export const DATABASE_CONNECTION = 'DATABASE_CONNECTION';
         // Railway PostgreSQL requires SSL
         const isProduction = process.env.NODE_ENV === 'production' || connectionString.includes('railway');
         const client = postgres(connectionString, {
-          ssl: isProduction ? 'require' : false,
+          ssl: isProduction ? { rejectUnauthorized: false } : false,
         });
         return drizzle(client, { schema });
       },
