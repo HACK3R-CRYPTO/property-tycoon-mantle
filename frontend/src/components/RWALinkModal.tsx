@@ -178,8 +178,8 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
       
       // Wait a bit for blockchain state to update, then reload
       setTimeout(() => {
-        onSuccess?.();
-        onClose();
+      onSuccess?.();
+      onClose();
       }, 3000);
     }
   }, [isSuccess, hash, onSuccess, onClose, propertyTokenId, selectedTokenId]);
@@ -278,12 +278,12 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
                         )}
                         {token.yield && token.value && (
                           <>
-                            <p className="text-xs text-blue-400 mt-1">
+                          <p className="text-xs text-blue-400 mt-1">
                               Monthly: ${(Number(formatEther(token.yield))).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                             </p>
                             <p className="text-xs text-purple-400 mt-1 font-semibold">
                               APY: {((Number(formatEther(token.yield)) * 12 / Number(formatEther(token.value))) * 100).toFixed(2)}%
-                            </p>
+                          </p>
                           </>
                         )}
                       </div>
