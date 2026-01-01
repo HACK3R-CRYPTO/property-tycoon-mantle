@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, NotFoundException } from '@nestjs/common';
 import { PropertiesService } from './properties.service';
 
 @Controller('properties')
@@ -11,8 +11,12 @@ export class PropertiesController {
   }
 
   @Get(':id')
-  findById(@Param('id') id: string) {
-    return this.propertiesService.findById(id);
+  async findById(@Param('id') id: string) {
+    const property = await this.propertiesService.findById(id);
+    if (!property) {
+      throw new NotFoundException(`Property with ID ${id} not found`);
+    }
+    return property;
   }
 
   @Get('owner/:address')
