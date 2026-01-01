@@ -30,11 +30,7 @@ export function Leaderboard() {
     loadLeaderboard();
     
     // Subscribe to WebSocket for real-time leaderboard updates
-    // Auto-detect production and use Railway backend if env var not set
-    const isProduction = typeof window !== 'undefined' && 
-      (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('railway.app'));
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 
-      (isProduction ? 'https://property-tycoon-mantle-production.up.railway.app' : 'http://localhost:3001');
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     const socket = (window as any).socket || io(apiUrl);
     
     // Ensure socket is connected

@@ -83,27 +83,39 @@ export default function GamePage() {
       
       // Try to load from backend first (faster, already synced)
       try {
-        // Auto-detect production and use Railway backend if env var not set
-        const isProduction = typeof window !== 'undefined' && 
-          (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('railway.app'));
-        
-        // Priority: env var > production detection > localhost
-        let BACKEND_URL: string;
-        if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.trim() !== '') {
-          BACKEND_URL = process.env.NEXT_PUBLIC_API_URL;
-        } else if (isProduction) {
-          BACKEND_URL = 'https://property-tycoon-mantle-production.up.railway.app/api';
-        } else {
-          BACKEND_URL = 'http://localhost:3001/api';
-        }
+        const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+        console.log('🌐 Loading properties from backend:', BACKEND_URL);
+        console.log('🌐 Full URL:', `${BACKEND_URL}/properties/owner/${address}`);
         const response = await fetch(`${BACKEND_URL}/properties/owner/${address}`, {
           signal: AbortSignal.timeout(5000), // 5 second timeout
         });
+        
+        if (!response.ok) {
+          console.error('❌ Backend properties API failed:', response.status, response.statusText);
+          const errorText = await response.text();
+          console.error('❌ Error response:', errorText);
+        }
         
         if (response.ok) {
           const backendProperties = await response.json();
           console.log(`✅ Loaded ${backendProperties.length} properties from backend`);
           console.log('📋 Backend property tokenIds:', backendProperties.map((p: any) => p.tokenId));
+          console.log('📍 Backend properties coordinates:', backendProperties.map((p: any) => ({
+            tokenId: p.tokenId,
+            x: p.x,
+            y: p.y,
+            typeX: typeof p.x,
+            typeY: typeof p.y,
+          })));
+          console.log('📍 Backend properties coordinates:', backendProperties.map((p: any) => ({
+            tokenId: p.tokenId,
+            x: p.x,
+            y: p.y,
+            typeX: typeof p.x,
+            typeY: typeof p.y,
+            xIsNull: p.x === null,
+            xIsUndefined: p.x === undefined,
+          })));
           
           if (backendProperties.length > 0) {
             // Convert backend properties to frontend format
@@ -198,6 +210,19 @@ export default function GamePage() {
                   rwaTokenId = prop.rwaTokenId || undefined;
                 }
                 
+                // Ensure coordinates are numbers and valid (0 is valid, but null/undefined need fallback)
+                const xCoord = prop.x !== null && prop.x !== undefined ? Number(prop.x) : (index % 10);
+                const yCoord = prop.y !== null && prop.y !== undefined ? Number(prop.y) : Math.floor(index / 10);
+                
+                console.log(`📍 Property #${prop.tokenId} coordinates:`, {
+                  rawX: prop.x,
+                  rawY: prop.y,
+                  finalX: xCoord,
+                  finalY: yCoord,
+                  typeX: typeof prop.x,
+                  typeY: typeof prop.y,
+                });
+                
                 return {
                   id: prop.id || `prop-${prop.tokenId}`,
                   tokenId: prop.tokenId,
@@ -206,8 +231,8 @@ export default function GamePage() {
                   yieldRate: prop.yieldRate || 500,
                   totalYieldEarned: totalYieldEarned,
                   createdAt: createdAt,
-                  x: prop.x ?? (index % 10),
-                  y: prop.y ?? Math.floor(index / 10),
+                  x: xCoord,
+                  y: yCoord,
                   rwaContract: rwaContract, // Use contract data (source of truth)
                   rwaTokenId: rwaTokenId, // Use contract data (source of truth)
                   isOwned: true,
@@ -860,19 +885,7 @@ export default function GamePage() {
       
       // Try backend for additional data (optional, non-blocking)
       try {
-        // Auto-detect production and use Railway backend if env var not set
-        const isProduction = typeof window !== 'undefined' && 
-          (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('railway.app'));
-        
-        // Priority: env var > production detection > localhost
-        let BACKEND_URL: string;
-        if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.trim() !== '') {
-          BACKEND_URL = process.env.NEXT_PUBLIC_API_URL;
-        } else if (isProduction) {
-          BACKEND_URL = 'https://property-tycoon-mantle-production.up.railway.app/api';
-        } else {
-          BACKEND_URL = 'http://localhost:3001/api';
-        }
+        const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
         const yieldResponse = await fetch(`${BACKEND_URL}/yield/pending/${address}`, {
           signal: AbortSignal.timeout(2000), // 2 second timeout (non-blocking)
         });
@@ -1130,19 +1143,9 @@ export default function GamePage() {
   useEffect(() => {
     if (!address || !isConnected) return;
 
-    // Auto-detect production and use Railway backend if env var not set
-    const isProduction = typeof window !== 'undefined' && 
-      (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('railway.app'));
-    
-    // Priority: env var > production detection > localhost
-    let BACKEND_URL: string;
-    if (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.trim() !== '') {
-      BACKEND_URL = process.env.NEXT_PUBLIC_API_URL.replace('/api', '');
-    } else if (isProduction) {
-      BACKEND_URL = 'https://property-tycoon-mantle-production.up.railway.app';
-    } else {
-      BACKEND_URL = 'http://localhost:3001';
-    }
+    const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL 
+      ? process.env.NEXT_PUBLIC_API_URL.replace('/api', '') 
+      : 'http://localhost:3001';
 
     const socket: Socket = io(BACKEND_URL, {
       transports: ['websocket', 'polling'],
@@ -1780,15 +1783,64 @@ export default function GamePage() {
               </div>
             ) : (
               <CityView
-                properties={properties.map(p => ({
-                  id: p.id,
-                  tokenId: p.tokenId,
-                  propertyType: p.propertyType,
-                  value: p.value,
-                  yieldRate: p.yieldRate,
-                  x: p.x,
-                  y: p.y,
-                }))}
+                properties={(() => {
+                  // Debug: Log all properties before filtering
+                  console.log('🗺️ CityView - All properties before filtering:', properties.map(p => ({
+                    tokenId: p.tokenId,
+                    x: p.x,
+                    y: p.y,
+                    typeX: typeof p.x,
+                    typeY: typeof p.y,
+                    xIsNull: p.x === null,
+                    xIsUndefined: p.x === undefined,
+                    yIsNull: p.y === null,
+                    yIsUndefined: p.y === undefined,
+                  })));
+                  
+                  const filtered = properties
+                    .filter(p => {
+                      // Filter out properties with invalid coordinates
+                      // Note: 0 is a valid coordinate (top-left corner)
+                      const xNum = typeof p.x === 'number' ? p.x : Number(p.x);
+                      const yNum = typeof p.y === 'number' ? p.y : Number(p.y);
+                      
+                      const hasValidCoords = p.x !== null && p.x !== undefined && 
+                                            p.y !== null && p.y !== undefined &&
+                                            !isNaN(xNum) && !isNaN(yNum) &&
+                                            xNum >= 0 && yNum >= 0; // Allow 0,0
+                      
+                      if (!hasValidCoords) {
+                        console.warn(`⚠️ Property #${p.tokenId} excluded from map: invalid coordinates`, { 
+                          x: p.x, 
+                          y: p.y, 
+                          typeX: typeof p.x, 
+                          typeY: typeof p.y,
+                          xNum,
+                          yNum,
+                        });
+                      }
+                      return hasValidCoords;
+                    })
+                    .map(p => {
+                      const xNum = typeof p.x === 'number' ? p.x : Number(p.x);
+                      const yNum = typeof p.y === 'number' ? p.y : Number(p.y);
+                      
+                      console.log(`✅ CityView - Including property #${p.tokenId} at (${xNum}, ${yNum})`);
+                      
+                      return {
+                        id: p.id,
+                        tokenId: p.tokenId,
+                        propertyType: p.propertyType,
+                        value: p.value,
+                        yieldRate: p.yieldRate,
+                        x: xNum,
+                        y: yNum,
+                      };
+                    });
+                  
+                  console.log(`🗺️ CityView - Filtered properties count: ${filtered.length} out of ${properties.length}`);
+                  return filtered;
+                })()}
                 otherPlayersProperties={otherPlayersProperties}
                 onPropertyClick={(property) => {
                   const fullProperty = properties.find(p => p.id === property.id);

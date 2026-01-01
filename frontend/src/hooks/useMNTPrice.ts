@@ -4,12 +4,9 @@ import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 
 // Backend API endpoint for MNT price (uses whitelisted backend wallet)
-// Auto-detect production and use Railway backend if env var not set
-const isProduction = typeof window !== 'undefined' && 
-  (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('railway.app'));
 const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL 
   ? process.env.NEXT_PUBLIC_API_URL.replace('/api', '') 
-  : (isProduction ? 'https://property-tycoon-mantle-production.up.railway.app' : 'http://localhost:3001');
+  : 'http://localhost:3001';
 
 // Cache price for 5 minutes
 const PRICE_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds

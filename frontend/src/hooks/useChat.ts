@@ -15,12 +15,9 @@ export interface ChatMessage {
   isMe?: boolean;
 }
 
-// Auto-detect production and use Railway backend if env var not set
-const isProduction = typeof window !== 'undefined' && 
-  (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('railway.app'));
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL 
   ? process.env.NEXT_PUBLIC_API_URL.replace('/api', '') 
-  : (isProduction ? 'https://property-tycoon-mantle-production.up.railway.app' : 'http://localhost:3001');
+  : 'http://localhost:3001';
 
 export function useChat() {
   const { address } = useAccount();

@@ -1,43 +1,12 @@
 // Get API URL with fallback
-// IMPORTANT: In Next.js, NEXT_PUBLIC_* vars are embedded at BUILD TIME
-// If env var wasn't set during build, it will be undefined even if set later in Vercel
-// So we ALWAYS check for production at runtime as a reliable fallback
 const getApiUrl = () => {
-  // Priority 1: Auto-detect production at runtime FIRST (most reliable)
-  // This works even if env var wasn't set during build
-  if (typeof window !== 'undefined') {
-    const isProduction = window.location.hostname.includes('vercel.app') || 
-                         window.location.hostname.includes('railway.app') ||
-                         window.location.hostname.includes('netlify.app');
-    
-    if (isProduction) {
-      const prodUrl = 'https://property-tycoon-mantle-production.up.railway.app/api';
-      console.log('🌐 [PRODUCTION] Auto-detected production environment, using Railway backend:', prodUrl);
-      return prodUrl;
-    }
-  }
-  
-  // Priority 2: Use environment variable if set AND valid (check after production detection)
-  // This allows overriding the auto-detection if needed
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '' && !envUrl.includes('localhost')) {
+  if (envUrl) {
     // Ensure it ends with /api if it doesn't already
-    const url = envUrl.endsWith('/api') ? envUrl : `${envUrl.replace(/\/api$/, '')}/api`;
-    console.log('🌐 [ENV VAR] Using API URL from NEXT_PUBLIC_API_URL:', url);
-    return url;
+    return envUrl.endsWith('/api') ? envUrl : `${envUrl.replace(/\/api$/, '')}/api`;
   }
-  
-  // Priority 3: Check NODE_ENV (build-time detection, less reliable)
-  if (process.env.NODE_ENV === 'production') {
-    const prodUrl = 'https://property-tycoon-mantle-production.up.railway.app/api';
-    console.log('🌐 [NODE_ENV] NODE_ENV is production, using Railway backend:', prodUrl);
-    return prodUrl;
-  }
-  
-  // Default fallback for local development ONLY
-  const localUrl = 'http://localhost:3001/api';
-  console.log('🌐 [LOCAL] Using local development backend:', localUrl);
-  return localUrl;
+  // Default fallback for local development
+  return 'http://localhost:3001/api';
 };
 
 const API_URL = getApiUrl();
