@@ -69,12 +69,34 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
         });
 
         if (canvasRef.current) {
+          // Ensure canvas has explicit dimensions and is visible
+          app.canvas.style.width = `${CANVAS_WIDTH}px`;
+          app.canvas.style.height = `${CANVAS_HEIGHT}px`;
+          app.canvas.style.display = 'block';
+          app.canvas.style.visibility = 'visible';
+          app.canvas.style.position = 'relative';
+          app.canvas.style.zIndex = '1';
+          
           canvasRef.current.appendChild(app.canvas);
           appRef.current = app;
+          
           console.log('✅ CityView: Pixi.js initialized successfully', {
             canvasWidth: CANVAS_WIDTH,
             canvasHeight: CANVAS_HEIGHT,
             canvasElement: app.canvas,
+            canvasStyle: {
+              width: app.canvas.style.width,
+              height: app.canvas.style.height,
+              display: app.canvas.style.display,
+              visibility: app.canvas.style.visibility,
+              zIndex: app.canvas.style.zIndex,
+            },
+            containerDimensions: {
+              width: canvasRef.current.offsetWidth,
+              height: canvasRef.current.offsetHeight,
+              clientWidth: canvasRef.current.clientWidth,
+              clientHeight: canvasRef.current.clientHeight,
+            },
           });
         } else {
           console.error('❌ CityView: canvasRef.current is null after init');
@@ -106,6 +128,8 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
 
       // Draw background terrain/land tiles (always draw all tiles as empty land)
       const terrainGraphics = new Graphics();
+      terrainGraphics.clear();
+      
       for (let x = 0; x < GRID_WIDTH; x++) {
         for (let y = 0; y < GRID_HEIGHT; y++) {
           // Draw empty land tile with subtle pattern (PixiJS v8 API)
@@ -261,6 +285,9 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       const xPos = property.x * TILE_SIZE + 2;
       const yPos = property.y * TILE_SIZE + 2;
       
+      // Clear graphics first
+      propertyGraphics.clear();
+      
       propertyGraphics
         .rect(xPos, yPos, TILE_SIZE - 4, TILE_SIZE - 4)
         .fill({ color, alpha: 0.4 });
@@ -286,6 +313,12 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       label.x = property.x * TILE_SIZE + TILE_SIZE / 2 - label.width / 2;
       label.y = property.y * TILE_SIZE + TILE_SIZE / 2 - label.height / 2;
       propertyContainer.addChild(label);
+      // Ensure container is visible
+      propertyContainer.visible = true;
+      propertyContainer.alpha = 1;
+      propertyContainer.x = 0;
+      propertyContainer.y = 0;
+      
       propertyContainer.eventMode = 'static';
       propertyContainer.cursor = 'default';
       propertyContainer.interactiveChildren = false;
@@ -311,6 +344,10 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       });
       
       // Draw property tile (bright) - PixiJS v8 API
+      // Clear graphics first to ensure clean state
+      propertyGraphics.clear();
+      
+      // Draw filled rectangle
       propertyGraphics
         .rect(xPos, yPos, TILE_SIZE - 4, TILE_SIZE - 4)
         .fill({ color, alpha: 0.9 });
@@ -320,6 +357,20 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
         .rect(xPos, yPos, TILE_SIZE - 4, TILE_SIZE - 4)
         .setStrokeStyle({ width: 3, color, alpha: 1 })
         .stroke();
+      
+      // Ensure graphics is visible
+      propertyGraphics.visible = true;
+      propertyGraphics.alpha = 1;
+      
+      console.log(`🎨 CityView: Graphics drawn for property #${property.tokenId}`, {
+        xPos,
+        yPos,
+        width: TILE_SIZE - 4,
+        height: TILE_SIZE - 4,
+        graphicsBounds: propertyGraphics.getBounds(),
+        graphicsVisible: propertyGraphics.visible,
+        graphicsAlpha: propertyGraphics.alpha,
+      });
 
       // Property type label (bright) - Create container for Graphics + Text
       const propertyContainer = new Container();
@@ -337,9 +388,26 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       label.y = property.y * TILE_SIZE + TILE_SIZE / 2 - label.height / 2;
       propertyContainer.addChild(label);
       
+      // Ensure container is visible and positioned correctly
+      propertyContainer.visible = true;
+      propertyContainer.alpha = 1;
+      propertyContainer.x = 0;
+      propertyContainer.y = 0;
+      
       propertyContainer.eventMode = 'static';
       propertyContainer.cursor = 'pointer';
       propertyContainer.interactiveChildren = false;
+      
+      console.log(`🎨 CityView: Container created for property #${property.tokenId}`, {
+        containerX: propertyContainer.x,
+        containerY: propertyContainer.y,
+        containerVisible: propertyContainer.visible,
+        containerAlpha: propertyContainer.alpha,
+        graphicsVisible: propertyGraphics.visible,
+        labelX: label.x,
+        labelY: label.y,
+        containerBounds: propertyContainer.getBounds(),
+      });
       // Set hitArea to only the property rectangle, not the full tile
       propertyContainer.hitArea = {
         contains: (x: number, y: number) => {
@@ -356,8 +424,19 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
       });
 
       propertiesLayer.addChild(propertyContainer);
+      
+      // Force a render update
+      if (appRef.current) {
+        appRef.current.renderer.render(appRef.current.stage);
+      }
+      
       console.log(`✅ CityView: Added property #${property.tokenId} graphics to layer`, {
         childrenCount: propertiesLayer.children.length,
+        containerWorldBounds: propertyContainer.getBounds(),
+        graphicsWorldBounds: propertyGraphics.getBounds(),
+        labelWorldBounds: label.getBounds(),
+        propertiesLayerBounds: propertiesLayer.getBounds(),
+        appStageBounds: appRef.current?.stage.getBounds(),
       });
     });
     
@@ -387,7 +466,15 @@ export function CityView({ properties, otherPlayersProperties = [], onPropertyCl
           </div>
         </div>
       </div>
-      <div ref={canvasRef} className="w-full flex justify-center rounded-lg overflow-hidden border border-white/10" />
+      <div 
+        ref={canvasRef} 
+        className="w-full flex justify-center rounded-lg overflow-hidden border border-white/10"
+        style={{
+          position: 'relative',
+          display: 'block',
+          visibility: 'visible',
+        }}
+      />
     </div>
   );
 }
