@@ -40,7 +40,7 @@ L1_RPC_URL=https://eth.llamarpc.com
 # Contract Addresses (Mantle Sepolia Testnet)
 PROPERTY_NFT_ADDRESS=0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c
 GAME_TOKEN_ADDRESS=0x3334f87178AD0f33e61009777a3dFa1756e9c23f
-YIELD_DISTRIBUTOR_ADDRESS=0x3b655bEE5c43A055C78FfEdDC5C8E3989fa7267D
+YIELD_DISTRIBUTOR_ADDRESS=0x3F15825DD678D56250ea155bDeac8684369966b3
 MARKETPLACE_ADDRESS=0x6b6b65843117C55da74Ea55C954a329659EFBeF0
 QUEST_SYSTEM_ADDRESS=0x89f72227168De554A28874aA79Bcb6f0E8e2227C
 TOKEN_SWAP_ADDRESS=0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E
@@ -238,7 +238,7 @@ Chronicle Oracle integration is implemented in `OracleService` with methods to f
 
 RWA property values can be fetched from Chronicle when `CHRONICLE_RWA_PROPERTY_ORACLE` is configured in `getRWAPropertyValue()` method, but this environment variable is not set. The system falls back to contract queries (MockRWA) when Chronicle oracle is not configured.
 
-YieldDistributor contract uses RWA data for yield calculation. If property linked to RWA, contract fetches RWA value and yield rate. Uses RWA data instead of property data for yield calculation. Automatic fallback to property data if RWA not linked or unavailable. All yield calculations happen on-chain via YieldDistributor contract.
+YieldDistributor contract (address: `0x3F15825DD678D56250ea155bDeac8684369966b3`) uses RWA data for yield calculation. If property linked to RWA, contract fetches RWA value and yield rate using gas-optimized calls (calls `getYieldRate()` first, then `properties()` only if needed). Uses RWA data instead of property data for yield calculation. Automatic fallback to property data if RWA not linked or unavailable. All yield calculations happen on-chain via YieldDistributor contract. The contract tracks `propertyTotalYieldEarned` mapping for each property, which is updated when yield is claimed. Frontend reads from this mapping to display total yield earned per property.
 
 Backend yield service also uses RWA data for estimated yield calculations. When property is linked to RWA, backend fetches RWA value and yield rate from blockchain. Uses RWA data for pending yield calculations. Falls back to property data if RWA fetch fails. BigInt values are properly serialized to numbers for JSON responses. Property ID validation ensures only existing properties are processed. Property ID 0 is valid if it exists and is owned.
 
