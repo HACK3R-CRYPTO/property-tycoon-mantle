@@ -66,3 +66,4 @@ contract InitializePropertyCosts is Script {
 
 
 
+

@@ -17,6 +17,8 @@ interface IRWA {
         bool isActive
     );
     function getYieldRate(uint256 tokenId) external view returns (uint256);
+    function getPropertyValue(uint256 tokenId) external view returns (uint256);
+    function isActive(uint256 tokenId) external view returns (bool);
     function properties(uint256 tokenId) external view returns (
         string memory name,
         uint256 value,
@@ -34,6 +36,8 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
     mapping(uint256 => uint256) public pendingYield;
     mapping(address => uint256) public totalYieldClaimed;
     mapping(uint256 => uint256) public lastYieldUpdate;
+    // Track total yield earned per property (for frontend display)
+    mapping(uint256 => uint256) public propertyTotalYieldEarned;
     
     uint256 public constant YIELD_UPDATE_INTERVAL = 1 days;
     
@@ -81,6 +85,16 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
         lastYieldUpdate[propertyId] = block.timestamp;
         totalYieldClaimed[msg.sender] += amount;
         
+        // Track total yield earned per property (for frontend display)
+        propertyTotalYieldEarned[propertyId] += amount;
+        
+        // Try to update totalYieldEarned in PropertyNFT (if function exists)
+        // This will silently fail if PropertyNFT doesn't have the function (backward compatible)
+        (bool success, ) = address(propertyNFT).call(
+            abi.encodeWithSignature("updateTotalYieldEarned(uint256,uint256)", propertyId, amount)
+        );
+        // Don't revert if call fails - PropertyNFT might be old version
+        
         // Mint tokens directly to the user (yield is generated, not transferred)
         gameToken.mint(msg.sender, amount);
         emit YieldClaimed(propertyId, msg.sender, amount);
@@ -97,6 +111,13 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
             if (amount > 0) {
                 pendingYield[propertyIds[i]] = 0;
                 lastYieldUpdate[propertyIds[i]] = block.timestamp;
+                // Track total yield earned per property (for frontend display)
+                propertyTotalYieldEarned[propertyIds[i]] += amount;
+                // Try to update totalYieldEarned in PropertyNFT (if function exists)
+                (bool success, ) = address(propertyNFT).call(
+                    abi.encodeWithSignature("updateTotalYieldEarned(uint256,uint256)", propertyIds[i], amount)
+                );
+                // Don't revert if call fails - PropertyNFT might be old version
                 totalAmount += amount;
             }
         }
@@ -120,39 +141,41 @@ contract YieldDistributor is ReentrancyGuard, Ownable {
         
         // Check if property is linked to RWA
         if (prop.rwaContract != address(0) && prop.rwaTokenId > 0) {
-            // Try to fetch RWA data
-            try IRWA(prop.rwaContract).getRWAProperty(prop.rwaTokenId) returns (
-                string memory,
-                uint256 rwaValue,
-                uint256,
-                string memory,
-                uint256,
-                bool isActive
-            ) {
-                // Only use RWA data if RWA is active and has valid value
-                if (isActive && rwaValue > 0) {
-                    value = rwaValue;
-                    // Get yield rate from RWA contract
-                    try IRWA(prop.rwaContract).getYieldRate(prop.rwaTokenId) returns (uint256 rwaYieldRate) {
-                        if (rwaYieldRate > 0) {
+            // Try to get yield rate first (cheap, exists on deployed contract)
+            // If yield rate is valid, RWA exists and is valid
+            try IRWA(prop.rwaContract).getYieldRate(prop.rwaTokenId) returns (uint256 rwaYieldRate) {
+                if (rwaYieldRate > 0) {
+                    // Yield rate is valid, now get value from properties mapping
+                    // Note: properties() returns struct with strings (expensive but works)
+                    try IRWA(prop.rwaContract).properties(prop.rwaTokenId) returns (
+                        string memory,
+                        uint256 rwaValue,
+                        uint256,
+                        string memory,
+                        uint256,
+                        bool rwaIsActive
+                    ) {
+                        if (rwaIsActive && rwaValue > 0) {
+                            value = rwaValue;
                             yieldRate = rwaYieldRate;
                         } else {
-                            // Fallback to property yieldRate if RWA yieldRate is 0
+                            // RWA not active or value is 0, use property data
                             value = prop.value;
                             yieldRate = prop.yieldRate;
                         }
                     } catch {
-                        // If getYieldRate fails, fallback to property data
+                        // properties() failed, use property data but keep RWA yield rate
+                        // This handles contracts that don't have properties() mapping
                         value = prop.value;
-                        yieldRate = prop.yieldRate;
+                        yieldRate = rwaYieldRate;
                     }
                 } else {
-                    // RWA not active or invalid, use property data
+                    // RWA yield rate is 0, use property data
                     value = prop.value;
                     yieldRate = prop.yieldRate;
                 }
             } catch {
-                // If RWA contract call fails, fallback to property data (backward compatible)
+                // getYieldRate failed, fallback to property data (backward compatible)
                 value = prop.value;
                 yieldRate = prop.yieldRate;
             }

@@ -13,6 +13,9 @@ contract PropertyNFT is ERC721, Ownable, ReentrancyGuard {
     mapping(PropertyType => uint256) public propertyCosts;
     uint256 private _tokenIdCounter;
     
+    // Authorized yield distributor (can update totalYieldEarned)
+    address public yieldDistributor;
+    
     enum PropertyType { Residential, Commercial, Industrial, Luxury }
     
     struct Property {
@@ -50,6 +53,26 @@ contract PropertyNFT is ERC721, Ownable, ReentrancyGuard {
      */
     function setGameToken(address _gameToken) public onlyOwner {
         gameToken = IERC20(_gameToken);
+    }
+    
+    /**
+     * @notice Set the yield distributor address (authorized to update totalYieldEarned)
+     * @dev Only owner can call this
+     */
+    function setYieldDistributor(address _yieldDistributor) public onlyOwner {
+        yieldDistributor = _yieldDistributor;
+    }
+    
+    /**
+     * @notice Update total yield earned for a property (only callable by YieldDistributor)
+     * @dev This is called by YieldDistributor when yield is claimed
+     * @param tokenId Property token ID
+     * @param amount Amount of yield earned to add
+     */
+    function updateTotalYieldEarned(uint256 tokenId, uint256 amount) public {
+        require(msg.sender == yieldDistributor, "Only yield distributor can update");
+        require(properties[tokenId].isActive, "Property not active");
+        properties[tokenId].totalYieldEarned += amount;
     }
     
     /**

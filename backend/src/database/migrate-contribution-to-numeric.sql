@@ -9,3 +9,4 @@ ALTER COLUMN contribution TYPE NUMERIC USING contribution::text::numeric;
 
 
 
+

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useConfig } from 'wagmi';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useConfig, useEstimateGas } from 'wagmi';
 import { parseEther } from 'viem';
 import { CityView } from '@/components/game/CityView';
 import { PropertyCard } from '@/components/game/PropertyCard';
@@ -229,7 +229,23 @@ export default function GamePage() {
                   propertyType: prop.propertyType as Property['propertyType'],
                   value: value,
                   yieldRate: prop.yieldRate || 500,
-                  totalYieldEarned: totalYieldEarned,
+                  // Read totalYieldEarned from YieldDistributor (more accurate after claims)
+                  // Fallback to PropertyNFT value if YieldDistributor doesn't have it yet
+                  totalYieldEarned: await (async () => {
+                    try {
+                      const yieldEarned = await readContract(config, {
+                        address: CONTRACTS.YieldDistributor,
+                        abi: YIELD_DISTRIBUTOR_ABI,
+                        functionName: 'propertyTotalYieldEarned',
+                        args: [BigInt(prop.tokenId)],
+                      }) as bigint;
+                      // Use YieldDistributor value if > 0, otherwise use PropertyNFT value
+                      return yieldEarned > BigInt(0) ? yieldEarned : totalYieldEarned;
+                    } catch {
+                      // Fallback to PropertyNFT value if YieldDistributor call fails
+                      return totalYieldEarned;
+                    }
+                  })(),
                   createdAt: createdAt,
                   x: xCoord,
                   y: yCoord,
@@ -781,7 +797,23 @@ export default function GamePage() {
             propertyType: ['Residential', 'Commercial', 'Industrial', 'Luxury'][Number(propData.propertyType)] as Property['propertyType'],
             value: BigInt(propData.value.toString()),
               yieldRate: yieldRateValue,
-            totalYieldEarned: BigInt(propData.totalYieldEarned.toString()),
+            // Read totalYieldEarned from YieldDistributor (more accurate after claims)
+            // Fallback to PropertyNFT value if YieldDistributor doesn't have it yet
+            totalYieldEarned: await (async () => {
+              try {
+                const yieldEarned = await readContract(config, {
+                  address: CONTRACTS.YieldDistributor,
+                  abi: YIELD_DISTRIBUTOR_ABI,
+                  functionName: 'propertyTotalYieldEarned',
+                  args: [BigInt(tokenId)],
+                }) as bigint;
+                // Use YieldDistributor value if > 0, otherwise use PropertyNFT value
+                return yieldEarned > BigInt(0) ? yieldEarned : BigInt(propData.totalYieldEarned.toString());
+              } catch {
+                // Fallback to PropertyNFT value if YieldDistributor call fails
+                return BigInt(propData.totalYieldEarned.toString());
+              }
+            })(),
               createdAt: createdAtDate, // Store creation date for yield calculation
               x: index % 10,
               y: Math.floor(index / 10),
@@ -1056,7 +1088,19 @@ export default function GamePage() {
   }, [isApproveSuccess, pendingPropertyType, address, writeMint]);
   
   // Claim yield transaction
-  const { writeContract: writeClaim, data: claimHash, isPending: isClaimPending } = useWriteContract();
+  const { writeContract: writeClaim, data: claimHash, isPending: isClaimPending } = useWriteContract({
+    mutation: {
+      onError: (error: any) => {
+        console.error('Claim yield error:', error);
+        if (error.message?.includes('No yield to claim') || error.message?.includes('execution reverted')) {
+          alert('No yield available to claim. Properties need at least 24 hours to accumulate yield.');
+        } else {
+          alert(`Failed to claim yield: ${error.message || 'Unknown error'}`);
+        }
+        setIsClaiming(false);
+      },
+    },
+  });
 
   // Wait for mint transaction
   const { isLoading: isMintConfirming, isSuccess: isMintSuccess } = useWaitForTransactionReceipt({
@@ -1067,6 +1111,28 @@ export default function GamePage() {
   const { isLoading: isClaimConfirming, isSuccess: isClaimSuccess } = useWaitForTransactionReceipt({
     hash: claimHash,
   });
+
+  // Reload properties and yield data when claim succeeds
+  useEffect(() => {
+    if (isClaimSuccess && claimHash) {
+      console.log('✅ Yield claim transaction confirmed! Reloading data...');
+      setIsClaiming(false);
+      
+      // Wait a bit for event indexer to process the event
+      const refreshData = async () => {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Reload properties to get updated totalYieldEarned
+        await loadProperties();
+        
+        // Reload claimable yield (will be 0 or reset after claim)
+        // The contract resets pendingYield and updates lastYieldUpdate
+        console.log('✅ Data reloaded after yield claim');
+      };
+      
+      refreshData().catch(console.error);
+    }
+  }, [isClaimSuccess, claimHash, loadProperties]);
 
   // Reload properties when mint succeeds and assign coordinates automatically
   useEffect(() => {
@@ -1117,12 +1183,26 @@ export default function GamePage() {
 
   // Reload properties when claim succeeds
   useEffect(() => {
-    if (isClaimSuccess) {
-      loadProperties();
-      refetchBalance();
+    if (isClaimSuccess && claimHash) {
+      console.log('✅ Yield claim transaction confirmed! Reloading data...');
       setIsClaiming(false);
+      
+      // Wait a bit for event indexer to process the event
+      const refreshData = async () => {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Reload properties to get updated totalYieldEarned and reset claimable yield
+        await loadProperties();
+        
+        // Reload balance to show new tokens
+        refetchBalance();
+        
+        console.log('✅ Data reloaded after yield claim - claimable yield should be reset');
+      };
+      
+      refreshData().catch(console.error);
     }
-  }, [isClaimSuccess, loadProperties, refetchBalance]);
+  }, [isClaimSuccess, claimHash, loadProperties, refetchBalance]);
   
   // Load properties on mount and when address changes
   useEffect(() => {
@@ -1656,17 +1736,61 @@ export default function GamePage() {
                 if (!address || properties.length === 0) return;
                 try {
                   setIsClaiming(true);
-                  const propertyIds = properties.map(p => BigInt(p.tokenId));
-                  console.log('💰 Claiming yield for properties:', propertyIds.map(id => id.toString()));
-                  console.log('📋 Property details:', properties.map(p => ({ tokenId: p.tokenId, propertyType: p.propertyType })));
-                  writeClaim({
-                    address: CONTRACTS.YieldDistributor,
-                    abi: YIELD_DISTRIBUTOR_ABI,
-                    functionName: 'batchClaimYield',
-                    args: [propertyIds],
+                  
+                  // Filter properties that have claimable yield
+                  // Check both claimableYield (from contract) and totalYieldEarned (historical)
+                  const propertiesWithYield = properties.filter(p => {
+                    const claimable = propertyClaimableYields.get(p.tokenId) || BigInt(0);
+                    // Also check if property has any yield earned (might have unclaimed yield)
+                    const hasYield = claimable > BigInt(0) || (p.totalYieldEarned && p.totalYieldEarned > BigInt(0));
+                    return hasYield;
                   });
-                } catch (error) {
+                  
+                  if (propertiesWithYield.length === 0) {
+                    // Check if there's any total yield earned to give better message
+                    const hasAnyYield = properties.some(p => p.totalYieldEarned && p.totalYieldEarned > BigInt(0));
+                    if (hasAnyYield) {
+                      alert('No new yield available to claim. Properties need at least 24 hours since last claim to accumulate new yield.');
+                    } else {
+                      alert('No yield available to claim. You need to wait at least 24 hours after property creation.');
+                    }
+                    setIsClaiming(false);
+                    return;
+                  }
+                  
+                  const propertyIds = propertiesWithYield.map(p => BigInt(p.tokenId));
+                  console.log('💰 Claiming yield for properties:', propertyIds.map(id => id.toString()));
+                  console.log('📋 Property details:', propertiesWithYield.map(p => ({ 
+                    tokenId: p.tokenId, 
+                    propertyType: p.propertyType,
+                    claimableYield: propertyClaimableYields.get(p.tokenId)?.toString() || '0'
+                  })));
+                  
+                  // If only one property, use single claim (more gas efficient)
+                  if (propertyIds.length === 1) {
+                    writeClaim({
+                      address: CONTRACTS.YieldDistributor,
+                      abi: YIELD_DISTRIBUTOR_ABI,
+                      functionName: 'claimYield',
+                      args: [propertyIds[0]],
+                      // Don't set gas limit - let wagmi estimate automatically
+                      // RWA contract calls require more gas, but wagmi will estimate correctly
+                    });
+                  } else {
+                    writeClaim({
+                      address: CONTRACTS.YieldDistributor,
+                      abi: YIELD_DISTRIBUTOR_ABI,
+                      functionName: 'batchClaimYield',
+                      args: [propertyIds],
+                      // Don't set gas limit - let wagmi estimate automatically
+                      // Batch operations with RWA calls need more gas
+                    });
+                  }
+                } catch (error: any) {
                   console.error('Failed to claim yield:', error);
+                  if (error.message?.includes('No yield to claim') || error.message?.includes('execution reverted')) {
+                    alert('No yield available to claim. Properties need at least 24 hours to accumulate yield.');
+                  }
                   setIsClaiming(false);
                 }
               }}
@@ -1881,6 +2005,7 @@ export default function GamePage() {
                           abi: YIELD_DISTRIBUTOR_ABI,
                           functionName: 'claimYield',
                           args: [BigInt(property.tokenId)],
+                          // Let wagmi estimate gas automatically for RWA contract calls
                         });
                       } catch (error) {
                         console.error('Failed to claim yield:', error);
@@ -1918,6 +2043,7 @@ export default function GamePage() {
                 abi: YIELD_DISTRIBUTOR_ABI,
                 functionName: 'claimYield',
                 args: [BigInt(selectedProperty.tokenId)],
+                // Let wagmi estimate gas automatically - it will account for RWA contract calls
               });
               setSelectedProperty(null);
             } catch (error) {

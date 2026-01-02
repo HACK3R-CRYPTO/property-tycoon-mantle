@@ -15,6 +15,25 @@ pragma solidity ^0.8.24;
  */
 interface IRWA {
     /**
+     * @notice Get RWA property details (for contracts with public properties mapping)
+     * @param tokenId The RWA token ID
+     * @return name Property name
+     * @return value Property value in wei
+     * @return monthlyYield Monthly yield in wei
+     * @return location Property location
+     * @return createdAt Creation timestamp
+     * @return isActive Active status
+     */
+    function properties(uint256 tokenId) external view returns (
+        string memory name,
+        uint256 value,
+        uint256 monthlyYield,
+        string memory location,
+        uint256 createdAt,
+        bool isActive
+    );
+    
+    /**
      * @notice Get the value of an RWA token
      * @param tokenId The RWA token ID
      * @return The property value in wei
@@ -49,6 +68,7 @@ interface IRWA {
      */
     function ownerOf(uint256 tokenId) external view returns (address);
 }
+
 
 
 

@@ -122,7 +122,7 @@ GameToken: 0x3334f87178AD0f33e61009777a3dFa1756e9c23f
 
 PropertyNFT: 0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c
 
-YieldDistributor: 0x37e425aece1e2fc89b286cf7a63a74e8c7a791c4 (Updated with RWA yield integration)
+YieldDistributor: 0x3b655bEE5c43A055C78FfEdDC5C8E3989fa7267D (Fixed - RWA interface compatibility, authorized to mint tokens)
 
 Marketplace: 0x6b6b65843117C55da74Ea55C954a329659EFBeF0
 
@@ -162,7 +162,9 @@ Provide RWA contract address and token ID.
 
 Property generates yield from RWA rental income.
 
-Linking property to RWA updates yield calculation automatically. YieldDistributor contract checks if property is linked to RWA. If linked, fetches RWA value and yield rate from RWA contract using IRWA interface. Uses RWA data for yield calculation instead of property data. Property generates real yield from RWA rental income. Yield calculation now dynamically uses the linked RWA's value and yield rate. If RWA call fails or property not linked, falls back to property's own value and yield rate. Backward compatible with existing properties. All yield calculations happen on-chain via YieldDistributor contract.
+Linking property to RWA updates yield calculation automatically. YieldDistributor contract checks if property is linked to RWA. If linked, fetches RWA value and yield rate from RWA contract using IRWA interface (via `properties` mapping for compatibility). Uses RWA data for yield calculation instead of property data. Property generates real yield from RWA rental income. Yield calculation now dynamically uses the linked RWA's value and yield rate. If RWA call fails or property not linked, falls back to property's own value and yield rate. Backward compatible with existing properties. All yield calculations happen on-chain via YieldDistributor contract.
+
+**YieldDistributor Status:** Contract is deployed and configured. Authorized to mint TYCOON tokens when users claim yield. Uses RWA data (value and yield rate) when properties are linked to RWA contracts. Each RWA token has its own value and APY defined in the RWA contract, so yield calculation is dynamic based on the specific RWA linked. MockRWA includes 5 test tokens with different APYs ranging from 6% to 15% APY. The property's base value and yield rate are only used as fallback if the property is not linked to RWA or if RWA data is unavailable.
 
 ### Claim Yield
 

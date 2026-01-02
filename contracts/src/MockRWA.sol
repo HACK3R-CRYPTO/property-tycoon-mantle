@@ -143,6 +143,26 @@ contract MockRWA is ERC721, Ownable, ReentrancyGuard {
     }
     
     /**
+     * @notice Get property value (gas-efficient getter)
+     * @param tokenId Token ID
+     * @return Property value in wei
+     */
+    function getPropertyValue(uint256 tokenId) public view returns (uint256) {
+        require(_ownerOf(tokenId) != address(0), "Token does not exist");
+        return properties[tokenId].value;
+    }
+    
+    /**
+     * @notice Check if property is active (gas-efficient getter)
+     * @param tokenId Token ID
+     * @return True if property is active
+     */
+    function isActive(uint256 tokenId) public view returns (bool) {
+        require(_ownerOf(tokenId) != address(0), "Token does not exist");
+        return properties[tokenId].isActive;
+    }
+    
+    /**
      * @notice Calculate yield rate (APY) for a property
      * @param tokenId Token ID
      * @return APY in basis points (e.g., 500 = 5%)
@@ -219,6 +239,7 @@ contract MockRWA is ERC721, Ownable, ReentrancyGuard {
         return previousOwner;
     }
 }
+
 
 
 

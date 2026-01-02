@@ -80,6 +80,8 @@ Properties linked to tokenized real estate. Each property NFT backed by real-wor
 
 Linking property to RWA updates yield calculation. YieldDistributor contract checks if property is linked to RWA. If linked, uses RWA value and yield rate for yield calculation. If not linked, uses property's own value and yield rate. Automatic fallback ensures backward compatibility. All existing linked properties benefit immediately. Frontend and backend also use RWA data for estimated yield calculations. Estimated yield display updates in real time using RWA value and yield rate when property is linked.
 
+**YieldDistributor Status:** The contract is deployed and configured. YieldDistributor is authorized to mint TYCOON tokens when users claim yield. The contract uses RWA data (value and yield rate) when properties are linked to RWA contracts. Yield calculation dynamically uses each RWA's specific value and APY from the RWA contract. Each RWA token in MockRWA has its own value and yield rate, so the daily yield depends on which RWA token is linked. MockRWA includes 5 test tokens with different APYs: Token #0 (6% APY), Token #1 (9% APY), Token #2 (12% APY), Token #3 (15% APY), and Token #4 (8% APY). The property's base value and yield rate are only used if the property is not linked to RWA or if the RWA data is unavailable.
+
 **Note:** Currently using MockRWA contract for this demo. Chronicle Oracle integration is fully implemented and ready for production use, but we are using MockRWA for demo and testing purposes. MockRWA is ERC-721 compatible and can be replaced with real RWA contracts in production. Frontend supports both oracle-based and MockRWA contracts. To use real Chronicle Oracle RWA, configure the appropriate environment variables.
 
 ## Yield Distribution
@@ -166,7 +168,7 @@ TYCOON Token: 0x3334f87178AD0f33e61009777a3dFa1756e9c23f
 
 Property NFT: 0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c
 
-Yield Distributor: 0x37e425aece1e2fc89b286cf7a63a74e8c7a791c4
+Yield Distributor: 0x3b655bEE5c43A055C78FfEdDC5C8E3989fa7267D (Fixed - RWA interface compatibility)
 
 Marketplace: 0x6b6b65843117C55da74Ea55C954a329659EFBeF0
 

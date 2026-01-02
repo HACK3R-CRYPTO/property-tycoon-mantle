@@ -33,7 +33,7 @@ if (typeof window !== 'undefined') {
 export const CONTRACTS = {
   PropertyNFT: (process.env.NEXT_PUBLIC_PROPERTY_NFT_ADDRESS || '0xeD1c7F14F40DF269E561Eb775fbD0b9dF3B4892c') as Address,
   GameToken: (process.env.NEXT_PUBLIC_GAME_TOKEN_ADDRESS || '0x3334f87178AD0f33e61009777a3dFa1756e9c23f') as Address,
-  YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0x37e425aece1e2fc89b286cf7a63a74e8c7a791c4') as Address,
+  YieldDistributor: (process.env.NEXT_PUBLIC_YIELD_DISTRIBUTOR_ADDRESS || '0x3F15825DD678D56250ea155bDeac8684369966b3') as Address,
   Marketplace: (process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS || '0x6b6b65843117C55da74Ea55C954a329659EFBeF0') as Address,
   QuestSystem: (process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS || '0x89f72227168De554A28874aA79Bcb6f0E8e2227C') as Address,
   TokenSwap: (process.env.NEXT_PUBLIC_TOKEN_SWAP_ADDRESS || '0xAd22cC67E66F1F0b0D1Be33F53Bd0948796a460E') as Address,
@@ -155,6 +155,13 @@ export const YIELD_DISTRIBUTOR_ABI = [
   {
     inputs: [{ name: 'propertyId', type: 'uint256' }],
     name: 'calculateYield',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'propertyId', type: 'uint256' }],
+    name: 'propertyTotalYieldEarned',
     outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
     type: 'function',
