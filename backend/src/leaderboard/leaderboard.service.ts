@@ -145,8 +145,14 @@ export class LeaderboardService {
     return addresses;
   }
 
-  async getGlobalLeaderboard(limit: number = 100) {
+  async getGlobalLeaderboard(limit: number = 100, forceRecalculate: boolean = false) {
     const contractAddresses = this.getContractAddresses();
+    
+    // If forceRecalculate is true, always recalculate from blockchain
+    if (forceRecalculate) {
+      this.logger.log('Force recalculating leaderboard from blockchain...');
+      return await this.calculateLeaderboardFromBlockchain(limit);
+    }
     
     // Return cached data immediately (fast response)
     // Event listeners automatically update leaderboard when properties are listed/sold
@@ -174,13 +180,60 @@ export class LeaderboardService {
         return !contractAddresses.includes(address);
       }).slice(0, limit);
 
-      return filteredRankings.map((r, index) => ({
-        ...r,
-        rank: index + 1,
-        // Convert string values (NUMERIC) to strings for JSON serialization
-        totalPortfolioValue: r.totalPortfolioValue ? String(r.totalPortfolioValue) : '0',
-        totalYieldEarned: r.totalYieldEarned ? String(r.totalYieldEarned) : '0',
-      }));
+      // For each ranking, verify yield from YieldDistributor if available
+      // This ensures yield is always accurate even if database is slightly stale
+      const rankingsWithVerifiedYield = await Promise.all(
+        filteredRankings.map(async (r, index) => {
+          let verifiedYield = r.totalYieldEarned ? String(r.totalYieldEarned) : '0';
+          
+          // If yield is 0 in database, try to get it from YieldDistributor
+          if (r.walletAddress && verifiedYield === '0' && this.contractsService.yieldDistributor) {
+            try {
+              // Get user's properties
+              const result = await this.contractsService.getOwnerProperties(r.walletAddress);
+              let tokenIds: bigint[] = [];
+              if (Array.isArray(result)) {
+                tokenIds = result;
+              } else if (result && typeof result === 'object' && 'length' in result) {
+                tokenIds = Array.from(result as any);
+              }
+              
+              // Sum yield from YieldDistributor
+              let totalYield = BigInt(0);
+              for (const tokenId of tokenIds) {
+                try {
+                  const yieldEarned = await this.contractsService.yieldDistributor.propertyTotalYieldEarned(BigInt(Number(tokenId)));
+                  const yieldValue = BigInt(yieldEarned.toString());
+                  if (yieldValue > BigInt(0)) {
+                    totalYield += yieldValue;
+                  }
+                } catch (error) {
+                  // Property might not have yield yet, continue
+                }
+              }
+              
+              // If we found yield in YieldDistributor, use it
+              if (totalYield > BigInt(0)) {
+                verifiedYield = totalYield.toString();
+                this.logger.log(`Verified yield for ${r.walletAddress}: ${verifiedYield} (was ${r.totalYieldEarned || '0'})`);
+              }
+            } catch (error) {
+              // If verification fails, use database value
+              this.logger.debug(`Failed to verify yield for ${r.walletAddress}: ${error.message}`);
+            }
+          }
+          
+          return {
+            ...r,
+            rank: index + 1,
+            // Convert string values (NUMERIC) to strings for JSON serialization
+            totalPortfolioValue: r.totalPortfolioValue ? String(r.totalPortfolioValue) : '0',
+            totalYieldEarned: verifiedYield,
+          };
+        })
+      );
+
+      return rankingsWithVerifiedYield;
     } catch (error) {
       this.logger.warn(`Error fetching leaderboard from database: ${error.message}`);
     }

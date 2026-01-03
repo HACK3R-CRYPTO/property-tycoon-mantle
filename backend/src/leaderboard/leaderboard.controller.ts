@@ -6,11 +6,13 @@ export class LeaderboardController {
   constructor(private readonly leaderboardService: LeaderboardService) {}
 
   @Get()
-  async getGlobalLeaderboard(@Query('limit') limit?: string) {
+  async getGlobalLeaderboard(@Query('limit') limit?: string, @Query('recalculate') recalculate?: string) {
     // Return leaderboard directly from database (fast)
+    // If recalculate=true, force recalculation from blockchain (slower but more accurate)
     // Sync should be done separately via /sync-all endpoint or event indexer
     // This makes the leaderboard load instantly since data is already synced
-    return this.leaderboardService.getGlobalLeaderboard(limit ? Number(limit) : 100);
+    const forceRecalculate = recalculate === 'true';
+    return this.leaderboardService.getGlobalLeaderboard(limit ? Number(limit) : 100, forceRecalculate);
   }
 
   @Post('sync/:address')
