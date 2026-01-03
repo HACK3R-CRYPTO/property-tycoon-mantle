@@ -182,6 +182,7 @@ export class LeaderboardService {
 
       // For each ranking, verify yield from YieldDistributor if available
       // This ensures yield is always accurate even if database is slightly stale
+      // Also updates the database if yield is found, so it persists
       const rankingsWithVerifiedYield = await Promise.all(
         filteredRankings.map(async (r, index) => {
           // Convert to string and check if it's 0
@@ -221,10 +222,26 @@ export class LeaderboardService {
                 }
               }
               
-              // If we found yield in YieldDistributor, use it
+              // If we found yield in YieldDistributor, use it AND update the database
               if (totalYield > BigInt(0)) {
                 verifiedYield = totalYield.toString();
                 this.logger.log(`✅ Verified yield for ${r.walletAddress}: ${verifiedYield} TYCOON (was ${dbYield} from DB)`);
+                
+                // Update the database so it persists - no need to verify again next time
+                if (r.userId) {
+                  try {
+                    await this.db
+                      .update(schema.leaderboard)
+                      .set({
+                        totalYieldEarned: verifiedYield,
+                        updatedAt: new Date(),
+                      })
+                      .where(eq(schema.leaderboard.userId, r.userId));
+                    this.logger.log(`💾 Updated database with verified yield for ${r.walletAddress}`);
+                  } catch (dbError) {
+                    this.logger.warn(`Failed to update database with verified yield: ${dbError.message}`);
+                  }
+                }
               } else {
                 this.logger.log(`ℹ️ No yield found in YieldDistributor for ${r.walletAddress} (all properties have 0 yield)`);
               }
