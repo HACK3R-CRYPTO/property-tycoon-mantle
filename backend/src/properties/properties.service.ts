@@ -669,8 +669,9 @@ export class PropertiesService {
   }
 
   // Generate unique coordinates based on wallet address and tokenId
+  // Using smaller grid (30x30) to keep properties within visible map area
   private generateCoordinates(walletAddress: string, tokenId: number): { x: number; y: number } {
-    const gridSize = 100; // Larger grid to reduce initial collisions
+    const gridSize = 30; // Smaller grid to keep properties visible on map
     let hash = this.stringToHash(`${walletAddress}-${tokenId}`);
     let x = Math.abs(hash) % gridSize;
     let y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
@@ -684,7 +685,7 @@ export class PropertiesService {
     tokenId: number,
     occupiedCoords: Set<string>,
   ): { x: number; y: number } {
-    const gridSize = 100;
+    const gridSize = 30; // Smaller grid to keep properties visible on map
     const { x: initialX, y: initialY } = this.generateCoordinates(walletAddress, tokenId);
     
     let x = initialX;

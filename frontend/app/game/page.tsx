@@ -240,7 +240,8 @@ export default function GamePage() {
                    }
                    
                    // Use hash to generate initial coordinates in a grid (same as backend)
-                   const gridSize = 100;
+                   // Using smaller grid (30x30) to keep properties within visible map area
+                   const gridSize = 30;
                    let x = Math.abs(hash) % gridSize;
                    let y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
                    
@@ -820,7 +821,8 @@ export default function GamePage() {
         }
         
         // Use hash to generate initial coordinates in a grid (same as backend)
-        const gridSize = 100;
+        // Using smaller grid (30x30) to keep properties within visible map area
+        const gridSize = 30;
         let x = Math.abs(hash) % gridSize;
         let y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
         
@@ -1350,7 +1352,8 @@ export default function GamePage() {
                }
                
                // Use hash to generate initial coordinates in a grid (same as backend)
-               const gridSize = 100;
+               // Using smaller grid (30x30) to keep properties within visible map area
+               const gridSize = 30;
                let x = Math.abs(hash) % gridSize;
                let y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
                
@@ -1455,35 +1458,34 @@ export default function GamePage() {
   useEffect(() => {
     const regenerateCoordinates = async () => {
       try {
-        const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
-        const response = await fetch(`${BACKEND_URL}/properties/regenerate-coordinates`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ regenerateAll: true }), // Regenerate ALL coordinates (including existing ones)
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          console.log('✅ Coordinate regeneration triggered:', result);
-          if (result.updated > 0) {
-            console.log(`🔄 Updated ${result.updated} properties with new hash-based coordinates`);
-            // Reload properties to get updated coordinates
-            if (address && isConnected) {
+        console.log('🔄 Attempting to regenerate coordinates for all properties...');
+        const result = await api.post('/properties/regenerate-coordinates', { regenerateAll: true });
+        console.log('✅ Coordinate regeneration triggered:', result);
+        if (result.success && result.updated > 0) {
+          console.log(`🔄 Updated ${result.updated} properties with new hash-based coordinates`);
+          // Reload properties to get updated coordinates
+          if (address && isConnected) {
+            setTimeout(() => {
               loadProperties();
-            }
+            }, 1000); // Wait 1 second for backend to finish updating
           }
+        } else if (result.success && result.updated === 0) {
+          console.log('ℹ️ All properties already have coordinates');
         }
-      } catch (error) {
+      } catch (error: any) {
         // Non-critical - coordinates will be generated on next sync
-        console.log('ℹ️ Coordinate regeneration unavailable (non-critical):', error);
+        console.warn('ℹ️ Coordinate regeneration unavailable (non-critical):', error.message || error);
       }
     };
     
     // Only run once on mount (not on every address change)
+    // Check both sessionStorage and localStorage to allow manual retry
     const hasRegenerated = sessionStorage.getItem('coordinatesRegenerated');
     if (!hasRegenerated) {
       regenerateCoordinates();
       sessionStorage.setItem('coordinatesRegenerated', 'true');
+    } else {
+      console.log('ℹ️ Coordinate regeneration already attempted this session');
     }
   }, []); // Empty deps - only run once on mount
 
@@ -1494,6 +1496,22 @@ export default function GamePage() {
       loadProperties();
     }
   }, [address, isConnected, loadProperties]);
+
+  // Auto-center map on user's properties when they first load
+  useEffect(() => {
+    if (properties.length > 0 && !centerOnCoordinate) {
+      // Calculate average position of all user properties
+      const validProperties = properties.filter(p => p.x !== null && p.x !== undefined && p.y !== null && p.y !== undefined);
+      if (validProperties.length > 0) {
+        const avgX = Math.round(validProperties.reduce((sum, p) => sum + p.x, 0) / validProperties.length);
+        const avgY = Math.round(validProperties.reduce((sum, p) => sum + p.y, 0) / validProperties.length);
+        console.log(`🗺️ Auto-centering map on properties (avg: ${avgX}, ${avgY})`);
+        setCenterOnCoordinate({ x: avgX, y: avgY });
+        // Reset after a moment so it can be triggered again manually
+        setTimeout(() => setCenterOnCoordinate(null), 100);
+      }
+    }
+  }, [properties.length]); // Only run when properties count changes (first load)
 
   // Refetch balance when address changes
   useEffect(() => {
