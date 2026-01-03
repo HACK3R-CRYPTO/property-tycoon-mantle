@@ -615,8 +615,12 @@ export class LeaderboardService {
         for (const tokenId of tokenIds) {
           try {
             const yieldEarned = await this.contractsService.yieldDistributor.propertyTotalYieldEarned(BigInt(Number(tokenId)));
-            if (yieldEarned && yieldEarned.toString() !== '0') {
-              totalYieldEarned += BigInt(yieldEarned.toString());
+            const yieldValue = BigInt(yieldEarned.toString());
+            if (yieldValue > BigInt(0)) {
+              totalYieldEarned += yieldValue;
+              this.logger.log(`Property ${tokenId}: yield from YieldDistributor = ${yieldValue.toString()}`);
+            } else {
+              this.logger.debug(`Property ${tokenId}: no yield in YieldDistributor (value is 0)`);
             }
           } catch (error) {
             // Property might not have yield yet, continue
@@ -631,22 +635,39 @@ export class LeaderboardService {
     }
     
     // Fallback to database yield records if YieldDistributor doesn't have data
+    // But only if YieldDistributor actually returned 0 (not if it failed)
     if (totalYieldEarned === BigInt(0)) {
-      const yieldRecords = await this.db
-        .select()
-        .from(schema.yieldRecords)
-        .where(
-          and(
-            eq(schema.yieldRecords.ownerId, userId),
-            eq(schema.yieldRecords.claimed, true),
-          ),
-        );
-
-      totalYieldEarned = yieldRecords.reduce((sum, record) => {
-        return sum + BigInt(record.amount.toString());
-      }, BigInt(0));
+      // Also check totalYieldClaimed from YieldDistributor as a backup
+      try {
+        if (this.contractsService.yieldDistributor) {
+          const totalYieldClaimed = await this.contractsService.yieldDistributor.totalYieldClaimed(user.walletAddress);
+          if (totalYieldClaimed && totalYieldClaimed.toString() !== '0') {
+            totalYieldEarned = BigInt(totalYieldClaimed.toString());
+            this.logger.log(`Total yield from totalYieldClaimed for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
+          }
+        }
+      } catch (error) {
+        this.logger.debug(`Failed to get totalYieldClaimed: ${error.message}`);
+      }
       
-      this.logger.log(`Total yield from database for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
+      // If still 0, fallback to database yield records
+      if (totalYieldEarned === BigInt(0)) {
+        const yieldRecords = await this.db
+          .select()
+          .from(schema.yieldRecords)
+          .where(
+            and(
+              eq(schema.yieldRecords.ownerId, userId),
+              eq(schema.yieldRecords.claimed, true),
+            ),
+          );
+
+        totalYieldEarned = yieldRecords.reduce((sum, record) => {
+          return sum + BigInt(record.amount.toString());
+        }, BigInt(0));
+        
+        this.logger.log(`Total yield from database records for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
+      }
     }
 
     const [existing] = await this.db
@@ -675,8 +696,10 @@ export class LeaderboardService {
           .update(schema.leaderboard)
           .set(leaderboardData)
           .where(eq(schema.leaderboard.userId, userId));
+        this.logger.log(`✅ Updated leaderboard for ${user.walletAddress}: yield=${totalYieldEarnedStr}, portfolio=${totalPortfolioValueStr}`);
       } else {
         await this.db.insert(schema.leaderboard).values(leaderboardData);
+        this.logger.log(`✅ Created leaderboard entry for ${user.walletAddress}: yield=${totalYieldEarnedStr}, portfolio=${totalPortfolioValueStr}`);
       }
     } catch (dbError: any) {
       // Log detailed error for debugging
