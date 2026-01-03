@@ -227,17 +227,52 @@ export default function GamePage() {
                   rwaTokenId = prop.rwaTokenId || undefined;
                 }
                 
-                // Ensure coordinates are numbers and valid (0 is valid, but null/undefined need fallback)
-                const xCoord = prop.x !== null && prop.x !== undefined ? Number(prop.x) : (index % 10);
-                const yCoord = prop.y !== null && prop.y !== undefined ? Number(prop.y) : Math.floor(index / 10);
+                // Generate unique coordinates based on wallet address and tokenId if not set
+                // This ensures each property gets a unique position, different from other users
+                const generateCoordinates = (walletAddress: string, tokenId: number) => {
+                  // Create a hash from wallet address and tokenId
+                  let hash = 0;
+                  const combined = `${walletAddress}-${tokenId}`;
+                  for (let i = 0; i < combined.length; i++) {
+                    const char = combined.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash & hash; // Convert to 32-bit integer
+                  }
+                  
+                  // Use hash to generate coordinates in a grid
+                  // Map to a larger grid (100x100) to avoid collisions
+                  const gridSize = 100;
+                  const x = Math.abs(hash) % gridSize;
+                  const y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
+                  
+                  return { x, y };
+                };
+                
+                // Use stored coordinates if available, otherwise generate unique coordinates
+                let xCoord: number, yCoord: number;
+                if (prop.x !== null && prop.x !== undefined && prop.y !== null && prop.y !== undefined) {
+                  xCoord = Number(prop.x);
+                  yCoord = Number(prop.y);
+                } else {
+                  // Generate unique coordinates based on wallet and tokenId
+                  const coords = generateCoordinates(address as string, prop.tokenId);
+                  xCoord = coords.x;
+                  yCoord = coords.y;
+                  
+                  // Save generated coordinates to backend (non-blocking)
+                  if (address) {
+                    api.put(`/properties/${prop.tokenId}/coordinates`, { x: xCoord, y: yCoord }).catch(() => {
+                      // Backend unavailable - that's okay, coordinates are deterministic
+                    });
+                  }
+                }
                 
                 console.log(`📍 Property #${prop.tokenId} coordinates:`, {
                   rawX: prop.x,
                   rawY: prop.y,
                   finalX: xCoord,
                   finalY: yCoord,
-                  typeX: typeof prop.x,
-                  typeY: typeof prop.y,
+                  generated: prop.x === null || prop.x === undefined,
                 });
                 
                 return {
@@ -365,11 +400,11 @@ export default function GamePage() {
                 // Get claimable yield with better error handling and fallback calculation
                 let claimable = BigInt(0);
                 try {
-                  const yieldPromise = calculateYield(BigInt(prop.tokenId));
+                const yieldPromise = calculateYield(BigInt(prop.tokenId));
                   const timeoutPromise = new Promise<bigint>((_, reject) => {
                     setTimeout(() => reject(new Error('calculateYield timeout')), 10000); // 10 second timeout
-                  });
-                  const yieldAmount = await Promise.race([yieldPromise, timeoutPromise]);
+                });
+                const yieldAmount = await Promise.race([yieldPromise, timeoutPromise]);
                   claimable = typeof yieldAmount === 'bigint' ? yieldAmount : BigInt(yieldAmount?.toString() || '0');
                   console.log(`📊 Property #${prop.tokenId} claimable yield from contract: ${claimable.toString()} wei (${Number(claimable) / 1e18} TYCOON)`);
                 } catch (error: any) {
@@ -1180,17 +1215,34 @@ export default function GamePage() {
           if (tokenIds.length > 0) {
             const latestTokenId = Number(tokenIds[tokenIds.length - 1]);
             
-            // Find next available position on the map (simple grid placement)
-            // Use index-based positioning (NO BACKEND NEEDED)
-            const propertyCount = properties.length;
-            const x = propertyCount % 10;
-            const y = Math.floor(propertyCount / 10);
+            // Generate unique coordinates based on wallet address and tokenId
+            // This ensures each property gets a unique position, different from other users
+            const generateCoordinates = (walletAddress: string, tokenId: number) => {
+              // Create a hash from wallet address and tokenId
+              let hash = 0;
+              const combined = `${walletAddress}-${tokenId}`;
+              for (let i = 0; i < combined.length; i++) {
+                const char = combined.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32-bit integer
+              }
+              
+              // Use hash to generate coordinates in a grid
+              // Map to a larger grid (100x100) to avoid collisions
+              const gridSize = 100;
+              const x = Math.abs(hash) % gridSize;
+              const y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
+              
+              return { x, y };
+            };
             
-                  console.log(`Auto-placed property ${latestTokenId} at (${x}, ${y})`);
+            const { x, y } = generateCoordinates(address as string, latestTokenId);
+            console.log(`Auto-placed property ${latestTokenId} at (${x}, ${y}) for ${address}`);
             
-            // Optionally save coordinates to backend (non-blocking)
+            // Save coordinates to backend (non-blocking)
             api.put(`/properties/${latestTokenId}/coordinates`, { x, y }).catch(() => {
-              // Backend unavailable - that's okay, we use index-based positioning
+              // Backend unavailable - that's okay, coordinates are deterministic
+              console.warn('Failed to save coordinates to backend, using generated coordinates');
             });
           }
         } catch (error) {
@@ -1338,7 +1390,7 @@ export default function GamePage() {
           console.warn('⚠️ Backend returned suspiciously large claimable yield, resetting to 0:', claimable.toString());
           // Don't overwrite if we have a valid frontend calculation
           if (currentClaimable === BigInt(0) || currentClaimable > MAX_REASONABLE_YIELD) {
-            setClaimableYield(BigInt(0));
+          setClaimableYield(BigInt(0));
           }
         } else if (claimable > BigInt(0)) {
           // Backend has valid yield - use it
@@ -1465,13 +1517,13 @@ export default function GamePage() {
             }
             
             newClaimableYieldsMap.set(prop.tokenId, finalYield);
-            newTimeRemainingMap.set(prop.tokenId, {
-              hours: prop.hoursRemaining,
-              minutes: prop.minutesRemaining,
-              isClaimable: prop.isClaimable,
-            });
+          newTimeRemainingMap.set(prop.tokenId, {
+            hours: prop.hoursRemaining,
+            minutes: prop.minutesRemaining,
+            isClaimable: prop.isClaimable,
           });
-          
+        });
+        
           // Wait for all fallback calculations to complete
           await Promise.all(fallbackPromises);
           
@@ -1479,17 +1531,17 @@ export default function GamePage() {
           const totalClaimableFromMap = Array.from(newClaimableYieldsMap.values()).reduce((sum, y) => sum + y, BigInt(0));
           
           // Update state
-          setPropertyClaimableYields(newClaimableYieldsMap);
-          (window as any).propertyTimeRemaining = newTimeRemainingMap;
+        setPropertyClaimableYields(newClaimableYieldsMap);
+        (window as any).propertyTimeRemaining = newTimeRemainingMap;
           
           // Update total claimable yield (use recalculated total if backend was 0)
           if (needsFallbackRecalculation && totalClaimableFromMap > BigInt(0)) {
             setClaimableYield(totalClaimableFromMap);
             console.log(`✅ WebSocket: Updated total claimable yield to ${Number(totalClaimableFromMap) / 1e18} TYCOON (from real-time fallback recalculation)`);
           }
-          
-          // Force re-render of YieldDisplay by updating timestamp
-          setYieldUpdateTimestamp(Date.now());
+        
+        // Force re-render of YieldDisplay by updating timestamp
+        setYieldUpdateTimestamp(Date.now());
         })();
         
         // Update estimated yield (calculate from backend data with RWA support)
@@ -1929,15 +1981,15 @@ export default function GamePage() {
                   <Shield className="w-4 h-4 mr-2" />
               Guilds
             </Button>
-                <Link href="/leaderboard">
+            <Link href="/leaderboard">
             <Button
                     variant="ghost"
                     className="w-full justify-start text-gray-300 hover:text-white hover:bg-white/10"
             >
                     <BarChart3 className="w-4 h-4 mr-2" />
-                    Leaderboard
+              Leaderboard
             </Button>
-                </Link>
+            </Link>
             <Button
                   onClick={() => setShowChat(true)}
                   variant="ghost"
@@ -2159,14 +2211,14 @@ export default function GamePage() {
                                 setTimeout(() => setCenterOnCoordinate(null), 100);
                               }
                             }}
-                            variant="outline"
+              variant="outline"
                             className="flex-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border-blue-500/50 text-xs h-8"
                             title="Find on Map"
-                          >
+            >
                             <MapPin className="w-3 h-3 mr-1.5" />
                             FIND
-                          </Button>
-                          <Button
+            </Button>
+            <Button
                             onClick={() => setSelectedProperty(property)}
                             className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8"
                           >
@@ -2197,19 +2249,19 @@ export default function GamePage() {
             {/* Action Buttons */}
             <div className="grid grid-cols-2 gap-2">
               <Button
-                variant="outline"
+              variant="outline"
                 className="w-full text-xs h-8 border-white/20 text-gray-300 hover:bg-white/10"
-              >
+            >
                 <BarChart className="w-3 h-3 mr-1.5" />
                 ANALYTICS
-              </Button>
-              <Button
-                variant="outline"
+            </Button>
+            <Button
+              variant="outline"
                 className="w-full text-xs h-8 border-white/20 text-gray-300 hover:bg-white/10"
-              >
+            >
                 <History className="w-3 h-3 mr-1.5" />
                 HISTORY
-              </Button>
+            </Button>
             </div>
           </div>
           </div>
@@ -2218,14 +2270,14 @@ export default function GamePage() {
 
       {/* Show Properties Button (when hidden) */}
       {!showPropertiesSidebar && (
-        <Button
+            <Button
           onClick={() => setShowPropertiesSidebar(true)}
           className="absolute right-4 top-4 z-50 bg-gray-800/90 hover:bg-gray-700/90 text-white border border-white/10"
           title="Show Properties"
-        >
+            >
           <Building2 className="w-4 h-4 mr-2" />
           Properties
-        </Button>
+            </Button>
       )}
 
       {/* Loading Overlay */}
@@ -2397,7 +2449,7 @@ export default function GamePage() {
           isOpen={showRWALink}
           onClose={() => {
             setShowRWALink(false);
-            setSelectedProperty(null);
+              setSelectedProperty(null);
           }}
           propertyTokenId={selectedProperty.tokenId}
           onSuccess={() => {
@@ -2413,7 +2465,7 @@ export default function GamePage() {
 
       {/* User Profile */}
       {showProfile && <UserProfile isOpen={showProfile} onClose={() => setShowProfile(false)} />}
-      
+
       {/* Global Chat */}
       <GlobalChat isOpen={showChat} onClose={() => setShowChat(false)} />
       
