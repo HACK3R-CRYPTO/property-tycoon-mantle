@@ -30,7 +30,7 @@ Step five: Collect yield. Properties generate yield daily. Free money. No cost t
 
 Step six: Expand your portfolio. Use collected yield to buy more TYCOON tokens. Mint more properties. Or keep the yield as profit. Your choice. No pressure to keep buying. Properties keep generating yield.
 
-Step seven: Visit other players. Click leaderboard. See top tycoons. Visit their portfolios. See how they built their empires. Get inspired. Learn strategies.
+Step seven: Visit other players. Click leaderboard. See top tycoons. Visit their portfolios. See how they built their empires. Get inspired. Learn strategies. Use FIND button in property cards to center map on any property. View dynamic location coordinates in bottom-left corner showing current viewport position.
 
 Step eight: Complete quests. Finish investment challenges. Diversify your portfolio. Optimize your yield. Earn bonus rewards. Unlock achievements. Climb the leaderboard.
 
@@ -56,7 +56,7 @@ Example: Buy 1000 TYCOON tokens once. Mint 5 properties. Properties generate yie
 
 ## Multiplayer Features
 
-See other players portfolios. Visit top tycoons. Browse their properties. See how they arranged their empire. Learn from the best. Get inspired by successful portfolios. Click "Visit" on any leaderboard entry to view their complete portfolio.
+See other players portfolios. Visit top tycoons. Browse their properties. See how they arranged their empire. Learn from the best. Get inspired by successful portfolios. Click "Visit" on any leaderboard entry to view their complete portfolio. Leaderboard shows accurate total yield earned from YieldDistributor contract. Visit portfolio modal displays correct yield values including claimed yield. Backend reads yield from YieldDistributor propertyTotalYieldEarned mapping for accurate leaderboard rankings.
 
 Global leaderboard shows all players. Ranked by portfolio value. Ranked by total yield. Ranked by properties owned. See your position. See top ten. Updates automatically when properties change. Leaderboard refreshes in real time via WebSocket events.
 
@@ -66,7 +66,7 @@ Marketplace connects players. Browse properties for sale. See seller information
 
 Quest system rewards players. Complete investment challenges. Diversify your portfolio. Optimize your yield. Earn bonus rewards. Unlock achievements. Track progress in real time. Claim rewards when completed.
 
-Global chat connects everyone. Talk with all players. Share tips and strategies. Announce property sales. Discuss market trends. Real-time messaging. Build community. Usernames and avatars for personalized experience.
+Global chat connects everyone. Talk with all players. Share tips and strategies. Announce property sales. Discuss market trends. Real-time messaging. Build community. Usernames and avatars for personalized experience. Mini chat widget always visible in bottom-left corner. Shows recent messages. Expand to view full chat history. Click header to open full chat modal.
 
 ## Real-Time Features
 
@@ -150,7 +150,7 @@ MockRWA implements ERC-721 standard. Replaced with any real RWA contract followi
 
 ## Technical Excellence
 
-Web-based gameplay. No downloads. No Unity. No plugins. Works in any browser. Mobile responsive. Touch controls. Keyboard support. Smooth animations. Property visualization. Yield charts. Real-time leaderboard. RWA integration. Smart contract rewards. Mantle network integration. Next.js frontend. NestJS backend. Socket.io real-time. Pixi.js rendering.
+Web-based gameplay. No downloads. No Unity. No plugins. Works in any browser. Mobile responsive. Touch controls. Keyboard support. Smooth animations. Property visualization. Yield charts. Real-time leaderboard. RWA integration. Smart contract rewards. Mantle network integration. Next.js frontend. NestJS backend. Socket.io real-time. Pixi.js rendering. Interactive city map with zoom and pan controls. Find location feature centers map on any property from sidebar. Dynamic location coordinates display current viewport position. Property-type-specific images for visual identification. Realistic terrain generation with water land and city zones.
 
 ## Getting Started
 

@@ -9,6 +9,7 @@ import { BuildMenu } from '@/components/game/BuildMenu';
 import { YieldDisplay } from '@/components/game/YieldDisplay';
 import { PropertyDetails } from '@/components/game/PropertyDetails';
 import { GlobalChat } from '@/components/GlobalChat';
+import { MiniChat } from '@/components/MiniChat';
 import { UserProfile } from '@/components/UserProfile';
 import { WalletConnect } from '@/components/WalletConnect';
 import { RWALinkModal } from '@/components/RWALinkModal';
@@ -17,15 +18,24 @@ import { Guilds } from '@/components/Guilds';
 import { Marketplace } from '@/components/Marketplace';
 import { Quests } from '@/components/Quests';
 import { TokenPurchase } from '@/components/TokenPurchase';
-import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target, Coins, User } from 'lucide-react';
+import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target, Coins, User, Shield, CheckCircle2, BarChart3, Diamond, ShoppingCart, X, SlidersHorizontal, BarChart, History, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import Link from 'next/link';
 import { getOwnerProperties, calculateYield, CONTRACTS, PROPERTY_NFT_ABI, YIELD_DISTRIBUTOR_ABI } from '@/lib/contracts';
 import { readContract, getBlock, getPublicClient } from 'wagmi/actions';
 import { createPublicClient, http, parseAbiItem } from 'viem';
 import { api } from '@/lib/api';
 import { io, Socket } from 'socket.io-client';
+import { useMNTPrice } from '@/hooks/useMNTPrice';
+
+const PROPERTY_COLORS = {
+  Residential: 'bg-blue-500',
+  Commercial: 'bg-green-500',
+  Industrial: 'bg-orange-500',
+  Luxury: 'bg-pink-500',
+};
 
 interface Property {
   id: string;
@@ -45,6 +55,7 @@ interface Property {
 export default function GamePage() {
   const { address, isConnected } = useAccount();
   const config = useConfig();
+  const { tycoonPriceUSD } = useMNTPrice();
   const [properties, setProperties] = useState<Property[]>([]);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [showBuildMenu, setShowBuildMenu] = useState(false);
@@ -58,6 +69,9 @@ export default function GamePage() {
   const [showSellProperty, setShowSellProperty] = useState(false);
   const [propertyToSell, setPropertyToSell] = useState<Property | null>(null);
   const [showRWALink, setShowRWALink] = useState(false);
+  const [showPropertiesSidebar, setShowPropertiesSidebar] = useState(true);
+  const [mapZoom, setMapZoom] = useState(1);
+  const [centerOnCoordinate, setCenterOnCoordinate] = useState<{ x: number; y: number } | null>(null);
   const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0)); // Real-time estimated yield
   const [claimableYield, setClaimableYield] = useState<bigint>(BigInt(0)); // On-chain claimable yield (24-hour requirement)
   const [propertyClaimableYields, setPropertyClaimableYields] = useState<Map<number, bigint>>(new Map()); // Claimable yield per property
@@ -69,6 +83,9 @@ export default function GamePage() {
   const [tokenBalanceValue, setTokenBalanceValue] = useState<bigint>(BigInt(0));
   const [otherPlayersProperties, setOtherPlayersProperties] = useState<Array<Property & { owner: string; isOwned: boolean }>>([]);
   const [pendingPropertyType, setPendingPropertyType] = useState<'Residential' | 'Commercial' | 'Industrial' | 'Luxury' | null>(null);
+  const [username, setUsername] = useState<string>('');
+  const [avatar, setAvatar] = useState<string>('');
+  const [nextClaimableTime, setNextClaimableTime] = useState<{ hours: number; minutes: number } | null>(null);
 
   // Load properties function - FROM BACKEND (synced from blockchain)
   const loadProperties = useCallback(async () => {
@@ -488,6 +505,19 @@ export default function GamePage() {
             
             // Store time remaining map for display
             (window as any).propertyTimeRemaining = timeRemainingMap;
+            
+            // Calculate shortest time remaining for next claimable yield
+            const nonClaimableProperties = Array.from(timeRemainingMap.values()).filter((t) => !t.isClaimable);
+            if (nonClaimableProperties.length > 0) {
+              const shortestTime = nonClaimableProperties.reduce((min, current) => {
+                const minMinutes = min.hours * 60 + min.minutes;
+                const currentMinutes = current.hours * 60 + current.minutes;
+                return currentMinutes < minMinutes ? current : min;
+              });
+              setNextClaimableTime(shortestTime);
+            } else {
+              setNextClaimableTime(null);
+            }
             
             console.log(`💰 Total claimable yield: ${totalClaimable.toString()} wei (${Number(totalClaimable) / 1e18} TYCOON)`);
             
@@ -1554,6 +1584,9 @@ export default function GamePage() {
           console.log(`✅ WebSocket: Updated estimated yield to ${totalEstimated.toString()} wei (${Number(totalEstimated) / 1e18} TYCOON)`);
         })();
         
+        // Update next claimable time from WebSocket
+        setNextClaimableTime(data.shortestTimeRemaining);
+        
         console.log('✅ Updated yield data from backend WebSocket:', {
           claimable: claimable.toString(),
           shortestTimeRemaining: data.shortestTimeRemaining,
@@ -1629,6 +1662,28 @@ export default function GamePage() {
     }
   }, [address]);
 
+  // Load user profile (username and avatar)
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      if (!address) return;
+      
+      try {
+        const profile = await api.get(`/users/profile/${address}`);
+        if (profile) {
+          setUsername(profile.username || '');
+          setAvatar(profile.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${address}`);
+        } else {
+          setAvatar(`https://api.dicebear.com/7.x/avataaars/svg?seed=${address}`);
+        }
+      } catch (error) {
+        console.warn('Failed to load user profile:', error);
+        setAvatar(`https://api.dicebear.com/7.x/avataaars/svg?seed=${address}`);
+      }
+    };
+    
+    loadUserProfile();
+  }, [address]);
+
   // Load properties on mount and when address changes
   useEffect(() => {
     if (address && isConnected) {
@@ -1650,180 +1705,622 @@ export default function GamePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      {/* Header */}
-      <header className="border-b border-white/10 bg-white/5 backdrop-blur-md sticky top-0 z-40">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+    <div className="relative min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden">
+      {/* Full Screen City View */}
+      <div className="absolute inset-0 w-full h-full">
+        <CityView
+          properties={(() => {
+            const filtered = properties
+              .filter(p => {
+                return p.x !== null && p.x !== undefined && p.y !== null && p.y !== undefined;
+              })
+              .map(p => ({
+                id: p.id,
+                tokenId: p.tokenId,
+                propertyType: p.propertyType,
+                value: p.value,
+                yieldRate: p.yieldRate,
+                x: Number(p.x),
+                y: Number(p.y),
+              }));
+            return filtered;
+          })()}
+          otherPlayersProperties={otherPlayersProperties.map(p => ({
+            id: p.id,
+            tokenId: p.tokenId,
+            propertyType: p.propertyType,
+            value: p.value,
+            yieldRate: p.yieldRate,
+            x: Number(p.x),
+            y: Number(p.y),
+            owner: p.owner,
+            isOwned: p.isOwned,
+          }))}
+          onPropertyClick={(property) => {
+            const fullProperty = properties.find(p => p.tokenId === property.tokenId);
+            if (fullProperty) {
+              setSelectedProperty(fullProperty);
+            }
+          }}
+          zoom={mapZoom}
+          onZoomIn={() => setMapZoom(prev => Math.min(prev + 0.2, 3))}
+          onZoomOut={() => setMapZoom(prev => Math.max(prev - 0.2, 0.3))}
+          onCenter={() => {
+            // Center on all user properties
+            if (properties.length > 0) {
+              // Calculate average position of all properties
+              const avgX = properties.reduce((sum, p) => sum + (p.x || 0), 0) / properties.length;
+              const avgY = properties.reduce((sum, p) => sum + (p.y || 0), 0) / properties.length;
+              
+              // Zoom in a bit to see properties better
+              setMapZoom(1.5);
+              // Center on the average property position
+              setCenterOnCoordinate({ x: avgX, y: avgY });
+              // Reset after a moment so it can be triggered again
+              setTimeout(() => setCenterOnCoordinate(null), 100);
+            }
+          }}
+          zoomControlsPosition={showPropertiesSidebar ? 'left-of-sidebar' : 'bottom-right'}
+          centerOnCoordinate={centerOnCoordinate}
+        />
+      </div>
+
+      {/* Left Sidebar - Overlay on top */}
+      <div className="absolute left-4 top-4 bottom-4 w-80 z-50 overflow-y-auto">
+        <div className="space-y-3">
+            {/* Player Profile Card */}
+            <div className="bg-gray-800/50 backdrop-blur-md rounded-lg border border-white/10 p-4">
+              <div className="flex items-center gap-3 mb-4">
+                <Avatar className="w-12 h-12 border-2 border-emerald-500/50 flex-shrink-0">
+                  <AvatarImage src={avatar} alt={username || address || 'User'} />
+                  <AvatarFallback className="bg-gradient-to-br from-purple-500 to-blue-500 text-white font-semibold text-sm">
+                    {username?.[0]?.toUpperCase() || address?.slice(2, 4).toUpperCase() || '??'}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-white font-semibold text-sm truncate">{username || 'CryptoBaron'}</h3>
+                    <span className="bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded flex-shrink-0">LVL {Math.max(1, Math.floor(properties.length / 2) + 1)}</span>
+                  </div>
+                  <p className="text-emerald-400 text-xs font-medium">ELITE TYCOON</p>
+                </div>
+              </div>
+              
+              <div className="space-y-2.5 text-sm">
           <div>
-            <h1 className="text-2xl font-bold text-white">Property Tycoon</h1>
-            <p className="text-sm text-gray-400">Build your real estate empire</p>
+                  <p className="text-gray-400 text-xs mb-1">TOTAL PORTFOLIO VALUE</p>
+                  <p className="text-white font-semibold text-base">
+                    ${((properties.reduce((sum, p) => sum + Number(p.value), 0) / 1e18) * 0.01).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  </p>
           </div>
-          <div className="flex items-center gap-4">
+                <div>
+                  <p className="text-gray-400 text-xs mb-1">TOTAL YIELD EARNED</p>
+                  <p className="text-emerald-400 font-semibold flex items-center gap-1 text-base">
+                    <span>💰</span>
+                    {((Number(totalYieldEarned) / 1e18)).toLocaleString('en-US', { maximumFractionDigits: 0 })} TYC
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  onClick={() => setShowTokenPurchase(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white h-20 flex flex-col items-center justify-center gap-1.5 transition-all"
+                >
+                  <ShoppingCart className="w-5 h-5" />
+                  <span className="text-xs font-medium">Buy TYCOON</span>
+                </Button>
+                <Button
+                  onClick={() => setShowBuildMenu(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white h-20 flex flex-col items-center justify-center gap-1.5 transition-all"
+                >
+                  <Building2 className="w-5 h-5" />
+                  <span className="text-xs font-medium">Mint Property</span>
+                </Button>
+              </div>
+              
+              {/* Claim Yield Button with Time Remaining */}
+              <div className="space-y-1.5">
+                <Button
+                  onClick={async () => {
+                    if (!address || properties.length === 0) return;
+                    try {
+                      setIsClaiming(true);
+                      
+                      const propertiesWithYield = properties.filter(p => {
+                        const claimable = propertyClaimableYields.get(p.tokenId) || BigInt(0);
+                        return claimable > BigInt(0);
+                      });
+                      
+                      if (propertiesWithYield.length === 0) {
+                        alert('No yield available to claim. Properties need at least 24 hours to accumulate yield.');
+                        setIsClaiming(false);
+                        return;
+                      }
+                      
+                      const propertyIds = propertiesWithYield.map(p => BigInt(p.tokenId));
+                      
+                      if (propertyIds.length === 1) {
+                        writeClaim({
+                          address: CONTRACTS.YieldDistributor,
+                          abi: YIELD_DISTRIBUTOR_ABI,
+                          functionName: 'claimYield',
+                          args: [propertyIds[0]],
+                        });
+                      } else {
+                        writeClaim({
+                          address: CONTRACTS.YieldDistributor,
+                          abi: YIELD_DISTRIBUTOR_ABI,
+                          functionName: 'batchClaimYield',
+                          args: [propertyIds],
+                        });
+                      }
+                    } catch (error: any) {
+                      console.error('Failed to claim yield:', error);
+                      if (error.message?.includes('No yield to claim') || error.message?.includes('execution reverted')) {
+                        alert('No yield available to claim. Properties need at least 24 hours to accumulate yield.');
+                      }
+                      setIsClaiming(false);
+                    }
+                  }}
+                  disabled={isClaiming || isClaimPending || isClaimConfirming || claimableYield === BigInt(0)}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:text-gray-400 disabled:cursor-not-allowed text-white h-14 font-semibold flex items-center justify-center gap-2 transition-all"
+                >
+                  <Diamond className="w-5 h-5" />
+                  {isClaiming || isClaimPending || isClaimConfirming ? 'Claiming...' : 'Claim All Yield'}
+                </Button>
+                
+                {/* Time Remaining Display */}
+                {claimableYield === BigInt(0) && nextClaimableTime && (
+                  <div className="bg-gray-800/30 rounded-lg border border-white/5 p-2.5">
+                    <p className="text-gray-400 text-xs mb-1">Next Claimable In</p>
+                    <p className="text-emerald-400 font-semibold text-sm flex items-center gap-1">
+                      <span>⏱️</span>
+                      {nextClaimableTime.hours > 0 ? `${nextClaimableTime.hours}h ` : ''}{nextClaimableTime.minutes}m
+                    </p>
+                  </div>
+                )}
+                {claimableYield > BigInt(0) && (
+                  <div className="bg-emerald-500/10 rounded-lg border border-emerald-500/20 p-2.5">
+                    <p className="text-emerald-400 text-xs font-medium">✅ Ready to claim!</p>
+                    <p className="text-emerald-300 text-xs mt-0.5">
+                      {((Number(claimableYield) / 1e18)).toLocaleString('en-US', { maximumFractionDigits: 2 })} TYC available
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Navigation */}
+            <div className="bg-gray-800/50 backdrop-blur-md rounded-lg border border-white/10 p-2">
+              <nav className="space-y-1">
             <Button
               onClick={() => setShowGuide(true)}
-              variant="outline"
-              className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+                  variant="ghost"
+                  className="w-full justify-start text-gray-300 hover:text-white hover:bg-white/10"
             >
               <BookOpen className="w-4 h-4 mr-2" />
               How to Play
             </Button>
-            <Link href="/leaderboard">
             <Button
-              variant="outline"
-              className="border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
+                  onClick={() => setShowMarketplace(!showMarketplace)}
+                  variant="ghost"
+                  className="w-full justify-start text-gray-300 hover:text-white hover:bg-white/10"
             >
-              <Trophy className="w-4 h-4 mr-2" />
-              Leaderboard
+                  <Building2 className="w-4 h-4 mr-2" />
+                  Marketplace
             </Button>
-            </Link>
+                <Button
+                  onClick={() => setShowQuests(!showQuests)}
+                  variant="ghost"
+                  className="w-full justify-start text-gray-300 hover:text-white hover:bg-white/10 relative"
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Quests
+                </Button>
             <Button
               onClick={() => setShowGuilds(!showGuilds)}
-              variant="outline"
-              className="border-green-500/50 text-green-400 hover:bg-green-500/10"
+                  variant="ghost"
+                  className="w-full justify-start text-gray-300 hover:text-white hover:bg-white/10"
             >
-              <Users className="w-4 h-4 mr-2" />
+                  <Shield className="w-4 h-4 mr-2" />
               Guilds
             </Button>
+                <Link href="/leaderboard">
             <Button
-              onClick={() => setShowMarketplace(!showMarketplace)}
-              variant="outline"
-              className="border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+                    variant="ghost"
+                    className="w-full justify-start text-gray-300 hover:text-white hover:bg-white/10"
             >
-              <ShoppingBag className="w-4 h-4 mr-2" />
-              Marketplace
+                    <BarChart3 className="w-4 h-4 mr-2" />
+                    Leaderboard
             </Button>
+                </Link>
             <Button
-              onClick={() => setShowQuests(!showQuests)}
-              variant="outline"
-              className="border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10"
-            >
-              <Target className="w-4 h-4 mr-2" />
-              Quests
+                  onClick={() => setShowChat(true)}
+                  variant="ghost"
+                  className="w-full justify-start text-gray-300 hover:text-white hover:bg-white/10"
+                >
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  Chat
             </Button>
-            <WalletConnect />
             {isConnected && (
               <Button
                 onClick={() => setShowProfile(true)}
-                className="bg-purple-600 hover:bg-purple-700 text-white"
+                    variant="ghost"
+                    className="w-full justify-start text-gray-300 hover:text-white hover:bg-white/10"
               >
                 <User className="w-4 h-4 mr-2" />
                 Profile
               </Button>
             )}
-            <Button
-              onClick={() => setShowChat(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              <MessageSquare className="w-4 h-4 mr-2" />
-              Chat
-            </Button>
+                <div className="pt-2 border-t border-white/10">
+                  <WalletConnect />
+                </div>
+              </nav>
+            </div>
+
+        </div>
+      </div>
+
+      {/* Right Sidebar - Your Properties */}
+      {showPropertiesSidebar && (
+        <div className="absolute right-4 top-4 bottom-4 w-96 z-50 overflow-hidden flex flex-col">
+          <div className="bg-gray-800/90 backdrop-blur-md rounded-lg border border-white/10 flex flex-col h-full">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <h2 className="text-white font-bold text-lg">YOUR PROPERTIES</h2>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-gray-400 hover:text-white"
+                  title="Filter/Sort"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-gray-400 hover:text-white"
+                  title="Hide Properties"
+                  onClick={() => setShowPropertiesSidebar(false)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+          {/* Properties List */}
+          <ScrollArea className="flex-1 p-4">
+            {properties.length === 0 ? (
+              <div className="text-center text-gray-400 py-8">
+                <Building2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No properties yet</p>
+                <p className="text-sm mt-2">Build your first property to get started!</p>
+        </div>
+            ) : (
+              <div className="space-y-3">
+                {properties.map((property) => {
+                  const claimable = propertyClaimableYields.get(property.tokenId) || BigInt(0);
+                  const valueUSD = (Number(property.value) / 1e18) * (tycoonPriceUSD || 0);
+                  const valueFormatted = valueUSD >= 1000 
+                    ? `$${(valueUSD / 1000).toFixed(0)}k`
+                    : `$${valueUSD.toFixed(0)}`;
+                  const apy = (property.yieldRate / 100).toFixed(0);
+                  const claimableFormatted = (Number(claimable) / 1e18).toFixed(2);
+                  
+                  // Property type abbreviations
+                  const typeAbbr: Record<string, string> = {
+                    Residential: 'RES.',
+                    Commercial: 'COM.',
+                    Industrial: 'IND.',
+                    Luxury: 'LUX.',
+                  };
+                  
+                  const typeFull: Record<string, string> = {
+                    Residential: 'RESIDENTIAL',
+                    Commercial: 'COMMERCIAL',
+                    Industrial: 'IND. FACILITY',
+                    Luxury: 'RES. HIGH-RISE',
+                  };
+
+                  // Generate property-type-specific image URL
+                  const getPropertyImage = (type: string, tokenId: number) => {
+                    // Use specific Unsplash image IDs for each property type
+                    // These are curated images that match each property category
+                    const typeImageIds: Record<string, string[]> = {
+                      Residential: [
+                        '1523217584041-3dc28b49e5d7', // Modern house
+                        '1568605114967-8130f3a36994', // Suburban home
+                        '1570129477492-45c003edd2be', // Residential area
+                        '1600596542810-ffad4c1539a9', // House exterior
+                        '1600585154340-be6161a56a0e', // Family home
+                      ],
+                      Commercial: [
+                        '1497366216548-37526070297c', // Office building
+                        '1486406146926-c627a92ad1ab', // Commercial building
+                        '1497366754035-f200592a6e44', // Business district
+                        '1504304300624-4f8166d475ce', // Modern office
+                        '1556761175-5973dc0f32e7', // Commercial space
+                      ],
+                      Industrial: [
+                        '1541888946425-81f8aeffba30', // Factory
+                        '1504302021901-bc9aebbfd078', // Industrial facility
+                        '1518186289269-30a68777daab', // Warehouse
+                        '1558618668-8e0c623f1a15', // Manufacturing plant
+                        '1558618047-3c8d9da1f7c8', // Industrial complex
+                      ],
+                      Luxury: [
+                        '1512918728675-ed5a9ecde1d3', // Luxury high-rise
+                        '1545324418-cc1a3fa10c00', // Skyscraper
+                        '1502672260266-1c1ef2d93688', // Luxury building
+                        '1556912172-45b7abe8b7e1', // Modern high-rise
+                        '1556912173-2e2b0c5b0b0b', // Luxury penthouse view
+                      ],
+                    };
+                    
+                    const imageIds = typeImageIds[type] || typeImageIds['Residential'];
+                    // Use tokenId to select a consistent image ID for each property
+                    const imageId = imageIds[tokenId % imageIds.length];
+                    
+                    // Use Unsplash images API - provides high-quality, relevant images
+                    return `https://images.unsplash.com/photo-${imageId}?w=400&h=200&fit=crop&auto=format`;
+                  };
+
+                  return (
+                    <div
+                      key={property.id}
+                      className="bg-gray-900/50 rounded-lg border border-white/10 p-3 hover:border-white/20 transition-all"
+                    >
+                      {/* Property Image */}
+                      <div className="w-full h-32 rounded-lg mb-3 overflow-hidden relative bg-gray-800">
+                        <img
+                          src={getPropertyImage(property.propertyType, property.tokenId)}
+                          alt={`${property.propertyType} Property`}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                          onLoad={(e) => {
+                            // Hide fallback when image loads successfully
+                            const target = e.target as HTMLImageElement;
+                            const parent = target.parentElement;
+                            if (parent) {
+                              const fallback = parent.querySelector('.fallback') as HTMLElement;
+                              if (fallback) {
+                                fallback.classList.add('hidden');
+                                fallback.classList.remove('flex');
+                              }
+                            }
+                          }}
+                          onError={(e) => {
+                            // Show fallback if image fails to load
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent) {
+                              const fallback = parent.querySelector('.fallback') as HTMLElement;
+                              if (fallback) {
+                                fallback.classList.remove('hidden');
+                                fallback.classList.add('flex');
+                              }
+                            }
+                          }}
+                        />
+                        <div className={`fallback absolute inset-0 w-full h-full ${PROPERTY_COLORS[property.propertyType]} flex items-center justify-center`}>
+                          <Building2 className="w-12 h-12 text-white opacity-50" />
+                        </div>
+                      </div>
+
+                      {/* Property Info */}
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-xs text-gray-400 uppercase">{typeFull[property.propertyType] || property.propertyType}</p>
+                            <p className="text-white font-semibold text-sm mt-0.5">
+                              {property.propertyType} Property
+                            </p>
+                            <p className="text-xs text-gray-500 mt-0.5">#{property.tokenId}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-400">Val:</span>
+                          <span className="text-white font-semibold">{valueFormatted}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-400">APY:</span>
+                          <span className="text-emerald-400 font-semibold">{apy}% APY</span>
+                        </div>
+
+                        {claimable > BigInt(0) && (
+                          <div className="flex items-center justify-between text-xs pt-1 border-t border-white/10">
+                            <span className="text-gray-400 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
+                              ACCUMULATING
+                            </span>
+                            <span className="text-emerald-400 font-semibold">+{claimableFormatted} TYC</span>
+                          </div>
+                        )}
+
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            onClick={() => {
+                              // Center map on this property
+                              if (property.x !== null && property.x !== undefined && 
+                                  property.y !== null && property.y !== undefined) {
+                                // Zoom in a bit to see the property better
+                                setMapZoom(1.5);
+                                // Center on the property coordinates
+                                setCenterOnCoordinate({ x: property.x, y: property.y });
+                                // Reset after a moment so it can be triggered again
+                                setTimeout(() => setCenterOnCoordinate(null), 100);
+                              }
+                            }}
+                            variant="outline"
+                            className="flex-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border-blue-500/50 text-xs h-8"
+                            title="Find on Map"
+                          >
+                            <MapPin className="w-3 h-3 mr-1.5" />
+                            FIND
+                          </Button>
+                          <Button
+                            onClick={() => setSelectedProperty(property)}
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8"
+                          >
+                            VIEW DETAILS
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </ScrollArea>
+
+          {/* Bottom Section */}
+          <div className="p-4 border-t border-white/10 space-y-3">
+            {/* Accumulating Yield */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-400 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>
+                ACCUMULATING
+              </span>
+              <span className="text-emerald-400 font-semibold text-sm">
+                +{((Number(totalPendingYield) / 1e18).toFixed(2))} TYC
+              </span>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                className="w-full text-xs h-8 border-white/20 text-gray-300 hover:bg-white/10"
+              >
+                <BarChart className="w-3 h-3 mr-1.5" />
+                ANALYTICS
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full text-xs h-8 border-white/20 text-gray-300 hover:bg-white/10"
+              >
+                <History className="w-3 h-3 mr-1.5" />
+                HISTORY
+              </Button>
+            </div>
+          </div>
           </div>
         </div>
-      </header>
+      )}
 
-      {/* Main Game Area */}
-      <main className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Left Sidebar */}
-          <div className="lg:col-span-1 space-y-6">
-            <YieldDisplay
-              key={yieldUpdateTimestamp} // Force re-render when WebSocket updates
-              totalPendingYield={totalPendingYield}
-              claimableYield={claimableYield}
-              totalYieldEarned={totalYieldEarned}
+      {/* Show Properties Button (when hidden) */}
+      {!showPropertiesSidebar && (
+        <Button
+          onClick={() => setShowPropertiesSidebar(true)}
+          className="absolute right-4 top-4 z-50 bg-gray-800/90 hover:bg-gray-700/90 text-white border border-white/10"
+          title="Show Properties"
+        >
+          <Building2 className="w-4 h-4 mr-2" />
+          Properties
+        </Button>
+      )}
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-40">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4" />
+            <p className="text-gray-400">Loading your portfolio...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Property Details Modal */}
+      {selectedProperty && (
+        <PropertyDetails
+          property={selectedProperty}
+          claimableYield={propertyClaimableYields.get(selectedProperty.tokenId)}
+          isOpen={!!selectedProperty}
+          onClose={() => setSelectedProperty(null)}
               isClaiming={isClaiming || isClaimPending || isClaimConfirming}
-              onClaimAll={async () => {
-                if (!address || properties.length === 0) return;
+          onClaimYield={async () => {
+            if (!selectedProperty) return;
                 try {
                   setIsClaiming(true);
-                  
-                  // Filter properties that have claimable yield
-                  // Check both claimableYield (from contract) and totalYieldEarned (historical)
-                  const propertiesWithYield = properties.filter(p => {
-                    const claimable = propertyClaimableYields.get(p.tokenId) || BigInt(0);
-                    // Also check if property has any yield earned (might have unclaimed yield)
-                    const hasYield = claimable > BigInt(0) || (p.totalYieldEarned && p.totalYieldEarned > BigInt(0));
-                    return hasYield;
+              console.log('💰 Claiming yield for property:', {
+                tokenId: selectedProperty.tokenId,
+                propertyType: selectedProperty.propertyType,
+                claimableYield: propertyClaimableYields.get(selectedProperty.tokenId)?.toString() || '0',
+              });
+                  writeClaim({
+                    address: CONTRACTS.YieldDistributor,
+                    abi: YIELD_DISTRIBUTOR_ABI,
+                functionName: 'claimYield',
+                args: [BigInt(selectedProperty.tokenId)],
+                // Let wagmi estimate gas automatically - it will account for RWA contract calls
                   });
-                  
-                  if (propertiesWithYield.length === 0) {
-                    // Check if there's any total yield earned to give better message
-                    const hasAnyYield = properties.some(p => p.totalYieldEarned && p.totalYieldEarned > BigInt(0));
-                    if (hasAnyYield) {
-                      alert('No new yield available to claim. Properties need at least 24 hours since last claim to accumulate new yield.');
-                    } else {
-                      alert('No yield available to claim. You need to wait at least 24 hours after property creation.');
-                    }
-                    setIsClaiming(false);
-                    return;
-                  }
-                  
-                  const propertyIds = propertiesWithYield.map(p => BigInt(p.tokenId));
-                  console.log('💰 Claiming yield for properties:', propertyIds.map(id => id.toString()));
-                  console.log('📋 Property details:', propertiesWithYield.map(p => ({ 
-                    tokenId: p.tokenId, 
-                    propertyType: p.propertyType,
-                    claimableYield: propertyClaimableYields.get(p.tokenId)?.toString() || '0'
-                  })));
-                  
-                  // If only one property, use single claim (more gas efficient)
-                  if (propertyIds.length === 1) {
-                    writeClaim({
-                      address: CONTRACTS.YieldDistributor,
-                      abi: YIELD_DISTRIBUTOR_ABI,
-                      functionName: 'claimYield',
-                      args: [propertyIds[0]],
-                      // Don't set gas limit - let wagmi estimate automatically
-                      // RWA contract calls require more gas, but wagmi will estimate correctly
-                    });
-                  } else {
-                    writeClaim({
-                      address: CONTRACTS.YieldDistributor,
-                      abi: YIELD_DISTRIBUTOR_ABI,
-                      functionName: 'batchClaimYield',
-                      args: [propertyIds],
-                      // Don't set gas limit - let wagmi estimate automatically
-                      // Batch operations with RWA calls need more gas
-                    });
-                  }
-                } catch (error: any) {
+              setSelectedProperty(null);
+                } catch (error) {
                   console.error('Failed to claim yield:', error);
-                  if (error.message?.includes('No yield to claim') || error.message?.includes('execution reverted')) {
-                    alert('No yield available to claim. Properties need at least 24 hours to accumulate yield.');
-                  }
                   setIsClaiming(false);
                 }
               }}
-            />
+          onLinkRWA={() => {
+            setShowRWALink(true);
+          }}
+          onSellProperty={() => {
+            setPropertyToSell(selectedProperty);
+            setShowSellProperty(true);
+            setSelectedProperty(null);
+          }}
+        />
+      )}
 
+      {/* Token Purchase Modal */}
+      {showTokenPurchase && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900/95 backdrop-blur-xl rounded-lg border border-white/20 w-full max-w-md relative">
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <h2 className="text-xl font-bold text-white">Buy TYCOON</h2>
             <Button
-              onClick={() => setShowTokenPurchase(!showTokenPurchase)}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 mb-2"
-            >
-              <Coins className="w-4 h-4 mr-2" />
-              {showTokenPurchase ? 'Close Token Purchase' : 'Buy TYCOON Tokens'}
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowTokenPurchase(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
             </Button>
-
-            {showTokenPurchase && (
-              <div className="mb-4">
+            </div>
+            <div className="p-4">
                 <TokenPurchase />
+            </div>
+          </div>
               </div>
             )}
 
+      {/* Build Menu Modal */}
+      {showBuildMenu && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900/95 backdrop-blur-xl rounded-lg border border-white/20 w-full max-w-md relative">
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <h2 className="text-xl font-bold text-white">Mint Property</h2>
             <Button
-              onClick={() => setShowBuildMenu(!showBuildMenu)}
-              className="w-full bg-blue-600 hover:bg-blue-700"
-            >
-              <Building2 className="w-4 h-4 mr-2" />
-              {showBuildMenu ? 'Close Build Menu' : 'Build Property'}
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowBuildMenu(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
             </Button>
-
-            {showBuildMenu && (
+            </div>
+            <div className="p-4">
               <BuildMenu
                 tokenBalance={tokenBalanceValue}
                 isMinting={isMinting || isMintPending || isMintConfirming}
                 onBuildProperty={async (type: 'Residential' | 'Commercial' | 'Industrial' | 'Luxury') => {
-                  // Mint property immediately without tile selection
                   if (!address) return;
                   
                   const propertyTypes: Record<string, number> = {
@@ -1841,10 +2338,10 @@ export default function GamePage() {
                   };
                   
                   const yieldRates: Record<string, bigint> = {
-                    Residential: BigInt(500), // 5% APY in basis points
-                    Commercial: BigInt(800), // 8% APY in basis points
-                    Industrial: BigInt(1200), // 12% APY in basis points
-                    Luxury: BigInt(1500), // 15% APY in basis points
+                    Residential: BigInt(500),
+                    Commercial: BigInt(800),
+                    Industrial: BigInt(1200),
+                    Luxury: BigInt(1500),
                   };
 
                   try {
@@ -1852,10 +2349,9 @@ export default function GamePage() {
                     const cost = propertyCosts[type];
                     const currentAllowance = (tokenAllowance as bigint) || BigInt(0);
                     
-                    // If allowance is insufficient, approve first
                     if (currentAllowance < cost) {
                       console.log(`Approving ${cost.toString()} TYCOON tokens for PropertyNFT...`);
-                      setPendingPropertyType(type); // Store property type for auto-purchase after approval
+                      setPendingPropertyType(type);
                       writeApprove({
                         address: CONTRACTS.GameToken,
                         abi: [
@@ -1873,12 +2369,9 @@ export default function GamePage() {
                         functionName: 'approve',
                         args: [CONTRACTS.PropertyNFT, cost],
                       });
-                      // Wait for approval to complete before purchasing
-                      // The useEffect hook will handle the purchase after approval succeeds
                       return;
                     }
                     
-                    // Purchase property (this will transfer TYCOON tokens and mint NFT)
                     console.log(`Purchasing ${type} property for ${cost.toString()} TYCOON...`);
                     writeMint({
                       address: CONTRACTS.PropertyNFT,
@@ -1893,173 +2386,9 @@ export default function GamePage() {
                   }
                 }}
               />
-            )}
           </div>
-
-          {/* Center - City View */}
-          <div className="lg:col-span-2">
-            {isLoading ? (
-              <div className="w-full h-[600px] bg-gray-900 rounded-lg border border-white/10 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4" />
-                  <p className="text-gray-400">Loading your portfolio...</p>
                 </div>
               </div>
-            ) : (
-              <CityView
-                properties={(() => {
-                  // Debug: Log all properties before filtering
-                  console.log('🗺️ CityView - All properties before filtering:', properties.map(p => ({
-                    tokenId: p.tokenId,
-                    x: p.x,
-                    y: p.y,
-                    typeX: typeof p.x,
-                    typeY: typeof p.y,
-                    xIsNull: p.x === null,
-                    xIsUndefined: p.x === undefined,
-                    yIsNull: p.y === null,
-                    yIsUndefined: p.y === undefined,
-                  })));
-                  
-                  const filtered = properties
-                    .filter(p => {
-                      // Filter out properties with invalid coordinates
-                      // Note: 0 is a valid coordinate (top-left corner)
-                      const xNum = typeof p.x === 'number' ? p.x : Number(p.x);
-                      const yNum = typeof p.y === 'number' ? p.y : Number(p.y);
-                      
-                      const hasValidCoords = p.x !== null && p.x !== undefined && 
-                                            p.y !== null && p.y !== undefined &&
-                                            !isNaN(xNum) && !isNaN(yNum) &&
-                                            xNum >= 0 && yNum >= 0; // Allow 0,0
-                      
-                      if (!hasValidCoords) {
-                        console.warn(`⚠️ Property #${p.tokenId} excluded from map: invalid coordinates`, { 
-                          x: p.x, 
-                          y: p.y, 
-                          typeX: typeof p.x, 
-                          typeY: typeof p.y,
-                          xNum,
-                          yNum,
-                        });
-                      }
-                      return hasValidCoords;
-                    })
-                    .map(p => {
-                      const xNum = typeof p.x === 'number' ? p.x : Number(p.x);
-                      const yNum = typeof p.y === 'number' ? p.y : Number(p.y);
-                      
-                      console.log(`✅ CityView - Including property #${p.tokenId} at (${xNum}, ${yNum})`);
-                      
-                      return {
-                        id: p.id,
-                        tokenId: p.tokenId,
-                        propertyType: p.propertyType,
-                        value: p.value,
-                        yieldRate: p.yieldRate,
-                        x: xNum,
-                        y: yNum,
-                      };
-                    });
-                  
-                  console.log(`🗺️ CityView - Filtered properties count: ${filtered.length} out of ${properties.length}`);
-                  return filtered;
-                })()}
-                otherPlayersProperties={otherPlayersProperties}
-                onPropertyClick={(property) => {
-                  const fullProperty = properties.find(p => p.id === property.id);
-                  if (fullProperty) setSelectedProperty(fullProperty);
-                }}
-                onEmptyTileClick={(x: number, y: number) => {
-                  // Empty tile clicks don't do anything now
-                  // Properties are minted directly from the build menu
-                }}
-              />
-            )}
-          </div>
-
-          {/* Right Sidebar - Property List */}
-          <div className="lg:col-span-1 space-y-4">
-            <h2 className="text-white font-semibold text-lg">Your Properties</h2>
-            {properties.length === 0 ? (
-              <div className="text-center text-gray-400 py-8">
-                <Building2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No properties yet</p>
-                <p className="text-sm mt-2">Build your first property to get started!</p>
-              </div>
-            ) : (
-              <ScrollArea className="h-[600px] pr-4">
-                <div className="space-y-3">
-                {properties.map((property) => (
-                  <PropertyCard
-                    key={property.id}
-                    property={property}
-                    claimableYield={propertyClaimableYields.get(property.tokenId)}
-                    onViewDetails={() => setSelectedProperty(property)}
-                    isClaiming={isClaiming || isClaimPending || isClaimConfirming}
-                    onClaimYield={async () => {
-                      try {
-                        setIsClaiming(true);
-                        writeClaim({
-                          address: CONTRACTS.YieldDistributor,
-                          abi: YIELD_DISTRIBUTOR_ABI,
-                          functionName: 'claimYield',
-                          args: [BigInt(property.tokenId)],
-                          // Let wagmi estimate gas automatically for RWA contract calls
-                        });
-                      } catch (error) {
-                        console.error('Failed to claim yield:', error);
-                        setIsClaiming(false);
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-              </ScrollArea>
-            )}
-          </div>
-        </div>
-      </main>
-
-      {/* Property Details Modal */}
-      {selectedProperty && (
-        <PropertyDetails
-          property={selectedProperty}
-          claimableYield={propertyClaimableYields.get(selectedProperty.tokenId)}
-          isOpen={!!selectedProperty}
-          onClose={() => setSelectedProperty(null)}
-          isClaiming={isClaiming || isClaimPending || isClaimConfirming}
-          onClaimYield={async () => {
-            if (!selectedProperty) return;
-            try {
-              setIsClaiming(true);
-              console.log('💰 Claiming yield for property:', {
-                tokenId: selectedProperty.tokenId,
-                propertyType: selectedProperty.propertyType,
-                claimableYield: propertyClaimableYields.get(selectedProperty.tokenId)?.toString() || '0',
-              });
-              writeClaim({
-                address: CONTRACTS.YieldDistributor,
-                abi: YIELD_DISTRIBUTOR_ABI,
-                functionName: 'claimYield',
-                args: [BigInt(selectedProperty.tokenId)],
-                // Let wagmi estimate gas automatically - it will account for RWA contract calls
-              });
-              setSelectedProperty(null);
-            } catch (error) {
-              console.error('Failed to claim yield:', error);
-              setIsClaiming(false);
-            }
-          }}
-          onLinkRWA={() => {
-            setShowRWALink(true);
-          }}
-          onSellProperty={() => {
-            setPropertyToSell(selectedProperty);
-            setShowSellProperty(true);
-            setSelectedProperty(null);
-          }}
-        />
       )}
 
       {/* RWA Link Modal */}
@@ -2087,6 +2416,9 @@ export default function GamePage() {
       
       {/* Global Chat */}
       <GlobalChat isOpen={showChat} onClose={() => setShowChat(false)} />
+      
+      {/* Mini Chat - Always visible */}
+      <MiniChat onExpand={() => setShowChat(true)} />
       
       {/* Game Guide */}
       <GameGuide isOpen={showGuide} onClose={() => setShowGuide(false)} />

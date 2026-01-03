@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import { formatAddress } from '@/lib/utils'
-import { getOwnerProperties, CONTRACTS, PROPERTY_NFT_ABI } from '@/lib/contracts'
+import { getOwnerProperties, CONTRACTS, PROPERTY_NFT_ABI, YIELD_DISTRIBUTOR_ABI } from '@/lib/contracts'
 import { readContract } from 'wagmi/actions'
 import { wagmiConfig } from '@/lib/mantle-viem'
 
@@ -44,14 +44,40 @@ export function VisitPortfolio({ address, username, onClose }: VisitPortfolioPro
         if (data && data.length > 0) {
           // Backend returns array directly
           const backendProperties = Array.isArray(data) ? data : (data.properties || [])
-          const formattedProps = backendProperties.map((p: any) => ({
-            id: p.id || `prop-${p.tokenId}`,
-            tokenId: p.tokenId,
-            propertyType: p.propertyType,
-            value: BigInt(p.value?.toString() || '0'),
-            yieldRate: p.yieldRate || 0,
-            totalYieldEarned: BigInt(p.totalYieldEarned?.toString() || '0'),
-          }))
+          
+          // For each property, check YieldDistributor for accurate yield earned
+          const formattedProps = await Promise.all(
+            backendProperties.map(async (p: any) => {
+              const propertyNFTYield = BigInt(p.totalYieldEarned?.toString() || '0');
+              let totalYieldEarned = propertyNFTYield;
+              
+              // Try to get yield from YieldDistributor (more accurate after claims)
+              try {
+                const yieldEarned = await readContract(wagmiConfig, {
+                  address: CONTRACTS.YieldDistributor,
+                  abi: YIELD_DISTRIBUTOR_ABI,
+                  functionName: 'propertyTotalYieldEarned',
+                  args: [BigInt(p.tokenId)],
+                }) as bigint;
+                // Use YieldDistributor value if > 0, otherwise use PropertyNFT value
+                totalYieldEarned = yieldEarned > BigInt(0) ? yieldEarned : propertyNFTYield;
+              } catch (error) {
+                // Fallback to PropertyNFT value if YieldDistributor call fails
+                console.warn(`Failed to read yield from YieldDistributor for property ${p.tokenId}, using backend value:`, error);
+                totalYieldEarned = propertyNFTYield;
+              }
+              
+              return {
+                id: p.id || `prop-${p.tokenId}`,
+                tokenId: p.tokenId,
+                propertyType: p.propertyType,
+                value: BigInt(p.value?.toString() || '0'),
+                yieldRate: p.yieldRate || 0,
+                totalYieldEarned: totalYieldEarned,
+              };
+            })
+          );
+          
           setProperties(formattedProps)
           
           const totalVal = formattedProps.reduce((sum: bigint, p: { value: bigint; totalYieldEarned: bigint }) => sum + p.value, BigInt(0))
@@ -108,13 +134,33 @@ export function VisitPortfolio({ address, username, onClose }: VisitPortfolioPro
               yieldRateValue = 500; // Default 5%
             }
             
+            // Read totalYieldEarned from YieldDistributor (more accurate after claims)
+            // Fallback to PropertyNFT value if YieldDistributor doesn't have it yet
+            const propertyNFTYield = BigInt(propData.totalYieldEarned.toString());
+            let totalYieldEarned = propertyNFTYield;
+            
+            try {
+              const yieldEarned = await readContract(wagmiConfig, {
+                address: CONTRACTS.YieldDistributor,
+                abi: YIELD_DISTRIBUTOR_ABI,
+                functionName: 'propertyTotalYieldEarned',
+                args: [BigInt(Number(tokenId))],
+              }) as bigint;
+              // Use YieldDistributor value if > 0, otherwise use PropertyNFT value
+              totalYieldEarned = yieldEarned > BigInt(0) ? yieldEarned : propertyNFTYield;
+            } catch (error) {
+              // Fallback to PropertyNFT value if YieldDistributor call fails
+              console.warn(`Failed to read yield from YieldDistributor for property ${tokenId}, using PropertyNFT value:`, error);
+              totalYieldEarned = propertyNFTYield;
+            }
+            
             return {
               id: `prop-${tokenId}`,
               tokenId: Number(tokenId),
               propertyType: propertyTypes[propertyTypeNum] || 'Residential',
               value: BigInt(propData.value.toString()),
               yieldRate: yieldRateValue / 100, // Convert to percentage
-              totalYieldEarned: BigInt(propData.totalYieldEarned.toString()),
+              totalYieldEarned: totalYieldEarned,
             };
           } catch (error) {
             console.error(`Failed to load property ${tokenId}:`, error)
