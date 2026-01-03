@@ -1948,6 +1948,35 @@ export default function GamePage() {
       refetchBalance();
     });
 
+    // Listen for level/XP updates (real-time updates when XP-boosting actions occur)
+    socket.on('user:level-update', (data: {
+      walletAddress: string;
+      level: number;
+      totalExperiencePoints: string;
+      totalYieldEarned: string;
+      totalPortfolioValue: string;
+      propertiesOwned: number;
+    }) => {
+      if (data.walletAddress.toLowerCase() === address?.toLowerCase()) {
+        console.log('🎯 Level/XP update received via WebSocket:', {
+          level: data.level,
+          totalXP: data.totalExperiencePoints,
+          yield: data.totalYieldEarned,
+          portfolio: data.totalPortfolioValue,
+          properties: data.propertiesOwned,
+        });
+        
+        // Update level and XP immediately without refresh
+        setUserLevel(data.level);
+        setUserTotalXP(Number(data.totalExperiencePoints));
+        
+        // Also update total yield earned if needed
+        if (data.totalYieldEarned) {
+          setTotalYieldEarned(BigInt(data.totalYieldEarned));
+        }
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log('🔌 Disconnected from WebSocket');
     });
