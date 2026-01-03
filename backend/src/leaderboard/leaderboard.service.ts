@@ -802,7 +802,23 @@ export class LeaderboardService {
     const portfolioValueStr = (Number(totalPortfolioValue) / 1e18).toFixed(2);
     this.logger.log(`Updated leaderboard for user ${userId}: ${actualPropertyCount} properties, ${portfolioValueStr} TYCOON portfolio`);
     
-    // Update user level after leaderboard update
+    // Update users table with fresh blockchain stats (so updateUserLevel uses current data)
+    try {
+      await this.db
+        .update(schema.users)
+        .set({
+          totalPortfolioValue: totalPortfolioValueStr,
+          totalYieldEarned: totalYieldEarnedStr,
+          propertiesOwned: actualPropertyCount,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.users.id, userId));
+      this.logger.log(`✅ Updated users table with fresh blockchain stats for ${user.walletAddress}`);
+    } catch (error: any) {
+      this.logger.warn(`Failed to update users table: ${error.message}`);
+    }
+    
+    // Update user level after leaderboard update (now uses fresh stats from users table)
     if (this.usersService) {
       try {
         await this.usersService.updateUserLevel(userId);
