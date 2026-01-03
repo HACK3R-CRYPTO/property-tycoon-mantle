@@ -184,10 +184,14 @@ export class LeaderboardService {
       // This ensures yield is always accurate even if database is slightly stale
       const rankingsWithVerifiedYield = await Promise.all(
         filteredRankings.map(async (r, index) => {
-          let verifiedYield = r.totalYieldEarned ? String(r.totalYieldEarned) : '0';
+          // Convert to string and check if it's 0
+          const dbYield = r.totalYieldEarned ? String(r.totalYieldEarned) : '0';
+          const dbYieldBigInt = BigInt(dbYield);
+          let verifiedYield = dbYield;
           
           // If yield is 0 in database, try to get it from YieldDistributor
-          if (r.walletAddress && verifiedYield === '0' && this.contractsService.yieldDistributor) {
+          if (r.walletAddress && dbYieldBigInt === BigInt(0) && this.contractsService.yieldDistributor) {
+            this.logger.log(`🔍 Verifying yield for ${r.walletAddress} (DB shows 0, checking YieldDistributor)...`);
             try {
               // Get user's properties
               const result = await this.contractsService.getOwnerProperties(r.walletAddress);
@@ -198,28 +202,35 @@ export class LeaderboardService {
                 tokenIds = Array.from(result as any);
               }
               
+              this.logger.log(`📦 Found ${tokenIds.length} properties for ${r.walletAddress}`);
+              
               // Sum yield from YieldDistributor
               let totalYield = BigInt(0);
               for (const tokenId of tokenIds) {
                 try {
-                  const yieldEarned = await this.contractsService.yieldDistributor.propertyTotalYieldEarned(BigInt(Number(tokenId)));
+                  const tokenIdNum = BigInt(Number(tokenId));
+                  const yieldEarned = await this.contractsService.yieldDistributor.propertyTotalYieldEarned(tokenIdNum);
                   const yieldValue = BigInt(yieldEarned.toString());
+                  this.logger.log(`💰 Property ${tokenIdNum}: yield from YieldDistributor = ${yieldValue.toString()}`);
                   if (yieldValue > BigInt(0)) {
                     totalYield += yieldValue;
                   }
                 } catch (error) {
                   // Property might not have yield yet, continue
+                  this.logger.debug(`⚠️ Failed to get yield for property ${tokenId}: ${error.message}`);
                 }
               }
               
               // If we found yield in YieldDistributor, use it
               if (totalYield > BigInt(0)) {
                 verifiedYield = totalYield.toString();
-                this.logger.log(`Verified yield for ${r.walletAddress}: ${verifiedYield} (was ${r.totalYieldEarned || '0'})`);
+                this.logger.log(`✅ Verified yield for ${r.walletAddress}: ${verifiedYield} TYCOON (was ${dbYield} from DB)`);
+              } else {
+                this.logger.log(`ℹ️ No yield found in YieldDistributor for ${r.walletAddress} (all properties have 0 yield)`);
               }
             } catch (error) {
               // If verification fails, use database value
-              this.logger.debug(`Failed to verify yield for ${r.walletAddress}: ${error.message}`);
+              this.logger.warn(`❌ Failed to verify yield for ${r.walletAddress}: ${error.message}`);
             }
           }
           
