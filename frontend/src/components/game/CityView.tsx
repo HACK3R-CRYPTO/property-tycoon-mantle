@@ -24,6 +24,7 @@ interface CityViewProps {
   properties: Property[];
   otherPlayersProperties?: OtherPlayerProperty[];
   onPropertyClick?: (property: Property) => void;
+  onOtherPropertyClick?: (property: OtherPlayerProperty) => void;
   onEmptyTileClick?: (x: number, y: number) => void;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
@@ -41,7 +42,13 @@ const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.2;
 
-// Infinite map - render tiles in viewport + buffer
+// Fixed map size - limited city grid
+const GRID_WIDTH = 100; // 100 tiles wide
+const GRID_HEIGHT = 100; // 100 tiles tall
+const MAP_WIDTH = GRID_WIDTH * TILE_SIZE; // Total map width in pixels
+const MAP_HEIGHT = GRID_HEIGHT * TILE_SIZE; // Total map height in pixels
+
+// Viewport tiles for rendering
 const VIEWPORT_TILES_X = Math.ceil(CANVAS_WIDTH / TILE_SIZE) + 10;
 const VIEWPORT_TILES_Y = Math.ceil(CANVAS_HEIGHT / TILE_SIZE) + 10;
 
@@ -78,7 +85,8 @@ const BUILDING_SEED = 12345;
 export function CityView({ 
   properties, 
   otherPlayersProperties = [], 
-  onPropertyClick, 
+  onPropertyClick,
+  onOtherPropertyClick,
   onEmptyTileClick,
   onZoomIn,
   onZoomOut,
@@ -162,7 +170,7 @@ export function CityView({
     const centerX = x * TILE_SIZE + TILE_SIZE / 2;
     const centerY = y * TILE_SIZE + TILE_SIZE / 2;
     const iconSize = isOwned ? 20 : 16;
-    const alpha = isOwned ? 1 : 0.6;
+    const alpha = 1; // Make all properties fully opaque for solid colors
     
     graphics.clear();
     
@@ -227,11 +235,22 @@ export function CityView({
         break;
     }
     
-    // Add glow effect for owned properties
+    // Add prominent glow ring for owned properties
     if (isOwned) {
+      // Outer glow ring (larger, more transparent)
       graphics
-        .circle(centerX, centerY, iconSize * 0.8)
-        .setStrokeStyle({ width: 2, color, alpha: 0.5 })
+        .circle(centerX, centerY, iconSize * 1.2)
+        .setStrokeStyle({ width: 3, color, alpha: 0.6 })
+        .stroke();
+      // Inner ring (smaller, more opaque)
+      graphics
+        .circle(centerX, centerY, iconSize * 0.9)
+        .setStrokeStyle({ width: 2, color, alpha: 0.8 })
+        .stroke();
+      // Bright center ring
+      graphics
+        .circle(centerX, centerY, iconSize * 0.7)
+        .setStrokeStyle({ width: 1.5, color, alpha: 1 })
         .stroke();
     }
   };
@@ -262,7 +281,8 @@ export function CityView({
           app.canvas.style.position = 'absolute';
           app.canvas.style.top = '0';
           app.canvas.style.left = '0';
-          app.canvas.style.zIndex = '1';
+          app.canvas.style.zIndex = '10'; // Higher than sidebar for click handling
+          app.canvas.style.pointerEvents = 'auto'; // Ensure canvas can receive pointer events
           
           canvasRef.current.appendChild(app.canvas);
           appRef.current = app;
@@ -316,15 +336,21 @@ export function CityView({
         return 'land';
       };
 
-      // Function to render visible tiles (for infinite map)
+      // Function to render visible tiles (for fixed map)
       const renderVisibleTiles = () => {
         if (!stageRef.current) return;
         
         const stage = stageRef.current;
-        const viewX = Math.floor(-stage.x / (TILE_SIZE * zoom));
-        const viewY = Math.floor(-stage.y / (TILE_SIZE * zoom));
+        // Get current zoom from stage scale (most accurate)
+        const currentZoom = Math.max(0.1, stage.scale.x); // Ensure zoom is never 0 or negative
         
-        // Clear layers
+        // Calculate visible tile range based on stage position and zoom
+        // Stage position is negative when panned (e.g., -100 means panned 100px left)
+        // We need to account for the zoom when calculating which tiles are visible
+        const viewX = Math.floor(-stage.x / (TILE_SIZE * currentZoom));
+        const viewY = Math.floor(-stage.y / (TILE_SIZE * currentZoom));
+        
+        // Clear layers (but keep properties layer - it's managed separately)
         groundLayer.removeChildren();
         buildingsLayer.removeChildren();
         gridLayer.removeChildren();
@@ -333,11 +359,16 @@ export function CityView({
         properties.forEach(p => occupiedTiles.add(`${p.x},${p.y}`));
         otherPlayersProperties.forEach(p => occupiedTiles.add(`${p.x},${p.y}`));
         
-        // Render visible tiles
-        for (let dx = -5; dx < VIEWPORT_TILES_X + 5; dx++) {
-          for (let dy = -5; dy < VIEWPORT_TILES_Y + 5; dy++) {
-            const x = viewX + dx;
-            const y = viewY + dy;
+        // Render visible tiles within fixed grid boundaries
+        // Add extra buffer to prevent white edges during panning
+        const buffer = 10; // Extra tiles to render outside viewport
+        const startX = Math.max(0, viewX - buffer);
+        const endX = Math.min(GRID_WIDTH - 1, viewX + VIEWPORT_TILES_X + buffer);
+        const startY = Math.max(0, viewY - buffer);
+        const endY = Math.min(GRID_HEIGHT - 1, viewY + VIEWPORT_TILES_Y + buffer);
+        
+        for (let x = startX; x <= endX; x++) {
+          for (let y = startY; y <= endY; y++) {
             const tileX = x * TILE_SIZE;
             const tileY = y * TILE_SIZE;
             const tileKey = `${x},${y}`;
@@ -427,21 +458,22 @@ export function CityView({
       const gridGraphics = new Graphics();
         gridGraphics.setStrokeStyle({ width: 1.5, color: GRID_LINE_COLOR, alpha: 0.9 });
         
-        const startX = viewX - 5;
-        const endX = viewX + VIEWPORT_TILES_X + 5;
-        const startY = viewY - 5;
-        const endY = viewY + VIEWPORT_TILES_Y + 5;
+        // Draw grid lines within fixed boundaries
+        const gridStartX = Math.max(0, viewX - 5);
+        const gridEndX = Math.min(GRID_WIDTH, viewX + VIEWPORT_TILES_X + 5);
+        const gridStartY = Math.max(0, viewY - 5);
+        const gridEndY = Math.min(GRID_HEIGHT, viewY + VIEWPORT_TILES_Y + 5);
         
-        for (let x = startX; x <= endX; x++) {
+        for (let x = gridStartX; x <= gridEndX; x++) {
           const px = x * TILE_SIZE;
-          gridGraphics.moveTo(px, startY * TILE_SIZE);
-          gridGraphics.lineTo(px, endY * TILE_SIZE);
+          gridGraphics.moveTo(px, gridStartY * TILE_SIZE);
+          gridGraphics.lineTo(px, gridEndY * TILE_SIZE);
         }
         
-        for (let y = startY; y <= endY; y++) {
+        for (let y = gridStartY; y <= gridEndY; y++) {
           const py = y * TILE_SIZE;
-          gridGraphics.moveTo(startX * TILE_SIZE, py);
-          gridGraphics.lineTo(endX * TILE_SIZE, py);
+          gridGraphics.moveTo(gridStartX * TILE_SIZE, py);
+          gridGraphics.lineTo(gridEndX * TILE_SIZE, py);
       }
       
       gridGraphics.stroke();
@@ -458,31 +490,111 @@ export function CityView({
       let isPanning = false;
       let panStartX = 0;
       let panStartY = 0;
+      let hasMoved = false; // Track if mouse moved during drag
+      let panStartStageX = 0;
+      let panStartStageY = 0;
+      let renderTimeout: number | null = null; // For debouncing renders during panning
+      let lastRenderTime = 0;
+      const RENDER_THROTTLE_MS = 100; // Only render every 100ms during panning
       
       app.stage.on('pointerdown', (e) => {
         if (e.button === 0) {
           isPanning = true;
-          panStartX = e.global.x - stage.x;
-          panStartY = e.global.y - stage.y;
+          hasMoved = false;
+          // Store the starting mouse position and stage position
+          panStartX = e.global.x;
+          panStartY = e.global.y;
+          panStartStageX = stage.x;
+          panStartStageY = stage.y;
         }
       });
       
       app.stage.on('pointermove', (e) => {
         if (isPanning) {
-          stage.x = e.global.x - panStartX;
-          stage.y = e.global.y - panStartY;
+          // Calculate how much the mouse moved
+          const deltaX = e.global.x - panStartX;
+          const deltaY = e.global.y - panStartY;
+          
+          // Check if mouse has moved significantly (to distinguish drag from click)
+          if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+            hasMoved = true;
+          }
+          
+          // Calculate new stage position based on mouse movement
+          let newX = panStartStageX + deltaX;
+          let newY = panStartStageY + deltaY;
+          
+          // Get current zoom from stage scale (most accurate)
+          const currentZoom = stage.scale.x;
+          
+          // Get actual container dimensions
+          const containerWidth = canvasRef.current?.clientWidth || CANVAS_WIDTH;
+          const containerHeight = canvasRef.current?.clientHeight || CANVAS_HEIGHT;
+          
+          // Calculate map dimensions at current zoom
+          const scaledMapWidth = MAP_WIDTH * currentZoom;
+          const scaledMapHeight = MAP_HEIGHT * currentZoom;
+          
+          // Only constrain if map is larger than viewport
+          if (scaledMapWidth > containerWidth) {
+            const maxX = 0; // Can't pan right past left edge
+            const minX = -(scaledMapWidth - containerWidth); // Can't pan left past right edge
+            newX = Math.max(minX, Math.min(maxX, newX));
+          }
+          // If map is smaller, allow free panning (no constraint)
+          
+          if (scaledMapHeight > containerHeight) {
+            const maxY = 0; // Can't pan down past top edge
+            const minY = -(scaledMapHeight - containerHeight); // Can't pan up past bottom edge
+            newY = Math.max(minY, Math.min(maxY, newY));
+          }
+          // If map is smaller, allow free panning (no constraint)
+          
+          // Update stage position immediately for smooth panning (no rendering needed)
+          // The stage position change will move the existing graphics smoothly
+          stage.x = newX;
+          stage.y = newY;
           setPanX(stage.x);
           setPanY(stage.y);
-          renderVisibleTiles(); // Re-render on pan
+          
+          // Don't render tiles during active panning - just move the stage
+          // This prevents white screens and performance issues
+          // We'll render when panning stops
         }
       });
       
       app.stage.on('pointerup', () => {
         isPanning = false;
+        hasMoved = false;
+        // Render tiles when panning stops to update visible area
+        if (renderTimeout) {
+          cancelAnimationFrame(renderTimeout);
+        }
+        renderTimeout = requestAnimationFrame(() => {
+          try {
+            renderVisibleTiles();
+            lastRenderTime = Date.now();
+          } catch (error) {
+            console.error('Error rendering tiles after pan:', error);
+          }
+        });
       });
       
       app.stage.on('pointerupoutside', () => {
         isPanning = false;
+        hasMoved = false;
+        // Render tiles when panning stops to update visible area
+        if (renderTimeout) {
+          cancelAnimationFrame(renderTimeout);
+        }
+        renderTimeout = requestAnimationFrame(() => {
+          try {
+            renderVisibleTiles();
+            lastRenderTime = Date.now();
+          } catch (error) {
+            console.error('Error rendering tiles after pan:', error);
+          }
+        });
       });
 
       setSpritesLoaded(true);
@@ -500,12 +612,22 @@ export function CityView({
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (stageRef.current) {
-        setZoom((currentZoom) => {
-          const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-          const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom + delta));
-          stageRef.current?.scale.set(newZoom);
-          return newZoom;
-        });
+        const currentZoom = stageRef.current.scale.x;
+        const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom + delta));
+        
+        // Update zoom
+        stageRef.current.scale.set(newZoom);
+        
+        // Use external handlers if provided
+        if (delta > 0 && onZoomIn) {
+          onZoomIn();
+        } else if (delta < 0 && onZoomOut) {
+          onZoomOut();
+        } else {
+          // Update internal zoom if no external handlers
+          setInternalZoom(newZoom);
+        }
       }
     };
     
@@ -563,6 +685,10 @@ export function CityView({
       
       const otherProperty = otherPlayersProperties.find(p => p.x === x && p.y === y);
       if (otherProperty) {
+        // Show other player's property details
+        if (onOtherPropertyClick) {
+          onOtherPropertyClick(otherProperty);
+        }
         return;
       }
       
@@ -579,9 +705,12 @@ export function CityView({
     const propertiesLayer = propertiesLayerRef.current;
     propertiesLayer.removeChildren();
     
-    // Render other players' properties
+    // Render other players' properties (show all, not just owned by current user)
     otherPlayersProperties.forEach((property) => {
-      if (property.isOwned) return;
+      // Skip if coordinates are invalid or outside grid
+      if (property.x < 0 || property.x >= GRID_WIDTH || property.y < 0 || property.y >= GRID_HEIGHT) {
+        return;
+      }
       
       const propertyGraphics = new Graphics();
       const color = PROPERTY_ICON_COLORS[property.propertyType];
@@ -590,15 +719,42 @@ export function CityView({
       const propertyContainer = new Container();
       propertyContainer.addChild(propertyGraphics);
       propertyContainer.visible = true;
-      propertyContainer.alpha = 0.7;
+      propertyContainer.alpha = 1; // Fully opaque for solid colors
       propertyContainer.eventMode = 'static';
-      propertyContainer.cursor = 'default';
+      propertyContainer.cursor = 'pointer'; // Show pointer cursor to indicate clickable
+      
+      // Make other players' properties clickable to show details
+      propertyContainer.hitArea = {
+        contains: (x: number, y: number) => {
+          const tileX = property.x * TILE_SIZE;
+          const tileY = property.y * TILE_SIZE;
+          return x >= tileX && x <= tileX + TILE_SIZE && 
+                 y >= tileY && y <= tileY + TILE_SIZE;
+        }
+      };
+      
+      propertyContainer.on('pointerdown', (e) => {
+        e.stopPropagation();
+        console.log('📍 Other property clicked:', property);
+        // Call handler to show other player's property details
+        if (onOtherPropertyClick) {
+          console.log('✅ Calling onOtherPropertyClick handler');
+          onOtherPropertyClick(property);
+        } else {
+          console.warn('⚠️ onOtherPropertyClick handler not provided');
+        }
+      });
 
       propertiesLayer.addChild(propertyContainer);
     });
 
     // Render your properties with bright icons
     properties.forEach((property) => {
+      // Skip if coordinates are invalid or outside grid
+      if (property.x < 0 || property.x >= GRID_WIDTH || property.y < 0 || property.y >= GRID_HEIGHT) {
+        return;
+      }
+      
       const propertyGraphics = new Graphics();
       const color = PROPERTY_ICON_COLORS[property.propertyType];
       drawPropertyIcon(propertyGraphics, property.x, property.y, property.propertyType, color, true);
@@ -631,7 +787,7 @@ export function CityView({
         appRef.current.renderer.render(appRef.current.stage);
       }
       
-    console.log(`✅ CityView: Rendered ${properties.length} properties with icons`);
+    console.log(`✅ CityView: Rendered ${properties.length} own properties and ${otherPlayersProperties.length} other players' properties`);
       }, [properties, otherPlayersProperties, spritesLoaded, onPropertyClick]);
 
   // Zoom functions - use external handlers if provided
@@ -639,7 +795,8 @@ export function CityView({
     if (onZoomIn) {
       onZoomIn();
     } else if (appRef.current && stageRef.current) {
-      const newZoom = Math.min(zoom + ZOOM_STEP, MAX_ZOOM);
+      const currentZoom = stageRef.current.scale.x;
+      const newZoom = Math.min(currentZoom + ZOOM_STEP, MAX_ZOOM);
       stageRef.current.scale.set(newZoom);
       setInternalZoom(newZoom);
     }
@@ -649,7 +806,8 @@ export function CityView({
     if (onZoomOut) {
       onZoomOut();
     } else if (appRef.current && stageRef.current) {
-      const newZoom = Math.max(zoom - ZOOM_STEP, MIN_ZOOM);
+      const currentZoom = stageRef.current.scale.x;
+      const newZoom = Math.max(currentZoom - ZOOM_STEP, MIN_ZOOM);
       stageRef.current.scale.set(newZoom);
       setInternalZoom(newZoom);
     }
@@ -667,12 +825,27 @@ export function CityView({
       const containerWidth = canvasRef.current?.clientWidth || CANVAS_WIDTH;
       const containerHeight = canvasRef.current?.clientHeight || CANVAS_HEIGHT;
       
-      // Center the view on the average property position
-      const targetX = avgX * TILE_SIZE * zoom;
-      const targetY = avgY * TILE_SIZE * zoom;
+      // Get current zoom from stage scale
+      const currentZoom = stageRef.current.scale.x;
       
-      stageRef.current.x = containerWidth / 2 - targetX;
-      stageRef.current.y = containerHeight / 2 - targetY;
+      // Center the view on the average property position
+      const targetX = avgX * TILE_SIZE * currentZoom;
+      const targetY = avgY * TILE_SIZE * currentZoom;
+      
+      let newX = containerWidth / 2 - targetX;
+      let newY = containerHeight / 2 - targetY;
+      
+      // Constrain to map boundaries
+      const maxX = 0;
+      const minX = -(MAP_WIDTH * currentZoom - containerWidth);
+      const maxY = 0;
+      const minY = -(MAP_HEIGHT * currentZoom - containerHeight);
+      
+      newX = Math.max(minX, Math.min(maxX, newX));
+      newY = Math.max(minY, Math.min(maxY, newY));
+      
+      stageRef.current.x = newX;
+      stageRef.current.y = newY;
       setPanX(stageRef.current.x);
       setPanY(stageRef.current.y);
     }
@@ -695,11 +868,32 @@ export function CityView({
   }, [externalZoom, internalZoom]);
 
   useEffect(() => {
-    if (stageRef.current) {
-      stageRef.current.x = panX;
-      stageRef.current.y = panY;
+    if (stageRef.current && canvasRef.current) {
+      const containerWidth = canvasRef.current.clientWidth || CANVAS_WIDTH;
+      const containerHeight = canvasRef.current.clientHeight || CANVAS_HEIGHT;
+      
+      // Get current zoom from stage scale
+      const currentZoom = stageRef.current.scale.x;
+      
+      // Constrain panning to map boundaries
+      const maxX = 0;
+      const minX = -(MAP_WIDTH * currentZoom - containerWidth);
+      const maxY = 0;
+      const minY = -(MAP_HEIGHT * currentZoom - containerHeight);
+      
+      const constrainedX = Math.max(minX, Math.min(maxX, panX));
+      const constrainedY = Math.max(minY, Math.min(maxY, panY));
+      
+      stageRef.current.x = constrainedX;
+      stageRef.current.y = constrainedY;
+      
+      // Update state if constrained
+      if (constrainedX !== panX || constrainedY !== panY) {
+        setPanX(constrainedX);
+        setPanY(constrainedY);
+      }
     }
-  }, [panX, panY]);
+  }, [panX, panY, zoom, externalZoom, internalZoom]);
 
   // Center on specific coordinate when requested
   useEffect(() => {
@@ -707,17 +901,31 @@ export function CityView({
       const containerWidth = canvasRef.current.clientWidth || CANVAS_WIDTH;
       const containerHeight = canvasRef.current.clientHeight || CANVAS_HEIGHT;
       
-      // Calculate target position
-      const targetX = centerOnCoordinate.x * TILE_SIZE * zoom;
-      const targetY = centerOnCoordinate.y * TILE_SIZE * zoom;
+      // Get current zoom from stage scale
+      const currentZoom = stageRef.current.scale.x;
       
-      // Center the view on the coordinate
-      stageRef.current.x = containerWidth / 2 - targetX;
-      stageRef.current.y = containerHeight / 2 - targetY;
+      // Calculate target position
+      const targetX = centerOnCoordinate.x * TILE_SIZE * currentZoom;
+      const targetY = centerOnCoordinate.y * TILE_SIZE * currentZoom;
+      
+      let newX = containerWidth / 2 - targetX;
+      let newY = containerHeight / 2 - targetY;
+      
+      // Constrain to map boundaries
+      const maxX = 0;
+      const minX = -(MAP_WIDTH * currentZoom - containerWidth);
+      const maxY = 0;
+      const minY = -(MAP_HEIGHT * currentZoom - containerHeight);
+      
+      newX = Math.max(minX, Math.min(maxX, newX));
+      newY = Math.max(minY, Math.min(maxY, newY));
+      
+      stageRef.current.x = newX;
+      stageRef.current.y = newY;
       setPanX(stageRef.current.x);
       setPanY(stageRef.current.y);
     }
-  }, [centerOnCoordinate, zoom]);
+  }, [centerOnCoordinate, zoom, externalZoom, internalZoom]);
 
   // Update current location display based on viewport center
   useEffect(() => {
