@@ -43,6 +43,7 @@ async function migrateLevelColumns() {
     `);
 
     console.log('✅ Migration completed successfully!');
+    console.log('💡 Next: Run "npm run update:existing-levels:prod" to update existing users\' levels');
   } catch (error: any) {
     // If columns already exist or table doesn't exist, that's okay
     if (error.message?.includes('already exists') || error.message?.includes('does not exist')) {
