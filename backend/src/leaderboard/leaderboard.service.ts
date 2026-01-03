@@ -1,17 +1,19 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { DATABASE_CONNECTION } from '../database/database.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import * as schema from '../database/schema';
 import { desc, sql, eq, and } from 'drizzle-orm';
+import * as schema from '../database/schema';
 import { ContractsService } from '../contracts/contracts.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class LeaderboardService {
-  private readonly logger = new Logger(LeaderboardService.name);
+  private readonly logger = new Logger(LeaderboardService.name)
 
   constructor(
     @Inject(DATABASE_CONNECTION) private db: PostgresJsDatabase<typeof schema>,
     private contractsService: ContractsService,
+    @Inject(forwardRef(() => UsersService)) private usersService?: UsersService,
   ) {}
 
   async syncAllUsersFromChain() {
@@ -799,6 +801,15 @@ export class LeaderboardService {
 
     const portfolioValueStr = (Number(totalPortfolioValue) / 1e18).toFixed(2);
     this.logger.log(`Updated leaderboard for user ${userId}: ${actualPropertyCount} properties, ${portfolioValueStr} TYCOON portfolio`);
+    
+    // Update user level after leaderboard update
+    if (this.usersService) {
+      try {
+        await this.usersService.updateUserLevel(userId);
+      } catch (error: any) {
+        this.logger.warn(`Failed to update user level: ${error.message}`);
+      }
+    }
   }
 
   private async syncUserPropertiesFromChain(walletAddress: string) {
