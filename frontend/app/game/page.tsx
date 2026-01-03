@@ -18,7 +18,7 @@ import { Guilds } from '@/components/Guilds';
 import { Marketplace } from '@/components/Marketplace';
 import { Quests } from '@/components/Quests';
 import { TokenPurchase } from '@/components/TokenPurchase';
-import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target, Coins, User, Shield, CheckCircle2, BarChart3, Diamond, ShoppingCart, X, SlidersHorizontal, BarChart, History, MapPin } from 'lucide-react';
+import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target, Coins, User, Shield, CheckCircle2, BarChart3, Diamond, ShoppingCart, X, SlidersHorizontal, BarChart, History, MapPin, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -70,6 +70,10 @@ export default function GamePage() {
   const [propertyToSell, setPropertyToSell] = useState<Property | null>(null);
   const [showRWALink, setShowRWALink] = useState(false);
   const [showPropertiesSidebar, setShowPropertiesSidebar] = useState(true);
+  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
+  const [otherPropertyOwner, setOtherPropertyOwner] = useState<{ owner: string; propertyType: string; tokenId: number } | null>(null);
+  const [ownerProfile, setOwnerProfile] = useState<{ username: string | null; avatar: string } | null>(null);
+  const [ownerStats, setOwnerStats] = useState<{ totalYield: bigint; totalValue: bigint; propertiesCount: number } | null>(null);
   const [mapZoom, setMapZoom] = useState(1);
   const [centerOnCoordinate, setCenterOnCoordinate] = useState<{ x: number; y: number } | null>(null);
   const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0)); // Real-time estimated yield
@@ -1409,9 +1413,9 @@ export default function GamePage() {
              console.log(`Auto-placed property ${latestTokenId} at (${x}, ${y}) for ${address}`);
              
              // Save coordinates to backend (non-blocking)
-             api.put(`/properties/${latestTokenId}/coordinates`, { x, y }).catch(() => {
+            api.put(`/properties/${latestTokenId}/coordinates`, { x, y }).catch(() => {
                // Backend unavailable - that's okay, coordinates will be generated on next sync
-             });
+            });
           }
         } catch (error) {
           console.error('Failed to assign coordinates:', error);
@@ -1488,7 +1492,7 @@ export default function GamePage() {
       console.log('ℹ️ Coordinate regeneration already attempted this session');
     }
   }, []); // Empty deps - only run once on mount
-
+  
   // Load properties on mount and when address changes
   useEffect(() => {
     if (address && isConnected) {
@@ -1978,7 +1982,7 @@ export default function GamePage() {
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden">
       {/* Full Screen City View */}
-      <div className="absolute inset-0 w-full h-full">
+      <div className="absolute inset-0 w-full h-full" style={{ zIndex: 1 }}>
         <CityView
           properties={(() => {
             const filtered = properties
@@ -2013,6 +2017,97 @@ export default function GamePage() {
               setSelectedProperty(fullProperty);
             }
           }}
+          onOtherPropertyClick={async (property) => {
+            // Show owner name for other players' properties
+            console.log('🔍 Clicked other player property:', property);
+            setOtherPropertyOwner({
+              owner: property.owner,
+              propertyType: property.propertyType,
+              tokenId: property.tokenId,
+            });
+            
+            // Fetch owner's profile (username and avatar)
+            try {
+              const profile = await api.get(`/users/profile/${property.owner}`);
+              if (profile) {
+                setOwnerProfile({
+                  username: profile.username || null,
+                  avatar: profile.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${property.owner}`,
+                });
+              } else {
+                setOwnerProfile({
+                  username: null,
+                  avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${property.owner}`,
+                });
+              }
+            } catch (error) {
+              console.warn('Failed to load owner profile:', error);
+              setOwnerProfile({
+                username: null,
+                avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${property.owner}`,
+              });
+            }
+            
+            // Fetch owner's portfolio stats (total yield, total value, property count)
+            try {
+              const data = await api.get(`/properties/owner/${property.owner}`);
+              if (data && data.length > 0) {
+                const backendProperties = Array.isArray(data) ? data : (data.properties || []);
+                
+                // Calculate total yield from YieldDistributor for each property
+                const formattedProps = await Promise.all(
+                  backendProperties.map(async (p: any) => {
+                    const propertyNFTYield = BigInt(p.totalYieldEarned?.toString() || '0');
+                    let totalYieldEarned = propertyNFTYield;
+                    
+                    // Try to get yield from YieldDistributor (more accurate after claims)
+                    try {
+                      const yieldEarned = await readContract(config, {
+                        address: CONTRACTS.YieldDistributor,
+                        abi: YIELD_DISTRIBUTOR_ABI,
+                        functionName: 'propertyTotalYieldEarned',
+                        args: [BigInt(p.tokenId)],
+                      }) as bigint;
+                      // Use YieldDistributor value if > 0, otherwise use PropertyNFT value
+                      totalYieldEarned = yieldEarned > BigInt(0) ? yieldEarned : propertyNFTYield;
+                    } catch (error) {
+                      // Fallback to PropertyNFT value if YieldDistributor call fails
+                      totalYieldEarned = propertyNFTYield;
+                    }
+                    
+                    return {
+                      value: BigInt(p.value?.toString() || '0'),
+                      totalYieldEarned: totalYieldEarned,
+                    };
+                  })
+                );
+                
+                const totalVal = formattedProps.reduce((sum: bigint, p: { value: bigint; totalYieldEarned: bigint }) => sum + p.value, BigInt(0));
+                const totalYld = formattedProps.reduce((sum: bigint, p: { value: bigint; totalYieldEarned: bigint }) => sum + p.totalYieldEarned, BigInt(0));
+                
+                setOwnerStats({
+                  totalYield: totalYld,
+                  totalValue: totalVal,
+                  propertiesCount: formattedProps.length,
+                });
+              } else {
+                setOwnerStats({
+                  totalYield: BigInt(0),
+                  totalValue: BigInt(0),
+                  propertiesCount: 0,
+                });
+              }
+            } catch (error) {
+              console.warn('Failed to load owner stats:', error);
+              setOwnerStats({
+                totalYield: BigInt(0),
+                totalValue: BigInt(0),
+                propertiesCount: 0,
+              });
+            }
+            
+            console.log('✅ Set otherPropertyOwner state');
+          }}
           zoom={mapZoom}
           onZoomIn={() => setMapZoom(prev => Math.min(prev + 0.2, 3))}
           onZoomOut={() => setMapZoom(prev => Math.max(prev - 0.2, 0.3))}
@@ -2037,8 +2132,24 @@ export default function GamePage() {
       </div>
 
       {/* Left Sidebar - Overlay on top */}
-      <div className="absolute left-4 top-4 bottom-4 w-80 z-50 overflow-y-auto">
-        <div className="space-y-3">
+      {showLeftSidebar && (
+        <div className="absolute left-4 top-4 bottom-4 w-80 z-50 overflow-y-auto pointer-events-none">
+          <div className="pointer-events-auto h-full overflow-y-auto bg-gray-800/50 backdrop-blur-md rounded-lg border border-white/10 p-4">
+            {/* Header with Close Button */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-bold text-lg">MENU</h2>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-gray-400 hover:text-white"
+                title="Close Sidebar"
+                onClick={() => setShowLeftSidebar(false)}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            
+            <div className="space-y-3">
             {/* Player Profile Card */}
             <div className="bg-gray-800/50 backdrop-blur-md rounded-lg border border-white/10 p-4">
               <div className="flex items-center gap-3 mb-4">
@@ -2234,7 +2345,21 @@ export default function GamePage() {
             </div>
 
         </div>
-      </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Show Left Sidebar Button (when hidden) */}
+      {!showLeftSidebar && (
+            <Button
+          onClick={() => setShowLeftSidebar(true)}
+          className="absolute left-4 top-4 z-50 bg-gray-800/90 hover:bg-gray-700/90 text-white border border-white/10"
+          title="Show Menu"
+        >
+          <Menu className="w-4 h-4 mr-2" />
+          Menu
+        </Button>
+      )}
 
       {/* Right Sidebar - Your Properties */}
       {showPropertiesSidebar && (
@@ -2507,6 +2632,96 @@ export default function GamePage() {
             <p className="text-gray-400">Loading your portfolio...</p>
           </div>
         </div>
+      )}
+
+      {/* Other Property Owner Modal */}
+      {otherPropertyOwner && (
+        <>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => {
+            setOtherPropertyOwner(null);
+            setOwnerProfile(null);
+            setOwnerStats(null);
+          }} />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-900/95 backdrop-blur-xl rounded-lg border border-white/20 w-full max-w-md p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-white font-bold text-lg">Property Owner</h2>
+                <Button variant="ghost" size="icon" onClick={() => {
+                  setOtherPropertyOwner(null);
+                  setOwnerProfile(null);
+                  setOwnerStats(null);
+                }}>
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+              
+              {/* Owner Profile Section */}
+              {ownerProfile && (
+                <div className="flex items-center gap-4 mb-6 pb-6 border-b border-white/10">
+                  <Avatar className="w-16 h-16 border-2 border-emerald-500/50">
+                    <AvatarImage src={ownerProfile.avatar} alt={ownerProfile.username || otherPropertyOwner.owner} />
+                    <AvatarFallback className="bg-gradient-to-br from-purple-500 to-blue-500 text-white font-semibold">
+                      {ownerProfile.username?.[0]?.toUpperCase() || otherPropertyOwner.owner.slice(2, 4).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-white font-semibold text-lg truncate">
+                      {ownerProfile.username || 'Anonymous'}
+                    </h3>
+                    <p className="text-gray-400 text-xs font-mono truncate">
+                      {otherPropertyOwner.owner.slice(0, 6)}...{otherPropertyOwner.owner.slice(-4)}
+                    </p>
+                  </div>
+                </div>
+              )}
+              
+              <div className="space-y-4">
+                <div>
+                  <p className="text-gray-400 text-sm mb-1">Property Type</p>
+                  <p className="text-white font-semibold">{otherPropertyOwner.propertyType}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400 text-sm mb-1">Token ID</p>
+                  <p className="text-white font-semibold">#{otherPropertyOwner.tokenId}</p>
+                </div>
+                
+                {/* Owner Stats */}
+                {ownerStats && (
+                  <div className="pt-4 border-t border-white/10 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-gray-400 text-sm">Total Properties</p>
+                      <p className="text-white font-semibold">{ownerStats.propertiesCount}</p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-gray-400 text-sm">Total Portfolio Value</p>
+                      <p className="text-white font-semibold">
+                        {((Number(ownerStats.totalValue) / 1e18) * (tycoonPriceUSD || 0)).toLocaleString('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-gray-400 text-sm">Total Yield Earned</p>
+                      <p className="text-emerald-400 font-semibold">
+                        {(Number(ownerStats.totalYield) / 1e18).toFixed(2)} TYC
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {!ownerProfile && (
+                  <div>
+                    <p className="text-gray-400 text-sm mb-1">Owner Address</p>
+                    <p className="text-white font-mono text-sm break-all">{otherPropertyOwner.owner}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Property Details Modal */}
