@@ -373,4 +373,3 @@ export function VisitPortfolio({ address, username, onClose }: VisitPortfolioPro
   )
 }
 
-

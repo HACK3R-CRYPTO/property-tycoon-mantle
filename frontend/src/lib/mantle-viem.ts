@@ -1,4 +1,5 @@
 import { createConfig, http, fallback } from 'wagmi';
+import { createPublicClient } from 'viem';
 import { mantle, mantleSepoliaTestnet } from '@mantleio/viem/chains';
 import { walletConnect } from 'wagmi/connectors';
 
@@ -75,5 +76,19 @@ export function getChainConfig() {
       },
     },
   };
+}
+
+// Create a direct public client using Mantle RPC (bypasses WalletConnect)
+// This ensures we always use Mantle RPC directly, not WalletConnect RPC
+export function getMantlePublicClient() {
+  const rpcUrls = getRpcUrls(chain.id);
+  return createPublicClient({
+    chain: chain,
+    transport: fallback(
+      rpcUrls.map(url => http(url, { 
+        timeout: 10000, // 10 second timeout per request
+      }))
+    ),
+  });
 }
 

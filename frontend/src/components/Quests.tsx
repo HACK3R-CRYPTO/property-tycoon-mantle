@@ -284,6 +284,3 @@ export function Quests() {
     </div>
   )
 }
-
-
-

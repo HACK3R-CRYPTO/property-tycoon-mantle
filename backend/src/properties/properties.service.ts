@@ -2,7 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { DATABASE_CONNECTION } from '../database/database.module';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../database/schema';
-import { eq, and, or, isNull } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { ContractsService } from '../contracts/contracts.service';
 
 @Injectable()
@@ -439,35 +439,32 @@ export class PropertiesService {
             }
             // Don't include if null/undefined - Drizzle will use NULL
 
-            // Generate coordinates if property doesn't have them
-            if (!existing || existing.x === null || existing.y === null) {
-              // Get all existing properties to check for collisions
-              const allProperties = await this.db
-                .select({
-                  tokenId: schema.properties.tokenId,
-                  x: schema.properties.x,
-                  y: schema.properties.y,
-                })
-                .from(schema.properties);
-              
-              const occupiedCoords = new Set<string>();
-              allProperties.forEach(p => {
-                if (p.x !== null && p.y !== null && p.tokenId !== tokenIdNum) {
-                  occupiedCoords.add(`${p.x},${p.y}`);
-                }
-              });
-              
-              const { x, y } = this.findAvailableCoordinate(normalizedAddress, tokenIdNum, occupiedCoords);
-              propertyDataObj.x = x;
-              propertyDataObj.y = y;
-              this.logger.log(`Generated coordinates for property ${tokenIdNum}: (${x}, ${y})`);
-            } else {
-              // Keep existing coordinates
-              propertyDataObj.x = existing.x;
-              propertyDataObj.y = existing.y;
+            // Get all existing coordinates to avoid collisions
+            const allExistingProperties = await this.db
+              .select({
+                x: schema.properties.x,
+                y: schema.properties.y,
+              })
+              .from(schema.properties)
+              .where(sql`${schema.properties.x} IS NOT NULL AND ${schema.properties.y} IS NOT NULL`);
+            
+            const occupiedCoordinates = new Set<string>();
+            for (const prop of allExistingProperties) {
+              if (prop.x !== null && prop.y !== null) {
+                occupiedCoordinates.add(`${prop.x},${prop.y}`);
+              }
             }
 
             if (existing) {
+              // If coordinates are missing, generate and update
+              if ((existing.x === null || existing.x === undefined) || (existing.y === null || existing.y === undefined)) {
+                const { x, y } = this.findAvailableCoordinate(normalizedAddress, tokenIdNum, occupiedCoordinates);
+                propertyDataObj.x = x;
+                propertyDataObj.y = y;
+                occupiedCoordinates.add(`${x},${y}`);
+                this.logger.log(`Generated coordinates for existing property ${tokenIdNum}: (${x},${y})`);
+              }
+              
               // Update existing property (preserve createdAt if it's already correct, or update if it was wrong)
               // Only update createdAt if it's significantly different from contract (more than 1 hour difference)
               const existingCreatedAt = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
@@ -492,13 +489,19 @@ export class PropertiesService {
                   .where(eq(schema.properties.tokenId, tokenIdNum));
               }
             } else {
+              // Generate coordinates for new property
+              const { x, y } = this.findAvailableCoordinate(normalizedAddress, tokenIdNum, occupiedCoordinates);
+              
               // Insert new property with contract's createdAt (source of truth)
               await this.db.insert(schema.properties).values({
                 ...propertyDataObj,
                 tokenId: tokenIdNum,
                 createdAt: contractCreatedAt, // Use contract's createdAt, not current time
+                x,
+                y,
               });
-              this.logger.log(`Inserted property ${tokenIdNum} with contract createdAt: ${contractCreatedAt.toISOString()}`);
+              occupiedCoordinates.add(`${x},${y}`);
+              this.logger.log(`Inserted property ${tokenIdNum} with contract createdAt: ${contractCreatedAt.toISOString()} and coordinates: (${x},${y})`);
             }
             
             this.logger.log(`✓ Upserted property ${tokenIdNum} for ${normalizedAddress}`);
@@ -553,151 +556,6 @@ export class PropertiesService {
       .where(eq(schema.properties.tokenId, tokenId))
       .returning();
     return updated;
-  }
-
-  /**
-   * Generate unique coordinates based on wallet address and tokenId
-   * Uses the same hash algorithm as frontend to ensure consistency
-   */
-  private generateCoordinates(walletAddress: string, tokenId: number): { x: number; y: number } {
-    // Create a hash from wallet address and tokenId (same as frontend)
-    let hash = 0;
-    const combined = `${walletAddress.toLowerCase()}-${tokenId}`;
-    for (let i = 0; i < combined.length; i++) {
-      const char = combined.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    
-    // Use hash to generate coordinates in a grid (same as frontend)
-    const gridSize = 100;
-    const x = Math.abs(hash) % gridSize;
-    const y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
-    
-    return { x, y };
-  }
-
-  /**
-   * Find next available coordinate if the generated one is occupied
-   */
-  private findAvailableCoordinate(
-    walletAddress: string,
-    tokenId: number,
-    occupiedCoords: Set<string>,
-  ): { x: number; y: number } {
-    const gridSize = 100;
-    const { x: initialX, y: initialY } = this.generateCoordinates(walletAddress, tokenId);
-    
-    let x = initialX;
-    let y = initialY;
-    
-    // Check if coordinate is occupied, if so find next available space
-    let attempts = 0;
-    const maxAttempts = gridSize * gridSize; // Try entire grid
-    
-    while (occupiedCoords.has(`${x},${y}`) && attempts < maxAttempts) {
-      // Try next position in a spiral pattern
-      const step = Math.floor(attempts / 4) + 1;
-      const direction = attempts % 4;
-      switch (direction) {
-        case 0: x = (x + step) % gridSize; break; // Right
-        case 1: y = (y + step) % gridSize; break; // Down
-        case 2: x = (x - step + gridSize) % gridSize; break; // Left
-        case 3: y = (y - step + gridSize) % gridSize; break; // Up
-      }
-      attempts++;
-    }
-    
-    if (attempts >= maxAttempts) {
-      // Fallback: use a simple sequential search
-      for (let tryY = 0; tryY < gridSize; tryY++) {
-        for (let tryX = 0; tryX < gridSize; tryX++) {
-          if (!occupiedCoords.has(`${tryX},${tryY}`)) {
-            return { x: tryX, y: tryY };
-          }
-        }
-      }
-      // Last resort: use hash coordinates even if occupied
-      this.logger.warn(`Could not find available coordinate for property ${tokenId}, using hash coordinates`);
-    }
-    
-    return { x, y };
-  }
-
-  /**
-   * Regenerate coordinates for all properties that don't have coordinates
-   * or regenerate all coordinates to use the new hash-based system
-   */
-  async regenerateCoordinates(regenerateAll: boolean = false) {
-    this.logger.log(`🔄 Starting coordinate regeneration (regenerateAll: ${regenerateAll})...`);
-    
-    // Get all properties with their owners
-    const allProperties = await this.db
-      .select({
-        tokenId: schema.properties.tokenId,
-        ownerId: schema.properties.ownerId,
-        x: schema.properties.x,
-        y: schema.properties.y,
-        walletAddress: schema.users.walletAddress,
-      })
-      .from(schema.properties)
-      .leftJoin(schema.users, eq(schema.properties.ownerId, schema.users.id))
-      .where(regenerateAll ? undefined : 
-        or(
-          isNull(schema.properties.x),
-          isNull(schema.properties.y),
-        )
-      );
-    
-    this.logger.log(`Found ${allProperties.length} properties to process`);
-    
-    // Build set of occupied coordinates
-    const occupiedCoords = new Set<string>();
-    const updates: Array<{ tokenId: number; x: number; y: number }> = [];
-    
-    // Process properties in order, checking for collisions
-    for (const prop of allProperties) {
-      if (!prop.walletAddress) {
-        this.logger.warn(`Property ${prop.tokenId} has no owner, skipping`);
-        continue;
-      }
-      
-      // Generate coordinates with collision detection
-      const { x, y } = this.findAvailableCoordinate(
-        prop.walletAddress,
-        Number(prop.tokenId),
-        occupiedCoords,
-      );
-      
-      // Mark as occupied
-      occupiedCoords.add(`${x},${y}`);
-      
-      // Only update if coordinates changed or property has no coordinates
-      if (regenerateAll || prop.x === null || prop.y === null || prop.x !== x || prop.y !== y) {
-        updates.push({ tokenId: Number(prop.tokenId), x, y });
-      }
-    }
-    
-    this.logger.log(`Updating ${updates.length} properties with new coordinates...`);
-    
-    // Update coordinates in batches
-    let updated = 0;
-    for (const update of updates) {
-      try {
-        await this.updateCoordinates(update.tokenId, update.x, update.y);
-        updated++;
-      } catch (error) {
-        this.logger.error(`Failed to update coordinates for property ${update.tokenId}: ${error.message}`);
-      }
-    }
-    
-    this.logger.log(`✅ Coordinate regeneration complete: ${updated} properties updated`);
-    
-    return {
-      total: allProperties.length,
-      updated,
-      skipped: allProperties.length - updated,
-    };
   }
 
   private mapPropertyType(type: number): string {
@@ -797,6 +655,142 @@ export class PropertiesService {
       this.logger.error(`Failed to sync all existing properties: ${error.message}`, error.stack);
       throw error;
     }
+  }
+
+  // Helper to generate a hash from a string
+  private stringToHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return hash;
+  }
+
+  // Generate unique coordinates based on wallet address and tokenId
+  private generateCoordinates(walletAddress: string, tokenId: number): { x: number; y: number } {
+    const gridSize = 100; // Larger grid to reduce initial collisions
+    let hash = this.stringToHash(`${walletAddress}-${tokenId}`);
+    let x = Math.abs(hash) % gridSize;
+    let y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
+
+    return { x, y };
+  }
+
+  // Find the next available coordinate using a spiral search
+  private findAvailableCoordinate(
+    walletAddress: string,
+    tokenId: number,
+    occupiedCoords: Set<string>,
+  ): { x: number; y: number } {
+    const gridSize = 100;
+    const { x: initialX, y: initialY } = this.generateCoordinates(walletAddress, tokenId);
+    
+    let x = initialX;
+    let y = initialY;
+    let attempts = 0;
+    const maxAttempts = gridSize * gridSize; // Try entire grid
+
+    // Spiral search for an empty spot
+    while (occupiedCoords.has(`${x},${y}`) && attempts < maxAttempts) {
+      const step = Math.floor(attempts / 4) + 1;
+      const direction = attempts % 4;
+      switch (direction) {
+        case 0: x = (x + step) % gridSize; break; // Right
+        case 1: y = (y + step) % gridSize; break; // Down
+        case 2: x = (x - step + gridSize) % gridSize; break; // Left
+        case 3: y = (y - step + gridSize) % gridSize; break; // Up
+      }
+      // Ensure coordinates stay within bounds
+      x = (x + gridSize) % gridSize;
+      y = (y + gridSize) % gridSize;
+      attempts++;
+    }
+
+    if (attempts >= maxAttempts) {
+      // Fallback: if spiral search fails, just find the first empty spot
+      for (let tryY = 0; tryY < gridSize; tryY++) {
+        for (let tryX = 0; tryX < gridSize; tryX++) {
+          if (!occupiedCoords.has(`${tryX},${tryY}`)) {
+            return { x: tryX, y: tryY };
+          }
+        }
+      }
+      // If grid is full, return original (x,y) - should not happen in practice
+      return { x: initialX, y: initialY };
+    }
+
+    return { x, y };
+  }
+
+  async regenerateCoordinates(regenerateAll: boolean = false) {
+    this.logger.log(`🔄 Starting coordinate regeneration (regenerateAll: ${regenerateAll})...`);
+    
+    // Get all properties with their owners
+    const allProperties = await this.db
+      .select({
+        tokenId: schema.properties.tokenId,
+        ownerId: schema.properties.ownerId,
+        x: schema.properties.x,
+        y: schema.properties.y,
+        walletAddress: schema.users.walletAddress,
+      })
+      .from(schema.properties)
+      .leftJoin(schema.users, eq(schema.properties.ownerId, schema.users.id))
+      .where(regenerateAll ? undefined : 
+        sql`${schema.properties.x} IS NULL OR ${schema.properties.y} IS NULL`
+      );
+    
+    this.logger.log(`Found ${allProperties.length} properties to process`);
+    
+    // Build set of occupied coordinates
+    const occupiedCoords = new Set<string>();
+    const updates: Array<{ tokenId: number; x: number; y: number }> = [];
+    
+    // Process properties in order, checking for collisions
+    for (const prop of allProperties) {
+      if (!prop.walletAddress) {
+        this.logger.warn(`Property ${prop.tokenId} has no owner, skipping`);
+        continue;
+      }
+      
+      // Generate coordinates with collision detection
+      const { x, y } = this.findAvailableCoordinate(
+        prop.walletAddress,
+        Number(prop.tokenId),
+        occupiedCoords,
+      );
+      
+      // Mark as occupied
+      occupiedCoords.add(`${x},${y}`);
+      
+      // Only update if coordinates changed or property has no coordinates
+      if (regenerateAll || prop.x === null || prop.y === null || prop.x !== x || prop.y !== y) {
+        updates.push({ tokenId: Number(prop.tokenId), x, y });
+      }
+    }
+    
+    this.logger.log(`Updating ${updates.length} properties with new coordinates...`);
+    
+    // Update coordinates in batches
+    let updated = 0;
+    for (const update of updates) {
+      try {
+        await this.updateCoordinates(update.tokenId, update.x, update.y);
+        updated++;
+      } catch (error) {
+        this.logger.error(`Failed to update coordinates for property ${update.tokenId}: ${error.message}`);
+      }
+    }
+    
+    this.logger.log(`✅ Coordinate regeneration complete: ${updated} properties updated`);
+    
+    return {
+      total: allProperties.length,
+      updated,
+      skipped: allProperties.length - updated,
+    };
   }
 
   async cleanupOldProperties() {
