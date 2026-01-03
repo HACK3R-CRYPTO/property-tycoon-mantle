@@ -358,7 +358,22 @@ export class LeaderboardService {
                 const propData = await this.contractsService.getProperty(BigInt(Number(tokenId)));
                 // Value is now stored as string (numeric), convert to BigInt for calculation
                 totalPortfolioValue += BigInt(propData.value.toString());
-                totalYieldEarned += BigInt(propData.totalYieldEarned?.toString() || '0');
+                
+                // Try to get yield from YieldDistributor first (more accurate after claims)
+                let propertyYield = BigInt(propData.totalYieldEarned?.toString() || '0');
+                try {
+                  if (this.contractsService.yieldDistributor) {
+                    const yieldEarned = await this.contractsService.yieldDistributor.propertyTotalYieldEarned(BigInt(Number(tokenId)));
+                    if (yieldEarned && yieldEarned.toString() !== '0') {
+                      propertyYield = BigInt(yieldEarned.toString());
+                    }
+                  }
+                } catch (error) {
+                  // Fallback to PropertyNFT value if YieldDistributor call fails
+                  this.logger.debug(`Failed to read yield from YieldDistributor for property ${tokenId}, using PropertyNFT value: ${error.message}`);
+                }
+                
+                totalYieldEarned += propertyYield;
               } catch (error) {
                 this.logger.warn(`Failed to get property ${tokenId} for leaderboard: ${error.message}`);
               }
@@ -577,20 +592,62 @@ export class LeaderboardService {
         ),
       );
 
-    // Get total yield earned
-    const yieldRecords = await this.db
-      .select()
-      .from(schema.yieldRecords)
-      .where(
-        and(
-          eq(schema.yieldRecords.ownerId, userId),
-          eq(schema.yieldRecords.claimed, true),
-        ),
-      );
+    // Get total yield earned - check YieldDistributor first (source of truth after claims)
+    let totalYieldEarned = BigInt(0);
+    
+    // Try to get total yield from YieldDistributor contract first
+    try {
+      if (this.contractsService.yieldDistributor) {
+        // Get all properties owned by user
+        let tokenIds: bigint[] = [];
+        try {
+          const result = await this.contractsService.getOwnerProperties(user.walletAddress);
+          if (Array.isArray(result)) {
+            tokenIds = result;
+          } else if (result && typeof result === 'object' && 'length' in result) {
+            tokenIds = Array.from(result as any);
+          }
+        } catch (error) {
+          this.logger.debug(`No properties found for yield calculation: ${error.message}`);
+        }
+        
+        // Sum yield from YieldDistributor for all properties
+        for (const tokenId of tokenIds) {
+          try {
+            const yieldEarned = await this.contractsService.yieldDistributor.propertyTotalYieldEarned(BigInt(Number(tokenId)));
+            if (yieldEarned && yieldEarned.toString() !== '0') {
+              totalYieldEarned += BigInt(yieldEarned.toString());
+            }
+          } catch (error) {
+            // Property might not have yield yet, continue
+            this.logger.debug(`No yield found in YieldDistributor for property ${tokenId}: ${error.message}`);
+          }
+        }
+        
+        this.logger.log(`Total yield from YieldDistributor for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to get yield from YieldDistributor, falling back to database: ${error.message}`);
+    }
+    
+    // Fallback to database yield records if YieldDistributor doesn't have data
+    if (totalYieldEarned === BigInt(0)) {
+      const yieldRecords = await this.db
+        .select()
+        .from(schema.yieldRecords)
+        .where(
+          and(
+            eq(schema.yieldRecords.ownerId, userId),
+            eq(schema.yieldRecords.claimed, true),
+          ),
+        );
 
-    const totalYieldEarned = yieldRecords.reduce((sum, record) => {
-      return sum + BigInt(record.amount.toString());
-    }, BigInt(0));
+      totalYieldEarned = yieldRecords.reduce((sum, record) => {
+        return sum + BigInt(record.amount.toString());
+      }, BigInt(0));
+      
+      this.logger.log(`Total yield from database for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
+    }
 
     const [existing] = await this.db
       .select()
