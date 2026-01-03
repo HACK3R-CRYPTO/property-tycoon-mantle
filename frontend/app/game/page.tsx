@@ -229,7 +229,8 @@ export default function GamePage() {
                 
                 // Generate unique coordinates based on wallet address and tokenId if not set
                 // This ensures each property gets a unique position, different from other users
-                const generateCoordinates = (walletAddress: string, tokenId: number) => {
+                // If the generated coordinate is occupied, find the next available space
+                const generateCoordinates = (walletAddress: string, tokenId: number, occupiedCoords: Set<string>) => {
                   // Create a hash from wallet address and tokenId
                   let hash = 0;
                   const combined = `${walletAddress}-${tokenId}`;
@@ -239,14 +240,65 @@ export default function GamePage() {
                     hash = hash & hash; // Convert to 32-bit integer
                   }
                   
-                  // Use hash to generate coordinates in a grid
-                  // Map to a larger grid (100x100) to avoid collisions
+                  // Use hash to generate initial coordinates in a grid
                   const gridSize = 100;
-                  const x = Math.abs(hash) % gridSize;
-                  const y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
+                  let x = Math.abs(hash) % gridSize;
+                  let y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
+                  
+                  // Check if coordinate is occupied, if so find next available space
+                  let attempts = 0;
+                  const maxAttempts = gridSize * gridSize; // Try entire grid
+                  while (occupiedCoords.has(`${x},${y}`) && attempts < maxAttempts) {
+                    // Try next position in a spiral pattern
+                    const step = Math.floor(attempts / 4) + 1;
+                    const direction = attempts % 4;
+                    switch (direction) {
+                      case 0: x = (x + step) % gridSize; break; // Right
+                      case 1: y = (y + step) % gridSize; break; // Down
+                      case 2: x = (x - step + gridSize) % gridSize; break; // Left
+                      case 3: y = (y - step + gridSize) % gridSize; break; // Up
+                    }
+                    attempts++;
+                  }
+                  
+                  if (attempts >= maxAttempts) {
+                    // Fallback: use a simple sequential search
+                    for (let tryY = 0; tryY < gridSize; tryY++) {
+                      for (let tryX = 0; tryX < gridSize; tryX++) {
+                        if (!occupiedCoords.has(`${tryX},${tryY}`)) {
+                          return { x: tryX, y: tryY };
+                        }
+                      }
+                    }
+                    // Last resort: use hash coordinates even if occupied
+                    console.warn(`⚠️ Could not find available coordinate for property ${tokenId}, using hash coordinates`);
+                  }
                   
                   return { x, y };
                 };
+                
+                // Build set of occupied coordinates from all properties (user's + other players')
+                // Note: We use the current state of properties and otherPlayersProperties
+                // If otherPlayersProperties hasn't loaded yet, we'll only check user's properties
+                const occupiedCoords = new Set<string>();
+                // Add user's existing properties (from current state)
+                properties.forEach(p => {
+                  if (p.x !== null && p.x !== undefined && p.y !== null && p.y !== undefined) {
+                    occupiedCoords.add(`${p.x},${p.y}`);
+                  }
+                });
+                // Add other players' properties (from current state)
+                otherPlayersProperties.forEach(p => {
+                  if (p.x !== null && p.x !== undefined && p.y !== null && p.y !== undefined) {
+                    occupiedCoords.add(`${p.x},${p.y}`);
+                  }
+                });
+                // Also add coordinates from properties we're currently processing (to avoid duplicates in same batch)
+                backendProperties.slice(0, index).forEach((prevProp: any) => {
+                  if (prevProp.x !== null && prevProp.x !== undefined && prevProp.y !== null && prevProp.y !== undefined) {
+                    occupiedCoords.add(`${prevProp.x},${prevProp.y}`);
+                  }
+                });
                 
                 // Use stored coordinates if available, otherwise generate unique coordinates
                 let xCoord: number, yCoord: number;
@@ -254,17 +306,16 @@ export default function GamePage() {
                   xCoord = Number(prop.x);
                   yCoord = Number(prop.y);
                 } else {
-                  // Generate unique coordinates based on wallet and tokenId
-                  const coords = generateCoordinates(address as string, prop.tokenId);
+                  // Generate unique coordinates based on wallet and tokenId, avoiding occupied spaces
+                  const coords = generateCoordinates(address as string, prop.tokenId, occupiedCoords);
                   xCoord = coords.x;
                   yCoord = coords.y;
                   
-                  // Save generated coordinates to backend (non-blocking)
-                  if (address) {
-                    api.put(`/properties/${prop.tokenId}/coordinates`, { x: xCoord, y: yCoord }).catch(() => {
-                      // Backend unavailable - that's okay, coordinates are deterministic
-                    });
-                  }
+                  // Mark as occupied for subsequent properties in this batch
+                  occupiedCoords.add(`${xCoord},${yCoord}`);
+                  
+                  // Coordinates are deterministic (same wallet + tokenId = same coordinates)
+                  // No need to save to backend - will be generated consistently on each load
                 }
                 
                 console.log(`📍 Property #${prop.tokenId} coordinates:`, {
@@ -1030,7 +1081,7 @@ export default function GamePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [address, isConnected]);
+  }, [address, isConnected, otherPlayersProperties]);
   
   // Load token balance using wagmi hook (reactive)
   const { data: tokenBalance, refetch: refetchBalance } = useReadContract({
@@ -1215,9 +1266,25 @@ export default function GamePage() {
           if (tokenIds.length > 0) {
             const latestTokenId = Number(tokenIds[tokenIds.length - 1]);
             
+            // Build set of occupied coordinates from all properties (user's + other players')
+            const occupiedCoords = new Set<string>();
+            // Add user's existing properties
+            properties.forEach(p => {
+              if (p.x !== null && p.x !== undefined && p.y !== null && p.y !== undefined) {
+                occupiedCoords.add(`${p.x},${p.y}`);
+              }
+            });
+            // Add other players' properties
+            otherPlayersProperties.forEach(p => {
+              if (p.x !== null && p.x !== undefined && p.y !== null && p.y !== undefined) {
+                occupiedCoords.add(`${p.x},${p.y}`);
+              }
+            });
+            
             // Generate unique coordinates based on wallet address and tokenId
             // This ensures each property gets a unique position, different from other users
-            const generateCoordinates = (walletAddress: string, tokenId: number) => {
+            // If the generated coordinate is occupied, find the next available space
+            const generateCoordinates = (walletAddress: string, tokenId: number, occupiedCoords: Set<string>) => {
               // Create a hash from wallet address and tokenId
               let hash = 0;
               const combined = `${walletAddress}-${tokenId}`;
@@ -1227,23 +1294,48 @@ export default function GamePage() {
                 hash = hash & hash; // Convert to 32-bit integer
               }
               
-              // Use hash to generate coordinates in a grid
-              // Map to a larger grid (100x100) to avoid collisions
+              // Use hash to generate initial coordinates in a grid
               const gridSize = 100;
-              const x = Math.abs(hash) % gridSize;
-              const y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
+              let x = Math.abs(hash) % gridSize;
+              let y = Math.abs(hash >> 16) % gridSize; // Use upper 16 bits for Y
+              
+              // Check if coordinate is occupied, if so find next available space
+              let attempts = 0;
+              const maxAttempts = gridSize * gridSize; // Try entire grid
+              while (occupiedCoords.has(`${x},${y}`) && attempts < maxAttempts) {
+                // Try next position in a spiral pattern
+                const step = Math.floor(attempts / 4) + 1;
+                const direction = attempts % 4;
+                switch (direction) {
+                  case 0: x = (x + step) % gridSize; break; // Right
+                  case 1: y = (y + step) % gridSize; break; // Down
+                  case 2: x = (x - step + gridSize) % gridSize; break; // Left
+                  case 3: y = (y - step + gridSize) % gridSize; break; // Up
+                }
+                attempts++;
+              }
+              
+              if (attempts >= maxAttempts) {
+                // Fallback: use a simple sequential search
+                for (let tryY = 0; tryY < gridSize; tryY++) {
+                  for (let tryX = 0; tryX < gridSize; tryX++) {
+                    if (!occupiedCoords.has(`${tryX},${tryY}`)) {
+                      return { x: tryX, y: tryY };
+                    }
+                  }
+                }
+                // Last resort: use hash coordinates even if occupied
+                console.warn(`⚠️ Could not find available coordinate for property ${tokenId}, using hash coordinates`);
+              }
               
               return { x, y };
             };
             
-            const { x, y } = generateCoordinates(address as string, latestTokenId);
+            const { x, y } = generateCoordinates(address as string, latestTokenId, occupiedCoords);
             console.log(`Auto-placed property ${latestTokenId} at (${x}, ${y}) for ${address}`);
             
-            // Save coordinates to backend (non-blocking)
-            api.put(`/properties/${latestTokenId}/coordinates`, { x, y }).catch(() => {
-              // Backend unavailable - that's okay, coordinates are deterministic
-              console.warn('Failed to save coordinates to backend, using generated coordinates');
-            });
+            // Coordinates are deterministic (same wallet + tokenId = same coordinates)
+            // No need to save to backend - will be generated consistently on each load
           }
         } catch (error) {
           console.error('Failed to assign coordinates:', error);

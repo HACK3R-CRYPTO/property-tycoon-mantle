@@ -87,4 +87,23 @@ export class PropertiesController {
       };
     }
   }
+
+  @Post('regenerate-coordinates')
+  async regenerateCoordinates(@Body() body?: { regenerateAll?: boolean }) {
+    try {
+      const regenerateAll = body?.regenerateAll === true;
+      const result = await this.propertiesService.regenerateCoordinates(regenerateAll);
+      return {
+        success: true,
+        ...result,
+        message: `Regenerated coordinates for ${result.updated} properties (${regenerateAll ? 'all' : 'missing only'})`,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || 'Unknown error',
+        message: 'Failed to regenerate coordinates. Check backend logs for details.',
+      };
+    }
+  }
 }
