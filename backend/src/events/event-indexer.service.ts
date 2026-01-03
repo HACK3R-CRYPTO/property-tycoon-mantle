@@ -302,6 +302,30 @@ export class EventIndexerService implements OnModuleInit {
     this.logger.log('QuestSystem event listeners started');
   }
 
+  // Helper function to emit level update via WebSocket
+  private async emitLevelUpdateForUser(userId: string) {
+    try {
+      const [updatedUser] = await this.db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.id, userId))
+        .limit(1);
+
+      if (updatedUser) {
+        this.websocketGateway.emitUserLevelUpdate({
+          walletAddress: updatedUser.walletAddress,
+          level: updatedUser.level || 1,
+          totalExperiencePoints: updatedUser.totalExperiencePoints?.toString() || '0',
+          totalYieldEarned: updatedUser.totalYieldEarned?.toString() || '0',
+          totalPortfolioValue: updatedUser.totalPortfolioValue?.toString() || '0',
+          propertiesOwned: updatedUser.propertiesOwned || 0,
+        });
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to emit level update for user ${userId}: ${error.message}`);
+    }
+  }
+
   // Event handlers
   private async handlePropertyCreated(
     tokenId: string,
@@ -368,6 +392,9 @@ export class EventIndexerService implements OnModuleInit {
       if (userGuild) {
         await this.guildsService.updateGuildStats(userGuild.id);
       }
+
+      // Emit level update via WebSocket (property minted = XP boost)
+      await this.emitLevelUpdateForUser(user.id);
 
       this.logger.log(`Property created in database: ${property.id}`);
     } catch (error) {
@@ -589,6 +616,9 @@ export class EventIndexerService implements OnModuleInit {
         if (userGuild) {
           await this.guildsService.updateGuildStats(userGuild.id);
         }
+
+        // Emit level update via WebSocket (yield claimed = XP boost)
+        await this.emitLevelUpdateForUser(user.id);
       }
 
       // Emit WebSocket event
@@ -764,6 +794,8 @@ export class EventIndexerService implements OnModuleInit {
           if (sellerGuild) {
             await this.guildsService.updateGuildStats(sellerGuild.id);
           }
+          // Emit level update for seller (property sold = portfolio change)
+          await this.emitLevelUpdateForUser(oldOwnerId);
         }
 
         await this.leaderboardService.updateLeaderboard(buyerUser.id);
@@ -771,6 +803,8 @@ export class EventIndexerService implements OnModuleInit {
         if (buyerGuild) {
           await this.guildsService.updateGuildStats(buyerGuild.id);
         }
+        // Emit level update for buyer (property purchased = XP boost)
+        await this.emitLevelUpdateForUser(buyerUser.id);
 
         this.logger.log(`Property ${propertyId} ownership updated: ${seller} -> ${buyer}`);
         
