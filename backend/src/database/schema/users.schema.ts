@@ -7,6 +7,8 @@ export const users = pgTable('users', {
   totalPortfolioValue: numeric('total_portfolio_value').default('0').notNull(),
   totalYieldEarned: numeric('total_yield_earned').default('0').notNull(),
   propertiesOwned: bigint('properties_owned', { mode: 'number' }).default(0).notNull(),
+  totalExperiencePoints: numeric('total_experience_points').default('0').notNull(),
+  level: bigint('level', { mode: 'number' }).default(1).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

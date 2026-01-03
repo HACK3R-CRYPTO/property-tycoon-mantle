@@ -78,6 +78,75 @@ export default function GamePage() {
   const [centerOnCoordinate, setCenterOnCoordinate] = useState<{ x: number; y: number } | null>(null);
   const [totalPendingYield, setTotalPendingYield] = useState<bigint>(BigInt(0)); // Real-time estimated yield
   const [claimableYield, setClaimableYield] = useState<bigint>(BigInt(0)); // On-chain claimable yield (24-hour requirement)
+  
+  // Get title based on level
+  const getLevelTitle = (level: number): string => {
+    if (level >= 20) return 'LEGENDARY TYCOON';
+    if (level >= 15) return 'MASTER TYCOON';
+    if (level >= 10) return 'ELITE TYCOON';
+    if (level >= 5) return 'PRO TYCOON';
+    return 'RISING TYCOON';
+  };
+
+  // Calculate XP progress for current level (using backend level and XP)
+  const getLevelProgress = (level: number, totalXP: number) => {
+    // Calculate XP for current level
+    const xpForCurrentLevel = Math.pow(level - 1, 2) * 1000;
+    // Calculate XP needed for next level
+    const xpForNextLevel = Math.pow(level, 2) * 1000;
+    // XP progress in current level
+    const xpProgress = totalXP - xpForCurrentLevel;
+    const xpNeeded = xpForNextLevel - xpForCurrentLevel;
+    const progressPercent = Math.min(100, Math.max(0, (xpProgress / xpNeeded) * 100));
+    
+    return {
+      xpProgress,
+      xpNeeded,
+      progressPercent,
+      xpForCurrentLevel,
+      xpForNextLevel,
+    };
+  };
+  
+  // Level calculation function (kept for backward compatibility, but we use backend level now)
+  const calculateLevel = (propertiesCount: number, totalYieldEarned: bigint, totalPortfolioValue: bigint) => {
+    // Calculate experience points (XP) from multiple factors
+    // 1. Properties: 100 XP per property
+    const propertiesXP = propertiesCount * 100;
+    
+    // 2. Yield earned: 1 XP per 0.01 TYC earned (scaled)
+    const yieldXP = Number(totalYieldEarned) / 1e16; // Divide by 1e16 to get 0.01 TYC units
+    
+    // 3. Portfolio value: 1 XP per 0.1 TYC value (scaled)
+    const portfolioXP = Number(totalPortfolioValue) / 1e17; // Divide by 1e17 to get 0.1 TYC units
+    
+    // Total XP
+    const totalXP = propertiesXP + yieldXP + portfolioXP;
+    
+    // Level formula: level = floor(sqrt(totalXP / 1000)) + 1
+    // This creates a progression where each level requires more XP
+    // Level 1: 0-1000 XP, Level 2: 1000-4000 XP, Level 3: 4000-9000 XP, etc.
+    const level = Math.max(1, Math.floor(Math.sqrt(totalXP / 1000)) + 1);
+    
+    // Calculate XP for current level
+    const xpForCurrentLevel = Math.pow(level - 1, 2) * 1000;
+    // Calculate XP needed for next level
+    const xpForNextLevel = Math.pow(level, 2) * 1000;
+    // XP progress in current level
+    const xpProgress = totalXP - xpForCurrentLevel;
+    const xpNeeded = xpForNextLevel - xpForCurrentLevel;
+    const progressPercent = Math.min(100, (xpProgress / xpNeeded) * 100);
+    
+    return {
+      level,
+      totalXP,
+      xpProgress,
+      xpNeeded,
+      progressPercent,
+      xpForCurrentLevel,
+      xpForNextLevel,
+    };
+  };
   const [propertyClaimableYields, setPropertyClaimableYields] = useState<Map<number, bigint>>(new Map()); // Claimable yield per property
   const [totalYieldEarned, setTotalYieldEarned] = useState<bigint>(BigInt(0));
   const [yieldUpdateTimestamp, setYieldUpdateTimestamp] = useState<number>(Date.now()); // Force re-render when WebSocket updates
@@ -89,6 +158,8 @@ export default function GamePage() {
   const [pendingPropertyType, setPendingPropertyType] = useState<'Residential' | 'Commercial' | 'Industrial' | 'Luxury' | null>(null);
   const [username, setUsername] = useState<string>('');
   const [avatar, setAvatar] = useState<string>('');
+  const [userLevel, setUserLevel] = useState<number>(1);
+  const [userTotalXP, setUserTotalXP] = useState<number>(0);
   const [nextClaimableTime, setNextClaimableTime] = useState<{ hours: number; minutes: number } | null>(null);
 
   // Load properties function - FROM BACKEND (synced from blockchain)
@@ -1937,7 +2008,7 @@ export default function GamePage() {
     }
   }, [address]);
 
-  // Load user profile (username and avatar)
+  // Load user profile (username, avatar, level, XP)
   useEffect(() => {
     const loadUserProfile = async () => {
       if (!address) return;
@@ -1947,12 +2018,19 @@ export default function GamePage() {
         if (profile) {
           setUsername(profile.username || '');
           setAvatar(profile.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${address}`);
+          // Use backend level and XP if available, otherwise default to 1 and 0
+          setUserLevel(profile.level || 1);
+          setUserTotalXP(Number(profile.totalExperiencePoints || 0));
         } else {
           setAvatar(`https://api.dicebear.com/7.x/avataaars/svg?seed=${address}`);
+          setUserLevel(1);
+          setUserTotalXP(0);
         }
       } catch (error) {
         console.warn('Failed to load user profile:', error);
         setAvatar(`https://api.dicebear.com/7.x/avataaars/svg?seed=${address}`);
+        setUserLevel(1);
+        setUserTotalXP(0);
       }
     };
     
@@ -2162,9 +2240,30 @@ export default function GamePage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-white font-semibold text-sm truncate">{username || 'CryptoBaron'}</h3>
-                    <span className="bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded flex-shrink-0">LVL {Math.max(1, Math.floor(properties.length / 2) + 1)}</span>
+                    <span className="bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded flex-shrink-0">
+                      LVL {userLevel}
+                    </span>
                   </div>
-                  <p className="text-emerald-400 text-xs font-medium">ELITE TYCOON</p>
+                  {(() => {
+                    const levelProgress = getLevelProgress(userLevel, userTotalXP);
+                    return (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-400">XP: {Math.floor(levelProgress.xpProgress).toLocaleString()} / {Math.floor(levelProgress.xpNeeded).toLocaleString()}</span>
+                          <span className="text-emerald-400">{Math.floor(levelProgress.progressPercent)}%</span>
+                        </div>
+                        <div className="w-full bg-gray-700/50 rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full transition-all duration-300"
+                            style={{ width: `${levelProgress.progressPercent}%` }}
+                          />
+                        </div>
+                        <p className="text-emerald-400 text-xs font-medium">
+                          {getLevelTitle(userLevel)}
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
               

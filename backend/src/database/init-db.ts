@@ -25,9 +25,31 @@ async function initDatabase() {
         total_portfolio_value NUMERIC DEFAULT 0,
         total_yield_earned NUMERIC DEFAULT 0,
         properties_owned INTEGER DEFAULT 0,
+        total_experience_points NUMERIC DEFAULT 0,
+        level INTEGER DEFAULT 1,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+      
+      -- Add level and experience columns if they don't exist (for existing databases)
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'users' 
+          AND column_name = 'total_experience_points'
+        ) THEN
+          ALTER TABLE users ADD COLUMN total_experience_points NUMERIC DEFAULT 0 NOT NULL;
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'users' 
+          AND column_name = 'level'
+        ) THEN
+          ALTER TABLE users ADD COLUMN level INTEGER DEFAULT 1 NOT NULL;
+        END IF;
+      END $$;
 
       CREATE TABLE IF NOT EXISTS properties (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

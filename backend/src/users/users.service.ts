@@ -12,6 +12,8 @@ export interface UserProfileDto {
   totalPortfolioValue: string;
   totalYieldEarned: string;
   propertiesOwned: number;
+  totalExperiencePoints?: string;
+  level?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,6 +48,8 @@ export class UsersService {
       totalPortfolioValue: user.totalPortfolioValue?.toString() || '0',
       totalYieldEarned: user.totalYieldEarned?.toString() || '0',
       propertiesOwned: user.propertiesOwned || 0,
+      totalExperiencePoints: user.totalExperiencePoints?.toString() || '0',
+      level: user.level || 1,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -113,9 +117,68 @@ export class UsersService {
       totalPortfolioValue: user.totalPortfolioValue?.toString() || '0',
       totalYieldEarned: user.totalYieldEarned?.toString() || '0',
       propertiesOwned: user.propertiesOwned || 0,
+      totalExperiencePoints: user.totalExperiencePoints?.toString() || '0',
+      level: user.level || 1,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
+  }
+  
+  /**
+   * Calculate experience points from user stats
+   * XP = (properties * 100) + (yieldEarned / 1e16) + (portfolioValue / 1e17)
+   */
+  private calculateExperiencePoints(
+    propertiesCount: number,
+    totalYieldEarned: bigint,
+    totalPortfolioValue: bigint,
+  ): number {
+    const propertiesXP = propertiesCount * 100;
+    const yieldXP = Number(totalYieldEarned) / 1e16; // 1 XP per 0.01 TYC
+    const portfolioXP = Number(totalPortfolioValue) / 1e17; // 1 XP per 0.1 TYC
+    return propertiesXP + yieldXP + portfolioXP;
+  }
+
+  /**
+   * Calculate level from total experience points
+   * Level = floor(sqrt(totalXP / 1000)) + 1
+   */
+  private calculateLevel(totalXP: number): number {
+    return Math.max(1, Math.floor(Math.sqrt(totalXP / 1000)) + 1);
+  }
+
+  /**
+   * Update user level and experience points based on current stats
+   */
+  async updateUserLevel(userId: string) {
+    const [user] = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      this.logger.warn(`User ${userId} not found for level update`);
+      return;
+    }
+
+    const totalPortfolioValue = BigInt(user.totalPortfolioValue?.toString() || '0');
+    const totalYieldEarned = BigInt(user.totalYieldEarned?.toString() || '0');
+    const propertiesCount = user.propertiesOwned || 0;
+
+    const totalXP = this.calculateExperiencePoints(propertiesCount, totalYieldEarned, totalPortfolioValue);
+    const level = this.calculateLevel(totalXP);
+
+    await this.db
+      .update(schema.users)
+      .set({
+        totalExperiencePoints: totalXP.toString(),
+        level: level,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.users.id, userId));
+
+    this.logger.log(`Updated level for user ${user.walletAddress}: Level ${level}, XP ${totalXP.toFixed(2)}`);
   }
 }
 
