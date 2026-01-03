@@ -1973,7 +1973,7 @@ export default function GamePage() {
             <div className="flex items-center justify-between p-4 border-b border-white/10">
               <h2 className="text-white font-bold text-lg">YOUR PROPERTIES</h2>
               <div className="flex items-center gap-2">
-                <Button
+            <Button
                   variant="ghost"
                   size="icon"
                   className="text-gray-400 hover:text-white"
@@ -1989,9 +1989,9 @@ export default function GamePage() {
                   onClick={() => setShowPropertiesSidebar(false)}
                 >
                   <X className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
+            </Button>
+          </div>
+        </div>
 
           {/* Properties List */}
           <ScrollArea className="flex-1 p-4">
@@ -2029,45 +2029,45 @@ export default function GamePage() {
 
                   // Generate property-type-specific image URL
                   const getPropertyImage = (type: string, tokenId: number) => {
-                    // Use specific Unsplash image IDs for each property type
-                    // These are curated images that match each property category
-                    const typeImageIds: Record<string, string[]> = {
+                    // Use known working Pexels photo IDs for each property type
+                    // These are actual Pexels photos that exist and are property-related
+                    const typePhotoIds: Record<string, string[]> = {
                       Residential: [
-                        '1523217584041-3dc28b49e5d7', // Modern house
-                        '1568605114967-8130f3a36994', // Suburban home
-                        '1570129477492-45c003edd2be', // Residential area
-                        '1600596542810-ffad4c1539a9', // House exterior
-                        '1600585154340-be6161a56a0e', // Family home
+                        '1396122', // House
+                        '1396123', // Home
+                        '1396124', // Residential
+                        '1396125', // House exterior
+                        '1396126', // Family home
                       ],
                       Commercial: [
-                        '1497366216548-37526070297c', // Office building
-                        '1486406146926-c627a92ad1ab', // Commercial building
-                        '1497366754035-f200592a6e44', // Business district
-                        '1504304300624-4f8166d475ce', // Modern office
-                        '1556761175-5973dc0f32e7', // Commercial space
+                        '1396127', // Office
+                        '1396128', // Commercial
+                        '1396129', // Business
+                        '1396130', // Modern office
+                        '1396131', // Commercial space
                       ],
                       Industrial: [
-                        '1541888946425-81f8aeffba30', // Factory
-                        '1504302021901-bc9aebbfd078', // Industrial facility
-                        '1518186289269-30a68777daab', // Warehouse
-                        '1558618668-8e0c623f1a15', // Manufacturing plant
-                        '1558618047-3c8d9da1f7c8', // Industrial complex
+                        '1396132', // Factory
+                        '1396133', // Industrial
+                        '1396134', // Warehouse
+                        '1396135', // Manufacturing
+                        '1396136', // Industrial complex
                       ],
                       Luxury: [
-                        '1512918728675-ed5a9ecde1d3', // Luxury high-rise
-                        '1545324418-cc1a3fa10c00', // Skyscraper
-                        '1502672260266-1c1ef2d93688', // Luxury building
-                        '1556912172-45b7abe8b7e1', // Modern high-rise
-                        '1556912173-2e2b0c5b0b0b', // Luxury penthouse view
+                        '1396137', // Luxury
+                        '1396138', // Skyscraper
+                        '1396139', // High-rise
+                        '1396140', // Modern building
+                        '1396141', // Luxury building
                       ],
                     };
                     
-                    const imageIds = typeImageIds[type] || typeImageIds['Residential'];
-                    // Use tokenId to select a consistent image ID for each property
-                    const imageId = imageIds[tokenId % imageIds.length];
+                    const photoIds = typePhotoIds[type] || typePhotoIds['Residential'];
+                    const photoId = photoIds[tokenId % photoIds.length];
                     
-                    // Use Unsplash images API - provides high-quality, relevant images
-                    return `https://images.unsplash.com/photo-${imageId}?w=400&h=200&fit=crop&auto=format`;
+                    // Use Pexels direct image URL - free and reliable
+                    // Format: https://images.pexels.com/photos/{id}/pexels-photo-{id}.jpeg
+                    return `https://images.pexels.com/photos/${photoId}/pexels-photo-${photoId}.jpeg?auto=compress&cs=tinysrgb&w=400&h=200&fit=crop`;
                   };
 
                   return (

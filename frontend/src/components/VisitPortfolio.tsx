@@ -146,8 +146,14 @@ export function VisitPortfolio({ address, username, onClose }: VisitPortfolioPro
                 functionName: 'propertyTotalYieldEarned',
                 args: [BigInt(Number(tokenId))],
               }) as bigint;
-              // Use YieldDistributor value if > 0, otherwise use PropertyNFT value
-              totalYieldEarned = yieldEarned > BigInt(0) ? yieldEarned : propertyNFTYield;
+              // Use YieldDistributor value (even if 0, it's the source of truth)
+              // Only fallback to PropertyNFT if YieldDistributor returns 0 AND PropertyNFT has a value
+              if (yieldEarned && yieldEarned.toString() !== '0') {
+                totalYieldEarned = BigInt(yieldEarned.toString());
+              } else if (propertyNFTYield > BigInt(0)) {
+                // Use PropertyNFT value as fallback only if YieldDistributor is 0
+                totalYieldEarned = propertyNFTYield;
+              }
             } catch (error) {
               // Fallback to PropertyNFT value if YieldDistributor call fails
               console.warn(`Failed to read yield from YieldDistributor for property ${tokenId}, using PropertyNFT value:`, error);
@@ -257,29 +263,108 @@ export function VisitPortfolio({ address, username, onClose }: VisitPortfolioPro
             <div className="text-center py-8 text-gray-400">No properties found</div>
           ) : (
             <div className="space-y-3">
-              {properties.map((property) => (
-                <Card key={property.id} className="bg-white/5 border-white/10">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-white font-semibold">{property.propertyType} Property</h4>
-                        <p className="text-sm text-gray-400">Token ID: {property.tokenId}</p>
-                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="w-3 h-3" />
-                            {formatValue(property.value)} TYCOON
-                          </span>
-                          <span>{property.yieldRate}% APY</span>
+              {properties.map((property) => {
+                // Generate property-type-specific image URL (exact same as game page)
+                const getPropertyImage = (type: string, tokenId: number) => {
+                  // Use known working Pexels photo IDs for each property type
+                  // These are actual Pexels photos that exist and are property-related
+                  const typePhotoIds: Record<string, string[]> = {
+                    Residential: [
+                      '1396122', // House
+                      '1396123', // Home
+                      '1396124', // Residential
+                      '1396125', // House exterior
+                      '1396126', // Family home
+                    ],
+                    Commercial: [
+                      '1396127', // Office
+                      '1396128', // Commercial
+                      '1396129', // Business
+                      '1396130', // Modern office
+                      '1396131', // Commercial space
+                    ],
+                    Industrial: [
+                      '1396132', // Factory
+                      '1396133', // Industrial
+                      '1396134', // Warehouse
+                      '1396135', // Manufacturing
+                      '1396136', // Industrial complex
+                    ],
+                    Luxury: [
+                      '1396137', // Luxury
+                      '1396138', // Skyscraper
+                      '1396139', // High-rise
+                      '1396140', // Modern building
+                      '1396141', // Luxury building
+                    ],
+                  };
+                  
+                  const photoIds = typePhotoIds[type] || typePhotoIds['Residential'];
+                  const photoId = photoIds[tokenId % photoIds.length];
+                  
+                  // Use Pexels direct image URL - free and reliable
+                  // Format: https://images.pexels.com/photos/{id}/pexels-photo-{id}.jpeg
+                  return `https://images.pexels.com/photos/${photoId}/pexels-photo-${photoId}.jpeg?auto=compress&cs=tinysrgb&w=400&h=200&fit=crop`;
+                };
+
+                const PROPERTY_COLORS: Record<string, string> = {
+                  Residential: 'bg-blue-500',
+                  Commercial: 'bg-green-500',
+                  Industrial: 'bg-orange-500',
+                  Luxury: 'bg-pink-500',
+                };
+
+                return (
+                  <Card key={property.id} className="bg-white/5 border-white/10">
+                    <CardContent className="p-4">
+                      <div className="flex gap-4">
+                        {/* Property Image */}
+                        <div className="w-32 h-20 rounded-lg overflow-hidden relative bg-gray-800 flex-shrink-0">
+                          <img
+                            src={getPropertyImage(property.propertyType, property.tokenId)}
+                            alt={`${property.propertyType} Property`}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const parent = target.parentElement;
+                              if (parent) {
+                                const fallback = parent.querySelector('.fallback') as HTMLElement;
+                                if (fallback) {
+                                  fallback.classList.remove('hidden');
+                                  fallback.classList.add('flex');
+                                }
+                              }
+                            }}
+                          />
+                          <div className={`fallback hidden absolute inset-0 w-full h-full ${PROPERTY_COLORS[property.propertyType] || 'bg-gray-600'} flex items-center justify-center`}>
+                            <Building2 className="w-8 h-8 text-white opacity-50" />
+                          </div>
+                        </div>
+
+                        <div className="flex-1 flex items-center justify-between">
+                          <div>
+                            <h4 className="text-white font-semibold">{property.propertyType} Property</h4>
+                            <p className="text-sm text-gray-400">Token ID: {property.tokenId}</p>
+                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                              <span className="flex items-center gap-1">
+                                <DollarSign className="w-3 h-3" />
+                                {formatValue(property.value)} TYCOON
+                              </span>
+                              <span>{property.yieldRate}% APY</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-gray-400">Yield Earned</p>
+                            <p className="text-emerald-400 font-semibold">{formatValue(property.totalYieldEarned)} TYCOON</p>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm text-gray-400">Yield Earned</p>
-                        <p className="text-emerald-400 font-semibold">{formatValue(property.totalYieldEarned)}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </CardContent>
