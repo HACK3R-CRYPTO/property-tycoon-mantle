@@ -219,8 +219,14 @@ export function RWALinkModal({ isOpen, onClose, propertyTokenId, onSuccess }: RW
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden bg-gray-900 border-gray-700">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <Card 
+        className="w-full max-w-2xl max-h-[90vh] overflow-hidden bg-gray-900 border-gray-700"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Building2 className="w-5 h-5" />

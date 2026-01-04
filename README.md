@@ -185,7 +185,26 @@ MockRWA implements ERC-721 standard. Replaced with any real RWA contract followi
 
 ## Technical Excellence
 
-Web-based gameplay. No downloads. No Unity. No plugins. Works in any browser. Mobile responsive. Touch controls. Keyboard support. Smooth animations. Property visualization. Yield charts. Real-time leaderboard. RWA integration. Smart contract rewards. Mantle network integration. Next.js frontend. NestJS backend. Socket.io real-time. Pixi.js rendering. Interactive city map with zoom and pan controls. Find location feature centers map on any property from sidebar. Dynamic location coordinates display current viewport position. Property-type-specific images for visual identification. Realistic terrain generation with water land and city zones.
+Web-based gameplay. No downloads. No Unity. No plugins. Works in any browser. Mobile responsive. Touch controls. Keyboard support. Smooth animations. Property visualization. Yield charts. Real-time leaderboard. RWA integration. Smart contract rewards. Mantle network integration. Next.js frontend. NestJS backend. Socket.io real-time. Pixi.js rendering.
+
+### Isometric 3D City Map
+
+Interactive isometric 3D city map with:
+- **Isometric 3D rendering** - Diamond-shaped tiles with depth and perspective (inspired by noodle-quest)
+- **Realistic terrain** - Water and land tiles with pixel art style textures
+- **Property buildings** - Distinct 3D isometric buildings for each property type:
+  - Residential: Cozy house with pitched roof, windows, and door
+  - Commercial: Modern store with flat roof and large storefront windows
+  - Industrial: Factory with smokestack and grid windows
+  - Luxury: Tall glass skyscraper with lit windows and spire
+- **Ownership markers** - Flag markers on owned properties (brown pole with colored flag and star)
+- **Zoom and pan** - Smooth zoom (0.3x to 3x) and pan controls with map boundaries
+- **FIND button** - Center map on any property from "YOUR PROPERTIES" sidebar with auto-zoom
+- **Dynamic location display** - Real-time coordinates (N/S, E/W) and sector based on viewport center
+- **Other players' properties** - See and click other players' properties on the map
+- **Property colors** - Each property type uses distinct colors (blue, green, orange, pink)
+- **Sparse trees** - Decorative trees on land tiles (2% density) for visual appeal
+- **Fixed map size** - 100x100 tile grid (limited, not infinite) for better performance
 
 ## Getting Started
 

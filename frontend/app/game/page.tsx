@@ -2675,12 +2675,14 @@ export default function GamePage() {
                               // Center map on this property
                               if (property.x !== null && property.x !== undefined && 
                                   property.y !== null && property.y !== undefined) {
-                                // Zoom in a bit to see the property better
+                                // First set zoom, then center after a brief delay to ensure zoom is applied
                                 setMapZoom(1.5);
-                                // Center on the property coordinates
-                                setCenterOnCoordinate({ x: property.x, y: property.y });
-                                // Reset after a moment so it can be triggered again
-                                setTimeout(() => setCenterOnCoordinate(null), 100);
+                                // Center on the property coordinates after zoom is set
+                                setTimeout(() => {
+                                  setCenterOnCoordinate({ x: property.x, y: property.y });
+                                  // Reset after a moment so it can be triggered again
+                                  setTimeout(() => setCenterOnCoordinate(null), 200);
+                                }, 100);
                               }
                             }}
                             variant="outline"
@@ -2895,8 +2897,14 @@ export default function GamePage() {
 
       {/* Token Purchase Modal */}
       {showTokenPurchase && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900/95 backdrop-blur-xl rounded-lg border border-white/20 w-full max-w-md relative">
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowTokenPurchase(false)}
+        >
+          <div 
+            className="bg-gray-900/95 backdrop-blur-xl rounded-lg border border-white/20 w-full max-w-md relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between p-4 border-b border-white/10">
               <h2 className="text-xl font-bold text-white">Buy TYCOON</h2>
             <Button
@@ -2917,8 +2925,14 @@ export default function GamePage() {
 
       {/* Build Menu Modal */}
       {showBuildMenu && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900/95 backdrop-blur-xl rounded-lg border border-white/20 w-full max-w-md relative">
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowBuildMenu(false)}
+        >
+          <div 
+            className="bg-gray-900/95 backdrop-blur-xl rounded-lg border border-white/20 w-full max-w-md relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between p-4 border-b border-white/10">
               <h2 className="text-xl font-bold text-white">Mint Property</h2>
             <Button
