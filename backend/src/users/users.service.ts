@@ -126,16 +126,17 @@ export class UsersService {
   
   /**
    * Calculate experience points from user stats
-   * XP = (properties * 100) + (yieldEarned / 1e16) + (portfolioValue / 1e17)
+   * XP = (properties * 50) + (yieldEarned / 2e16) + (portfolioValue / 2e17)
+   * Reduced by 50% to make leveling more balanced
    */
   private calculateExperiencePoints(
     propertiesCount: number,
     totalYieldEarned: bigint,
     totalPortfolioValue: bigint,
   ): number {
-    const propertiesXP = propertiesCount * 100;
-    const yieldXP = Number(totalYieldEarned) / 1e16; // 1 XP per 0.01 TYC
-    const portfolioXP = Number(totalPortfolioValue) / 1e17; // 1 XP per 0.1 TYC
+    const propertiesXP = propertiesCount * 50; // Reduced from 100 to 50
+    const yieldXP = Number(totalYieldEarned) / 2e16; // 1 XP per 0.02 TYC (reduced from 0.01)
+    const portfolioXP = Number(totalPortfolioValue) / 2e17; // 1 XP per 0.2 TYC (reduced from 0.1)
     return propertiesXP + yieldXP + portfolioXP;
   }
 
