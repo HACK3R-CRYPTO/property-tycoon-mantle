@@ -43,6 +43,14 @@ typechain-types/
 # Documentation/Planning (keep local, don't commit)
 *.md
 !README.md
+!LEVELING_SYSTEM.md
+!TEST_LEVELING.md
+!RAILWAY_DEPLOYMENT.md
+!RAILWAY_QUICK_START.md
+!backend/README.md
+!frontend/README.md
+!contracts/README.md
+!backend/RAILWAY_MIGRATION.md
 
 # Misc
 *.pid
