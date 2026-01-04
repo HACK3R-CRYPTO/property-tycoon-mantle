@@ -79,9 +79,9 @@ npm run db:init
 ```
 
 Database schemas are automatically created using Drizzle ORM. Tables include:
-- `users` - User accounts linked to wallet addresses
+- `users` - User accounts linked to wallet addresses (includes `level` and `total_experience_points` columns)
 - `properties` - Property NFTs with metadata
-- `yield_records` - Yield claim history
+- `yield_records` - Yield claim history (amount column uses NUMERIC to handle very large values)
 - `marketplace_listings` - Active property listings
 - `quests` - Available quests
 - `quest_progress` - User quest completion tracking
@@ -89,6 +89,11 @@ Database schemas are automatically created using Drizzle ORM. Tables include:
 - `chat_messages` - Global chat messages
 - `guilds` - Guild information
 - `guild_members` - Guild membership
+
+**Database Migrations:**
+- Level columns (`level`, `total_experience_points`) are automatically added to `users` table on first run
+- Existing users' levels are automatically calculated and updated
+- `yield_records.amount` column is automatically migrated from BIGINT to NUMERIC to handle large values
 
 ## Development
 
@@ -162,7 +167,7 @@ GET `/api/chat/messages` - Get recent messages
 
 ### Users
 
-GET `/api/users/profile/:walletAddress` - Get user profile
+GET `/api/users/profile/:walletAddress` - Get user profile (includes `level` and `totalExperiencePoints`)
 
 PUT `/api/users/profile/:walletAddress/username` - Update username
 
@@ -273,13 +278,32 @@ Files:
 
 Backend listens to contract events and syncs database automatically:
 
-- `PropertyCreated` - New property minted
+- `PropertyCreated` - New property minted (triggers level/XP update)
 - `PropertyLinkedToRWA` - Property linked to RWA
-- `YieldClaimed` - Yield claimed by owner
-- `PropertyPurchased` - Property sold on marketplace
+- `YieldClaimed` - Yield claimed by owner (triggers level/XP update)
+- `PropertySold` - Property sold on marketplace (triggers level/XP update for buyer and seller)
 - `QuestCompleted` - Quest completed by player
 
-Events are indexed in real-time and broadcast via WebSocket to frontend.
+Events are indexed in real-time and broadcast via WebSocket to frontend. Level/XP updates are automatically calculated and broadcast when XP-boosting events occur.
+
+## Leveling System
+
+Backend automatically calculates and updates user levels based on:
+- **Properties owned**: 100 XP per property
+- **Yield earned**: 1 XP per 0.01 TYC earned
+- **Portfolio value**: 1 XP per 0.1 TYC in portfolio
+
+**Level Formula**: `Level = floor(√(Total XP / 1000)) + 1`
+
+Levels are calculated server-side from blockchain data (source of truth) and stored in the `users` table. Levels update automatically when:
+- Property is minted
+- Property is purchased
+- Yield is claimed
+- Leaderboard is updated
+
+The `updateUserLevel()` function in `UsersService` fetches current stats from blockchain, calculates XP and level, and updates the database. Level updates are broadcast via WebSocket (`user:level-update` event) for real-time frontend updates.
+
+See [LEVELING_SYSTEM.md](../LEVELING_SYSTEM.md) for detailed documentation.
 
 ## BigInt Serialization
 
@@ -296,12 +320,31 @@ Backend emits real-time events via Socket.io:
 - `property:created` - New property minted
 - `yield:updated` - Yield accumulation updated
 - `yield:time-update` - Yield time information updated
+- `yield:claimed` - Yield claimed by owner
 - `leaderboard:updated` - Leaderboard position changed
 - `chat:new` - New chat message
 - `quest:completed` - Quest completed
 - `price:update` - MNT/USD price updated (every 5 minutes)
+- `user:level-update` - User level/XP updated (when property minted, purchased, or yield claimed)
 
-Frontend subscribes to these events for instant updates. Price updates broadcast automatically without frontend polling.
+Frontend subscribes to these events for instant updates. Price updates broadcast automatically without frontend polling. Level/XP updates happen automatically without page refresh.
+
+### Level/XP Update Events
+
+The `user:level-update` event is emitted automatically when:
+- Property is minted (`handlePropertyCreated`)
+- Property is purchased (`handlePropertySold` - for both buyer and seller)
+- Yield is claimed (`handleYieldClaimed`)
+
+Event payload includes:
+- `walletAddress` - User's wallet address
+- `level` - Current level (1, 2, 3, etc.)
+- `totalExperiencePoints` - Total XP earned
+- `totalYieldEarned` - Total yield earned (in wei as string)
+- `totalPortfolioValue` - Total portfolio value (in wei as string)
+- `propertiesOwned` - Number of properties owned
+
+Frontend receives this event and updates the UI immediately without refresh.
 
 ## Project Structure
 

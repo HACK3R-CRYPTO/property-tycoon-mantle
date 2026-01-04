@@ -1,4 +1,4 @@
-import { pgTable, uuid, bigint, timestamp, varchar, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, numeric, timestamp, varchar, boolean } from 'drizzle-orm/pg-core';
 import { properties } from './properties.schema';
 import { users } from './users.schema';
 
@@ -10,7 +10,7 @@ export const yieldRecords = pgTable('yield_records', {
   ownerId: uuid('owner_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
-  amount: bigint('amount', { mode: 'bigint' }).notNull(),
+  amount: numeric('amount').notNull(), // Use NUMERIC to handle very large values (can exceed BIGINT max)
   claimed: boolean('claimed').default(false).notNull(),
   transactionHash: varchar('transaction_hash', { length: 66 }),
   claimedAt: timestamp('claimed_at'),

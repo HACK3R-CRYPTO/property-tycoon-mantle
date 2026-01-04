@@ -440,7 +440,7 @@ export class YieldService implements OnModuleInit, OnModuleDestroy {
       .values({
         propertyId,
         ownerId,
-        amount: BigInt(amount),
+        amount: amount, // NUMERIC column accepts string
         claimed: true,
         transactionHash: txHash,
         claimedAt: new Date(),

@@ -22,11 +22,11 @@ Step one: Connect your wallet. Use MetaMask or WalletConnect. Switch to Mantle S
 
 Step two: Buy TYCOON tokens. One-time purchase to get started. Send MNT to swap contract. One MNT buys 100 TYCOON tokens. Buy enough for your first property. Buy more later if you want to expand. No recurring payments. No subscriptions.
 
-Step three: Mint your property. Spend 100 TYCOON tokens. One-time cost per property. Choose property type. Residential for stability. Commercial for balance. Industrial for higher yield. Luxury for maximum returns. Your property NFT stays in your wallet. View it in your collection. See it on your map. Property is yours forever.
+Step three: Mint your property. Spend 100 TYCOON tokens. One-time cost per property. Choose property type. Residential for stability. Commercial for balance. Industrial for higher yield. Luxury for maximum returns. Your property NFT stays in your wallet. View it in your collection. See it on your map. Property is yours forever. **Your level and XP update automatically** when you mint!
 
 Step four: Link to RWA. Connect your property to tokenized real estate. Select RWA contract. Enter token ID. Link confirmed. Your property now generates real yield from rental income. No additional cost.
 
-Step five: Collect yield. Properties generate yield daily. Free money. No cost to collect. Claim your yield rewards. Yield distributed as USDC or USDT. Real money in your wallet. Transparent on-chain distribution. Keep the yield or reinvest.
+Step five: Collect yield. Properties generate yield daily. Free money. No cost to collect. Claim your yield rewards. Yield distributed as USDC or USDT. Real money in your wallet. Transparent on-chain distribution. Keep the yield or reinvest. **Your level and XP update automatically** when you claim yield!
 
 Step six: Expand your portfolio. Use collected yield to buy more TYCOON tokens. Mint more properties. Or keep the yield as profit. Your choice. No pressure to keep buying. Properties keep generating yield.
 
@@ -54,11 +54,37 @@ Expand when you want. Use collected yield to buy more tokens. Mint more properti
 
 Example: Buy 1000 TYCOON tokens once. Mint 5 properties. Properties generate yield daily. Collect yield. Use yield to expand or keep money. No more token purchases needed unless you want to grow faster.
 
+## Leveling System
+
+Earn experience points (XP) and level up as you build your property empire! Your level is calculated from three factors:
+
+1. **Properties Owned**: 100 XP per property
+2. **Yield Earned**: 1 XP per 0.01 TYC earned
+3. **Portfolio Value**: 1 XP per 0.1 TYC in portfolio
+
+**Level Formula**: `Level = floor(√(Total XP / 1000)) + 1`
+
+**Level Titles**:
+- **Level 1-4**: "RISING TYCOON" 🌱
+- **Level 5-9**: "PRO TYCOON" 💼
+- **Level 10-14**: "ELITE TYCOON" ⭐
+- **Level 15-19**: "MASTER TYCOON" 👑
+- **Level 20+**: "LEGENDARY TYCOON" 🏆
+
+Your level updates **automatically in real-time** via WebSocket when you:
+- Mint a property (100 XP per property)
+- Purchase a property (XP based on property value)
+- Claim yield (XP based on yield amount)
+
+No page refresh needed! See your level, XP progress, and progress bar update instantly in the left sidebar. Backend calculates level server-side from blockchain data for accuracy and security.
+
+See [LEVELING_SYSTEM.md](LEVELING_SYSTEM.md) for detailed documentation.
+
 ## Multiplayer Features
 
 See other players portfolios. Visit top tycoons. Browse their properties. See how they arranged their empire. Learn from the best. Get inspired by successful portfolios. Click "Visit" on any leaderboard entry to view their complete portfolio. Leaderboard shows accurate total yield earned from YieldDistributor contract. Visit portfolio modal displays correct yield values including claimed yield. Backend reads yield from YieldDistributor propertyTotalYieldEarned mapping for accurate leaderboard rankings.
 
-Global leaderboard shows all players. Ranked by portfolio value. Ranked by total yield. Ranked by properties owned. See your position. See top ten. Updates automatically when properties change. Leaderboard refreshes in real time via WebSocket events.
+Global leaderboard shows all players. Ranked by portfolio value. Ranked by total yield. Ranked by properties owned. See your position. See top ten. Updates automatically when properties change. Leaderboard refreshes in real time via WebSocket events. **Leaderboard also shows player levels** - see who the top tycoons are!
 
 Guilds create communities. Join existing guilds. Create your own guild. See guild members properties. Share guild benefits. Compete in guild leaderboards. Guild stats update automatically when members properties change. Combined portfolio value and yield tracking.
 
@@ -70,9 +96,18 @@ Global chat connects everyone. Talk with all players. Share tips and strategies.
 
 ## Real-Time Features
 
-Portfolio updates instantly. No refresh needed. Property values appear as they change. Yield accumulates in real time. Your rank changes instantly. See new properties minted. See yield distributions. See leaderboard shifts. See other players join. See properties traded. All without page refresh.
+Portfolio updates instantly. No refresh needed. Property values appear as they change. Yield accumulates in real time. Your rank changes instantly. See new properties minted. See yield distributions. See leaderboard shifts. See other players join. See properties traded. **Level and XP update automatically** when you mint properties, purchase properties, or claim yield. All without page refresh.
 
 Powered by Mantle Network. Backend emits events via smart contracts when properties are created. Frontend subscribes using Wagmi hooks for real-time updates. Socket.io handles multiplayer events. On-chain events stream directly to your browser. Fast updates without polling. Low latency. High performance. Database-like speed with blockchain security.
+
+### Real-Time Level/XP Updates
+
+Your level and XP update automatically via WebSocket when you:
+- **Mint a property** → XP increases by 100 (1 property × 100 XP)
+- **Purchase a property** → XP increases based on property value
+- **Claim yield** → XP increases based on yield amount
+
+No page refresh needed. Level, XP, and progress bar update instantly in the UI. Backend calculates level server-side from blockchain data (properties, yield, portfolio value) and broadcasts updates via WebSocket. Frontend receives `user:level-update` events and updates the display immediately.
 
 ## RWA Integration
 

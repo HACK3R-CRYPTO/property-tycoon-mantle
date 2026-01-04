@@ -744,9 +744,11 @@ export class LeaderboardService {
           ),
         );
 
-      totalYieldEarned = yieldRecords.reduce((sum, record) => {
-        return sum + BigInt(record.amount.toString());
-      }, BigInt(0));
+        totalYieldEarned = yieldRecords.reduce((sum, record) => {
+          // amount is NUMERIC (string in Drizzle), convert to BigInt
+          const amountStr = String(record.amount || '0');
+          return sum + BigInt(amountStr);
+        }, BigInt(0));
       
       if (totalYieldEarned > BigInt(0)) {
         this.logger.log(`Total yield from database records for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
