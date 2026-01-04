@@ -97,6 +97,8 @@ Balance checks prevent insufficient funds.
 
 Property appears on city map instantly.
 
+**Your level and XP update automatically** when you mint a property (100 XP per property)!
+
 ### Link to RWA
 
 Connect property to tokenized real estate:
@@ -119,6 +121,8 @@ Batch claim all properties at once.
 Yield distributed as USDC or USDT.
 
 Real money in your wallet.
+
+**Your level and XP update automatically** when you claim yield (XP increases based on yield amount)!
 
 ### Marketplace
 
@@ -251,6 +255,8 @@ Live yield accumulation tracking.
 
 Instant leaderboard updates via WebSocket.
 
+**Real-time level/XP updates** - Your level and XP update automatically when you mint properties, purchase properties, or claim yield. No page refresh needed!
+
 Property minting with optimized gas costs.
 
 Yield claiming with micro-transaction support.
@@ -260,6 +266,21 @@ WebSocket integration via Socket.io:
 - Portfolio update notifications
 - Leaderboard position changes
 - Yield accumulation updates
+- **Level/XP updates** (`user:level-update` event)
+
+### Level/XP Display
+
+The game page shows your current level, XP progress, and level title in the left sidebar:
+- **Level badge**: Shows your current level (e.g., "LVL 11")
+- **XP progress bar**: Visual progress toward next level
+- **Level title**: Dynamic title based on level:
+  - Level 1-4: "RISING TYCOON" 🌱
+  - Level 5-9: "PRO TYCOON" 💼
+  - Level 10-14: "ELITE TYCOON" ⭐
+  - Level 15-19: "MASTER TYCOON" 👑
+  - Level 20+: "LEGENDARY TYCOON" 🏆
+
+Level and XP update automatically via WebSocket when you perform XP-boosting actions. The frontend listens to `user:level-update` events and updates the UI immediately.
 
 ## Technology Stack
 
