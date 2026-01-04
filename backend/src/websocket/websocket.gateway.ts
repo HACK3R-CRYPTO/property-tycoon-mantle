@@ -138,4 +138,19 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     this.server.emit('price:update', data);
     this.logger.debug(`Emitted price update: MNT/USD = $${data.mntPriceUSD.toFixed(4)}, TYCOON/USD = $${data.tycoonPriceUSD.toFixed(6)}`);
   }
+
+  emitUserLevelUpdate(data: {
+    walletAddress: string;
+    level: number;
+    totalExperiencePoints: string;
+    totalYieldEarned: string;
+    totalPortfolioValue: string;
+    propertiesOwned: number;
+  }) {
+    const room = `portfolio:${data.walletAddress.toLowerCase()}`;
+    this.server.to(room).emit('user:level-update', data);
+    // Also broadcast globally for leaderboard updates
+    this.server.emit('user:level-update', data);
+    this.logger.log(`Emitted level update for ${data.walletAddress}: Level ${data.level}, XP ${data.totalExperiencePoints}`);
+  }
 }

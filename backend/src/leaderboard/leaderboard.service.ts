@@ -678,77 +678,77 @@ export class LeaderboardService {
     // Get total yield earned - check YieldDistributor first (source of truth after claims)
     let totalYieldEarned = BigInt(0);
     
-    // Try to get total yield from YieldDistributor contract first
+    // PRIORITY 1: Get totalYieldClaimed from YieldDistributor (most accurate - tracks all claimed yield per user)
     try {
       if (this.contractsService.yieldDistributor) {
-        // Get all properties owned by user
-        let tokenIds: bigint[] = [];
-        try {
-          const result = await this.contractsService.getOwnerProperties(user.walletAddress);
-          if (Array.isArray(result)) {
-            tokenIds = result;
-          } else if (result && typeof result === 'object' && 'length' in result) {
-            tokenIds = Array.from(result as any);
-          }
-        } catch (error) {
-          this.logger.debug(`No properties found for yield calculation: ${error.message}`);
+        const totalYieldClaimed = await this.contractsService.yieldDistributor.totalYieldClaimed(user.walletAddress);
+        if (totalYieldClaimed && totalYieldClaimed.toString() !== '0') {
+          totalYieldEarned = BigInt(totalYieldClaimed.toString());
+          this.logger.log(`✅ Total yield from totalYieldClaimed for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
         }
-        
-        // Sum yield from YieldDistributor for all properties
-        for (const tokenId of tokenIds) {
-          try {
-            const yieldEarned = await this.contractsService.yieldDistributor.propertyTotalYieldEarned(BigInt(Number(tokenId)));
-            const yieldValue = BigInt(yieldEarned.toString());
-            if (yieldValue > BigInt(0)) {
-              totalYieldEarned += yieldValue;
-              this.logger.log(`Property ${tokenId}: yield from YieldDistributor = ${yieldValue.toString()}`);
-            } else {
-              this.logger.debug(`Property ${tokenId}: no yield in YieldDistributor (value is 0)`);
-            }
-          } catch (error) {
-            // Property might not have yield yet, continue
-            this.logger.debug(`No yield found in YieldDistributor for property ${tokenId}: ${error.message}`);
-          }
-        }
-        
-        this.logger.log(`Total yield from YieldDistributor for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
       }
     } catch (error) {
-      this.logger.warn(`Failed to get yield from YieldDistributor, falling back to database: ${error.message}`);
+      this.logger.debug(`Failed to get totalYieldClaimed: ${error.message}`);
     }
     
-    // Fallback to database yield records if YieldDistributor doesn't have data
-    // But only if YieldDistributor actually returned 0 (not if it failed)
+    // PRIORITY 2: If totalYieldClaimed is 0, try propertyTotalYieldEarned (sum per property)
     if (totalYieldEarned === BigInt(0)) {
-      // Also check totalYieldClaimed from YieldDistributor as a backup
       try {
         if (this.contractsService.yieldDistributor) {
-          const totalYieldClaimed = await this.contractsService.yieldDistributor.totalYieldClaimed(user.walletAddress);
-          if (totalYieldClaimed && totalYieldClaimed.toString() !== '0') {
-            totalYieldEarned = BigInt(totalYieldClaimed.toString());
-            this.logger.log(`Total yield from totalYieldClaimed for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
+          // Get all properties owned by user
+          let tokenIds: bigint[] = [];
+          try {
+            const result = await this.contractsService.getOwnerProperties(user.walletAddress);
+            if (Array.isArray(result)) {
+              tokenIds = result;
+            } else if (result && typeof result === 'object' && 'length' in result) {
+              tokenIds = Array.from(result as any);
+            }
+          } catch (error) {
+            this.logger.debug(`No properties found for yield calculation: ${error.message}`);
+          }
+          
+          // Sum yield from YieldDistributor for all properties
+          for (const tokenId of tokenIds) {
+            try {
+              const yieldEarned = await this.contractsService.yieldDistributor.propertyTotalYieldEarned(BigInt(Number(tokenId)));
+              const yieldValue = BigInt(yieldEarned.toString());
+              if (yieldValue > BigInt(0)) {
+                totalYieldEarned += yieldValue;
+                this.logger.log(`Property ${tokenId}: yield from YieldDistributor = ${yieldValue.toString()}`);
+              }
+            } catch (error) {
+              // Property might not have yield yet, continue
+              this.logger.debug(`No yield found in YieldDistributor for property ${tokenId}: ${error.message}`);
+            }
+          }
+          
+          if (totalYieldEarned > BigInt(0)) {
+            this.logger.log(`Total yield from propertyTotalYieldEarned for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
           }
         }
       } catch (error) {
-        this.logger.debug(`Failed to get totalYieldClaimed: ${error.message}`);
+        this.logger.warn(`Failed to get yield from YieldDistributor properties: ${error.message}`);
       }
-      
-      // If still 0, fallback to database yield records
-      if (totalYieldEarned === BigInt(0)) {
-        const yieldRecords = await this.db
-          .select()
-          .from(schema.yieldRecords)
-          .where(
-            and(
-              eq(schema.yieldRecords.ownerId, userId),
-              eq(schema.yieldRecords.claimed, true),
-            ),
-          );
+    }
+    
+    // PRIORITY 3: Fallback to database yield records if blockchain queries failed or returned 0
+    if (totalYieldEarned === BigInt(0)) {
+      const yieldRecords = await this.db
+        .select()
+        .from(schema.yieldRecords)
+        .where(
+          and(
+            eq(schema.yieldRecords.ownerId, userId),
+            eq(schema.yieldRecords.claimed, true),
+          ),
+        );
 
-        totalYieldEarned = yieldRecords.reduce((sum, record) => {
-          return sum + BigInt(record.amount.toString());
-        }, BigInt(0));
-        
+      totalYieldEarned = yieldRecords.reduce((sum, record) => {
+        return sum + BigInt(record.amount.toString());
+      }, BigInt(0));
+      
+      if (totalYieldEarned > BigInt(0)) {
         this.logger.log(`Total yield from database records for ${user.walletAddress}: ${totalYieldEarned.toString()}`);
       }
     }
