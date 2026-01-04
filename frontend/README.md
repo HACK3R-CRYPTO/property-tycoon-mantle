@@ -95,9 +95,37 @@ Automatic approval flow.
 
 Balance checks prevent insufficient funds.
 
-Property appears on city map instantly.
+Property appears on isometric 3D city map instantly.
 
 **Your level and XP update automatically** when you mint a property (100 XP per property)!
+
+### Isometric 3D City Map
+
+The game features a beautiful isometric 3D city map powered by Pixi.js:
+
+**Map Features:**
+- **Isometric 3D rendering** - Diamond-shaped tiles with depth and perspective (inspired by noodle-quest style)
+- **Realistic terrain** - Water and land tiles with pixel art style textures
+- **Property buildings** - Distinct 3D isometric buildings for each property type:
+  - Residential: Cozy house with pitched roof, windows, and door (blue)
+  - Commercial: Modern store with flat roof and large storefront windows (green)
+  - Industrial: Factory with smokestack and grid windows (orange)
+  - Luxury: Tall glass skyscraper with lit windows and spire (pink)
+- **Ownership markers** - Flag markers on owned properties (brown pole with colored flag and white star)
+- **Zoom and pan** - Smooth zoom (0.3x to 3x) and pan controls with map boundaries
+- **FIND button** - Center map on any property from "YOUR PROPERTIES" sidebar with auto-zoom to 1.5x
+- **Dynamic location display** - Real-time coordinates (N/S, E/W) and sector based on viewport center
+- **Other players' properties** - See and click other players' properties on the map to view their details
+- **Property colors** - Each property type uses distinct colors matching their building design
+- **Sparse trees** - Decorative trees on land tiles (2% density) for visual appeal
+- **Fixed map size** - 100x100 tile grid (limited, not infinite) for better performance
+
+**Map Controls:**
+- **Zoom In/Out buttons** - Located in bottom-right (or left of sidebar when properties panel is open)
+- **Target button** - Centers map on average position of all your properties
+- **FIND button** - In "YOUR PROPERTIES" sidebar, centers map on that specific property
+- **Mouse wheel** - Zoom in/out at cursor position
+- **Click and drag** - Pan the map in any direction
 
 ### Link to RWA
 
@@ -300,7 +328,7 @@ Blockchain: Mantle Network (Sepolia Testnet)
 
 Real-time: Socket.io
 
-Rendering: Pixi.js (city map)
+Rendering: Pixi.js (isometric 3D city map)
 
 Notifications: React Hot Toast
 
@@ -324,7 +352,7 @@ frontend/
 │   │   ├── Guilds.tsx                # Guild system
 │   │   ├── RWALinkModal.tsx         # RWA linking modal
 │   │   └── game/
-│   │       ├── CityView.tsx          # City map visualization
+│   │       ├── CityView.tsx          # Isometric 3D city map visualization
 │   │       ├── PropertyCard.tsx      # Property display
 │   │       ├── YieldDisplay.tsx      # Yield dashboard
 │   │       └── BuildMenu.tsx         # Property minting

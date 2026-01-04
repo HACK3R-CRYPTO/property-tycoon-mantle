@@ -901,8 +901,14 @@ export function Marketplace({ preselectedProperty, onListed }: MarketplaceProps 
 
       {/* List Property Modal */}
       {showListProperty && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-md border-white/20 bg-gray-900">
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowListProperty(false)}
+        >
+          <Card 
+            className="w-full max-w-md border-white/20 bg-gray-900"
+            onClick={(e) => e.stopPropagation()}
+          >
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="text-white">List Property for Sale</CardTitle>

@@ -1,8 +1,7 @@
 'use client'
 
-import { X, BookOpen, Wallet, Coins, Building2, TrendingUp, Trophy, Users } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { X, Building2, Coins, TrendingUp, Trophy, Link2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 interface GameGuideProps {
   isOpen: boolean
@@ -10,114 +9,149 @@ interface GameGuideProps {
 }
 
 export function GameGuide({ isOpen, onClose }: GameGuideProps) {
+  const [floatingElements, setFloatingElements] = useState<Array<{ id: number; x: number; y: number; delay: number }>>([])
+
+  useEffect(() => {
+    if (isOpen) {
+      // Create floating property icons
+      const elements = Array.from({ length: 8 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        y: Math.random() * 100,
+        delay: Math.random() * 5,
+      }))
+      setFloatingElements(elements)
+    }
+  }, [isOpen])
+
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="bg-gray-900 border-white/20 w-full max-w-3xl max-h-[80vh] overflow-y-auto">
-        <CardHeader className="sticky top-0 bg-gray-900 border-b border-white/10 flex flex-row items-center justify-between">
-          <CardTitle className="text-2xl font-bold text-white flex items-center gap-2">
-            <BookOpen className="w-6 h-6" />
-            How to Play Property Tycoon
-          </CardTitle>
-          <Button onClick={onClose} variant="ghost" size="sm" className="text-white">
-            <X className="w-5 h-5" />
-          </Button>
-        </CardHeader>
-        <CardContent className="p-6 space-y-6">
-          <div className="space-y-4">
-            <div className="flex items-start gap-4">
-              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                <Wallet className="w-6 h-6 text-blue-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">Step 1: Connect Your Wallet</h3>
-                <p className="text-gray-300">
-                  Connect your MetaMask or WalletConnect wallet. Make sure you're on Mantle Testnet. Get test tokens from the faucet if needed.
-                </p>
-              </div>
-            </div>
+    <div 
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      {/* Floating Animated Background Elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {floatingElements.map((el) => (
+          <div
+            key={el.id}
+            className="absolute animate-float"
+            style={{
+              left: `${el.x}%`,
+              top: `${el.y}%`,
+              animationDelay: `${el.delay}s`,
+              animationDuration: `${8 + Math.random() * 4}s`,
+            }}
+          >
+            <Building2 className="w-6 h-6 text-emerald-500/20" />
+          </div>
+        ))}
+      </div>
 
-            <div className="flex items-start gap-4">
-              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <Coins className="w-6 h-6 text-emerald-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">Step 2: Buy TYCOON Tokens</h3>
-                <p className="text-gray-300">
-                  Buy TYCOON tokens with MNT. One MNT buys 100 TYCOON tokens. This is a one-time purchase to get started. Buy enough for your first property.
-                </p>
-              </div>
-            </div>
+      {/* Grid Background Pattern */}
+      <div 
+        className="absolute inset-0 opacity-10"
+        style={{
+          backgroundImage: `
+            linear-gradient(rgba(34, 197, 94, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(34, 197, 94, 0.1) 1px, transparent 1px)
+          `,
+          backgroundSize: '40px 40px',
+        }}
+      />
 
-            <div className="flex items-start gap-4">
-              <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                <Building2 className="w-6 h-6 text-purple-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">Step 3: Mint Your Property</h3>
-                <p className="text-gray-300">
-                  Spend TYCOON tokens to mint property NFTs. Choose from Residential (100 tokens), Commercial (200 tokens), Industrial (500 tokens), or Luxury (1000 tokens). Each property generates yield daily.
-                </p>
-              </div>
-            </div>
+      {/* Main Content */}
+      <div 
+        className="relative bg-gray-900/95 border-2 border-emerald-500/50 rounded-lg w-full max-w-lg p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-gray-400 hover:text-white transition-colors z-10"
+        >
+          <X className="w-5 h-5" />
+        </button>
 
-            <div className="flex items-start gap-4">
-              <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                <TrendingUp className="w-6 h-6 text-yellow-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">Step 4: Collect Yield</h3>
-                <p className="text-gray-300">
-                  Properties generate yield daily. Claim your yield rewards as USDC or USDT. Real money in your wallet. Keep the yield or reinvest to expand your portfolio.
-                </p>
-              </div>
-            </div>
+        {/* Title */}
+        <div className="text-center mb-6">
+          <h2 className="text-3xl font-bold text-white mb-2 uppercase" style={{ fontFamily: 'monospace', letterSpacing: '0.15em' }}>
+            HOW TO PLAY
+          </h2>
+          <div className="w-20 h-0.5 bg-emerald-500 mx-auto"></div>
+        </div>
 
-            <div className="flex items-start gap-4">
-              <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
-                <Trophy className="w-6 h-6 text-orange-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">Step 5: Compete & Trade</h3>
-                <p className="text-gray-300">
-                  View the leaderboard to see top tycoons. Visit other players' portfolios. Trade properties on the marketplace. Join guilds. Complete quests for bonus rewards.
-                </p>
-              </div>
+        {/* Simple Steps - More Compact */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded">
+            <div className="text-2xl font-bold text-emerald-400" style={{ fontFamily: 'monospace' }}>1</div>
+            <div className="flex-1">
+              <p className="text-white font-semibold text-sm uppercase mb-0.5" style={{ fontFamily: 'monospace' }}>CONNECT WALLET</p>
+              <p className="text-gray-400 text-xs uppercase" style={{ fontFamily: 'monospace' }}>GET STARTED WITH METAMASK OR WALLETCONNECT</p>
             </div>
-
-            <div className="flex items-start gap-4">
-              <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
-                <Users className="w-6 h-6 text-cyan-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">Step 6: Build Your Empire</h3>
-                <p className="text-gray-300">
-                  Expand your portfolio. Link properties to RWA for real yield. Complete investment quests. Climb the leaderboard. Build the ultimate property empire.
-                </p>
-              </div>
-            </div>
+            <Building2 className="w-6 h-6 text-emerald-400 flex-shrink-0" />
           </div>
 
-          <div className="mt-8 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <h4 className="font-semibold text-blue-400 mb-2">Property Types & Costs</h4>
-            <ul className="space-y-2 text-sm text-gray-300">
-              <li>• Residential: 100 TYCOON tokens - 5% APY</li>
-              <li>• Commercial: 200 TYCOON tokens - 8% APY</li>
-              <li>• Industrial: 500 TYCOON tokens - 12% APY</li>
-              <li>• Luxury: 1000 TYCOON tokens - 15% APY</li>
-            </ul>
+          <div className="flex items-center gap-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded">
+            <div className="text-2xl font-bold text-emerald-400" style={{ fontFamily: 'monospace' }}>2</div>
+            <div className="flex-1">
+              <p className="text-white font-semibold text-sm uppercase mb-0.5" style={{ fontFamily: 'monospace' }}>BUY TYCOON TOKENS</p>
+              <p className="text-gray-400 text-xs uppercase" style={{ fontFamily: 'monospace' }}>1 MNT = 100 TYCOON TOKENS</p>
+            </div>
+            <Coins className="w-6 h-6 text-emerald-400 flex-shrink-0" />
           </div>
-        </CardContent>
-      </Card>
+
+          <div className="flex items-center gap-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded">
+            <div className="text-2xl font-bold text-emerald-400" style={{ fontFamily: 'monospace' }}>3</div>
+            <div className="flex-1">
+              <p className="text-white font-semibold text-sm uppercase mb-0.5" style={{ fontFamily: 'monospace' }}>MINT PROPERTIES</p>
+              <p className="text-gray-400 text-xs uppercase" style={{ fontFamily: 'monospace' }}>RESIDENTIAL • COMMERCIAL • INDUSTRIAL • LUXURY</p>
+            </div>
+            <Building2 className="w-6 h-6 text-emerald-400 flex-shrink-0" />
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded">
+            <div className="text-2xl font-bold text-emerald-400" style={{ fontFamily: 'monospace' }}>4</div>
+            <div className="flex-1">
+              <p className="text-white font-semibold text-sm uppercase mb-0.5" style={{ fontFamily: 'monospace' }}>LINK TO RWA [OPTIONAL]</p>
+              <p className="text-gray-400 text-xs uppercase" style={{ fontFamily: 'monospace' }}>CONNECT TO REAL-WORLD ASSETS FOR HIGHER YIELD</p>
+            </div>
+            <Link2 className="w-6 h-6 text-emerald-400 flex-shrink-0" />
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded">
+            <div className="text-2xl font-bold text-emerald-400" style={{ fontFamily: 'monospace' }}>5</div>
+            <div className="flex-1">
+              <p className="text-white font-semibold text-sm uppercase mb-0.5" style={{ fontFamily: 'monospace' }}>EARN YIELD DAILY</p>
+              <p className="text-gray-400 text-xs uppercase" style={{ fontFamily: 'monospace' }}>CLAIM TYC REWARDS EVERY 24 HOURS</p>
+            </div>
+            <TrendingUp className="w-6 h-6 text-emerald-400 flex-shrink-0" />
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded">
+            <div className="text-2xl font-bold text-emerald-400" style={{ fontFamily: 'monospace' }}>6</div>
+            <div className="flex-1">
+              <p className="text-white font-semibold text-sm uppercase mb-0.5" style={{ fontFamily: 'monospace' }}>BUILD YOUR EMPIRE</p>
+              <p className="text-gray-400 text-xs uppercase" style={{ fontFamily: 'monospace' }}>TRADE • COMPETE • AND CLIMB THE LEADERBOARD</p>
+            </div>
+            <Trophy className="w-6 h-6 text-emerald-400 flex-shrink-0" />
+          </div>
+        </div>
+
+        {/* Property Types Quick Reference - More Compact */}
+        <div className="mt-6 p-3 bg-black/40 border border-emerald-500/20 rounded">
+          <p className="text-emerald-400 font-semibold text-xs mb-2 text-center uppercase" style={{ fontFamily: 'monospace', letterSpacing: '0.15em' }}>
+            PROPERTY TYPES
+          </p>
+          <div className="grid grid-cols-2 gap-2 text-xs text-gray-300 uppercase" style={{ fontFamily: 'monospace' }}>
+            <div>RESIDENTIAL: 100 TYC • 5% APY</div>
+            <div>COMMERCIAL: 200 TYC • 8% APY</div>
+            <div>INDUSTRIAL: 500 TYC • 12% APY</div>
+            <div>LUXURY: 1000 TYC • 15% APY</div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
-
-
-
-
-
-
-
-
