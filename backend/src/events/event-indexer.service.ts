@@ -581,14 +581,27 @@ export class EventIndexerService implements OnModuleInit {
       }
 
       // Create yield record
-      await this.db.insert(schema.yieldRecords).values({
-        ownerId: property.ownerId,
-        propertyId: property.id,
-        amount: BigInt(amount),
-        claimed: true,
-        claimedAt: new Date(),
-        createdAt: new Date(),
-      });
+      // amount is already a string from the event, use it directly for NUMERIC column
+      try {
+        await this.db.insert(schema.yieldRecords).values({
+          ownerId: property.ownerId,
+          propertyId: property.id,
+          amount: amount as any, // NUMERIC column accepts string (amount comes as string from event)
+          claimed: true,
+          claimedAt: new Date(),
+          createdAt: new Date(),
+        });
+        this.logger.log(`✅ Created yield record for property ${propertyId}: ${amount}`);
+      } catch (dbError: any) {
+        // Check if it's a duplicate (same property, same amount, same time) - that's okay
+        if (dbError.message?.includes('duplicate') || dbError.code === '23505') {
+          this.logger.debug(`Yield record already exists for property ${propertyId}, skipping insert`);
+        } else {
+          this.logger.error(`Failed to insert yield record: ${dbError.message}`, dbError);
+          // Don't throw - continue with other updates even if yield record insert fails
+          // The yield record is mainly for historical tracking, not critical for functionality
+        }
+      }
 
       // Update property total yield earned
       const currentTotal = BigInt(property.totalYieldEarned?.toString() || '0');

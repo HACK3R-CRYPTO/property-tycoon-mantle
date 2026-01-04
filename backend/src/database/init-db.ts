@@ -72,12 +72,26 @@ async function initDatabase() {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         property_id UUID NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
         owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        amount BIGINT NOT NULL,
+        amount NUMERIC NOT NULL,
         claimed BOOLEAN DEFAULT false,
         transaction_hash VARCHAR(66),
         claimed_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT NOW()
       );
+      
+      -- Migrate existing amount column from BIGINT to NUMERIC if it exists
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'yield_records' 
+          AND column_name = 'amount' 
+          AND data_type = 'bigint'
+        ) THEN
+          ALTER TABLE yield_records ALTER COLUMN amount TYPE NUMERIC USING amount::text::numeric;
+          RAISE NOTICE 'Migrated yield_records.amount from BIGINT to NUMERIC';
+        END IF;
+      END $$;
 
       CREATE TABLE IF NOT EXISTS marketplace_listings (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
