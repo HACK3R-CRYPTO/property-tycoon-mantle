@@ -171,3 +171,19 @@
 .animate-scroll-down {
   animation: scroll-down 1.5s ease-in-out infinite;
 }
+
+@keyframes rotate-device {
+  0% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(90deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+.animate-rotate-device {
+  animation: rotate-device 2s ease-in-out infinite;
+}

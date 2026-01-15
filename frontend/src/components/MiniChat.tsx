@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Globe } from 'lucide-react';
+import { Send, Globe, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -44,6 +44,7 @@ export function MiniChat({ onExpand }: MiniChatProps) {
   const { messages, isSending, sendMessage } = useChat();
   const [inputValue, setInputValue] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Show only last 5-6 messages
@@ -74,10 +75,29 @@ export function MiniChat({ onExpand }: MiniChatProps) {
     }
   };
 
+  if (isMinimized) {
+    return (
+      <div className="fixed bottom-2 right-2 lg:bottom-4 lg:right-auto lg:left-[340px] z-40">
+        <button
+          type="button"
+          onClick={() => setIsMinimized(false)}
+          className="bg-gray-900/95 backdrop-blur-md border border-white/20 rounded-full px-3 py-2 flex items-center gap-2 shadow-xl hover:bg-gray-800/95 transition-colors"
+        >
+          <div className="relative">
+            <div className="absolute inset-0 bg-emerald-500 blur-sm opacity-40 rounded-full" />
+            <div className="relative bg-gradient-to-br from-emerald-500 to-teal-600 p-1.5 rounded-full">
+              <MessageSquare className="w-3 h-3 text-white" />
+            </div>
+          </div>
+          <span className="text-xs text-white font-semibold">Chat</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed bottom-4 left-[340px] z-40 w-80">
+    <div className="fixed bottom-2 right-2 lg:bottom-4 lg:right-auto lg:left-[340px] z-40 w-64 sm:w-72 md:w-80">
       <div className="bg-gray-900/95 backdrop-blur-md rounded-lg border border-white/20 shadow-xl overflow-hidden flex flex-col">
-        {/* Header */}
         <div 
           className="px-3 py-2 border-b border-white/10 bg-white/5 cursor-pointer hover:bg-white/10 transition-colors"
           onClick={() => {
@@ -87,14 +107,26 @@ export function MiniChat({ onExpand }: MiniChatProps) {
             }
           }}
         >
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <div className="absolute inset-0 bg-emerald-500 blur-sm opacity-50 rounded-full" />
-              <div className="relative bg-gradient-to-br from-emerald-500 to-teal-600 p-1.5 rounded-full">
-                <Globe className="w-3 h-3 text-white" />
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <div className="absolute inset-0 bg-emerald-500 blur-sm opacity-50 rounded-full" />
+                <div className="relative bg-gradient-to-br from-emerald-500 to-teal-600 p-1.5 rounded-full">
+                  <Globe className="w-3 h-3 text-white" />
+                </div>
               </div>
+              <span className="text-white text-sm font-semibold">GLO</span>
             </div>
-            <span className="text-white text-sm font-semibold">GLO</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMinimized(true);
+              }}
+              className="text-gray-400 hover:text-white text-xs px-2 py-1 rounded-md border border-transparent hover:border-white/20"
+            >
+              Hide
+            </button>
           </div>
         </div>
 
@@ -184,4 +216,3 @@ export function MiniChat({ onExpand }: MiniChatProps) {
     </div>
   );
 }
-
