@@ -18,7 +18,7 @@ import { Guilds } from '@/components/Guilds';
 import { Marketplace } from '@/components/Marketplace';
 import { Quests } from '@/components/Quests';
 import { TokenPurchase } from '@/components/TokenPurchase';
-import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target, Coins, User, Shield, CheckCircle2, BarChart3, Diamond, ShoppingCart, X, SlidersHorizontal, BarChart, History, MapPin, Menu } from 'lucide-react';
+import { MessageSquare, Building2, BookOpen, Trophy, Users, ShoppingBag, Target, Coins, User, Shield, CheckCircle2, BarChart3, Diamond, ShoppingCart, X, SlidersHorizontal, BarChart, History, MapPin, Menu, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -161,6 +161,27 @@ export default function GamePage() {
   const [userLevel, setUserLevel] = useState<number>(1);
   const [userTotalXP, setUserTotalXP] = useState<number>(0);
   const [nextClaimableTime, setNextClaimableTime] = useState<{ hours: number; minutes: number } | null>(null);
+  const [isLandscape, setIsLandscape] = useState(true);
+  const [isSmallScreen, setIsSmallScreen] = useState(false);
+
+  useEffect(() => {
+    const updateOrientation = () => {
+      const landscape = window.innerWidth > window.innerHeight;
+      setIsLandscape(landscape);
+      const small = window.innerWidth < 1024;
+      setIsSmallScreen(small);
+      if (small) {
+        setShowPropertiesSidebar(false);
+      }
+    };
+    updateOrientation();
+    window.addEventListener('resize', updateOrientation);
+    window.addEventListener('orientationchange', updateOrientation);
+    return () => {
+      window.removeEventListener('resize', updateOrientation);
+      window.removeEventListener('orientationchange', updateOrientation);
+    };
+  }, []);
 
   // Load properties function - FROM BACKEND (synced from blockchain)
   const loadProperties = useCallback(async () => {
@@ -2088,7 +2109,13 @@ export default function GamePage() {
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 overflow-hidden">
-      {/* Full Screen City View */}
+      {!isLandscape && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
+          <Smartphone className="w-16 h-16 text-white/80 animate-rotate-device" />
+          <h2 className="mt-4 text-white text-xl font-semibold">Rotate your device</h2>
+          <p className="mt-2 text-gray-300 text-sm">Use landscape so you can see and play the city.</p>
+        </div>
+      )}
       <div className="absolute inset-0 w-full h-full" style={{ zIndex: 1 }}>
         <CityView
           properties={(() => {
@@ -2219,30 +2246,22 @@ export default function GamePage() {
           onZoomIn={() => setMapZoom(prev => Math.min(prev + 0.2, 3))}
           onZoomOut={() => setMapZoom(prev => Math.max(prev - 0.2, 0.3))}
           onCenter={() => {
-            // Center on all user properties
             if (properties.length > 0) {
-              // Calculate average position of all properties
               const avgX = properties.reduce((sum, p) => sum + (p.x || 0), 0) / properties.length;
               const avgY = properties.reduce((sum, p) => sum + (p.y || 0), 0) / properties.length;
-              
-              // Zoom in a bit to see properties better
               setMapZoom(1.5);
-              // Center on the average property position
               setCenterOnCoordinate({ x: avgX, y: avgY });
-              // Reset after a moment so it can be triggered again
               setTimeout(() => setCenterOnCoordinate(null), 100);
             }
           }}
-          zoomControlsPosition={showPropertiesSidebar ? 'left-of-sidebar' : 'bottom-right'}
+          zoomControlsPosition={showPropertiesSidebar && !isSmallScreen ? 'left-of-sidebar' : 'bottom-right'}
           centerOnCoordinate={centerOnCoordinate}
         />
       </div>
 
-      {/* Left Sidebar - Overlay on top */}
       {showLeftSidebar && (
-        <div className="absolute left-4 top-4 bottom-4 w-80 z-50 overflow-y-auto pointer-events-none">
+        <div className="absolute left-2 sm:left-3 lg:left-4 top-2 sm:top-3 lg:top-4 bottom-2 sm:bottom-3 lg:bottom-4 w-60 sm:w-72 lg:w-80 z-50 overflow-y-auto pointer-events-none">
           <div className="pointer-events-auto h-full overflow-y-auto bg-gray-800/50 backdrop-blur-md rounded-lg border border-white/10 p-4">
-            {/* Header with Close Button */}
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-white font-bold text-lg">MENU</h2>
               <Button
@@ -2477,11 +2496,10 @@ export default function GamePage() {
         </div>
       )}
       
-      {/* Show Left Sidebar Button (when hidden) */}
       {!showLeftSidebar && (
             <Button
           onClick={() => setShowLeftSidebar(true)}
-          className="absolute left-4 top-4 z-50 bg-gray-800/90 hover:bg-gray-700/90 text-white border border-white/10"
+          className="absolute left-2 sm:left-4 top-2 sm:top-4 z-50 bg-gray-800/90 hover:bg-gray-700/90 text-white border border-white/10"
           title="Show Menu"
         >
           <Menu className="w-4 h-4 mr-2" />
@@ -2489,9 +2507,8 @@ export default function GamePage() {
         </Button>
       )}
 
-      {/* Right Sidebar - Your Properties */}
       {showPropertiesSidebar && (
-        <div className="absolute right-4 top-4 bottom-4 w-96 z-50 overflow-hidden flex flex-col">
+        <div className="hidden lg:flex absolute right-2 lg:right-4 top-2 lg:top-4 bottom-2 lg:bottom-4 w-80 lg:w-96 z-50 overflow-hidden flex-col">
           <div className="bg-gray-800/90 backdrop-blur-md rounded-lg border border-white/10 flex flex-col h-full">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-white/10">
@@ -2742,7 +2759,6 @@ export default function GamePage() {
         </div>
       )}
 
-      {/* Show Properties Button (when hidden) */}
       {!showPropertiesSidebar && (
         <Button
           onClick={() => setShowPropertiesSidebar(true)}
